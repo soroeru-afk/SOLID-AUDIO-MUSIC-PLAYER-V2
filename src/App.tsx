@@ -275,7 +275,7 @@ export default function App() {
     setPlayerOffset({ x: 0, y: 0 });
     try {
       if (viewMode === 'mini') {
-        window.resizeTo(400, 680);
+        window.resizeTo(400, 760); // Increased height to prevent bottom cutoff
       } else if (viewMode === 'slim') {
         window.resizeTo(700, 160);
       } else {
@@ -696,16 +696,7 @@ export default function App() {
     let artist = 'Unknown Artist';
     let album = 'Unknown Album';
     let trackNumber = '';
-    let coverUrl: string | undefined = undefined;
     let duration = 0;
-
-    try {
-      const metadata = await mm.parseBlob(file, { skipCovers: false });
-      title = metadata.common.title || '';
-      artist = metadata.common.artist || metadata.common.albumartist || 'Unknown Artist';
-      album = metadata.common.album || 'Unknown Album';
-      trackNumber = metadata.common.track?.no?.toString() || '';
-      duration = metadata.format.duration || 0;
 
     const trackId = uuidv4();
     let blobUrl = '';
