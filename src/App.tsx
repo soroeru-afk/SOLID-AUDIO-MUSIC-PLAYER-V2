@@ -1779,7 +1779,7 @@ export default function App() {
             <Palette size={12} />
             <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--theme-accent)' }}>THEME: {theme.id}</span>
           </button>
-          <div className="text-xs tracking-widest" style={{ color: 'var(--theme-textMuted)' }}>v2.2 OS</div>
+          <div className="text-xs tracking-widest" style={{ color: 'var(--theme-textMuted)' }}>v2.0.6 OS</div>
         </div>
       </header>
 
