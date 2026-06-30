@@ -53,3 +53,14 @@
 }
 
 
+
+/* Drag support for desktop PWAs */
+.drag-region {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}

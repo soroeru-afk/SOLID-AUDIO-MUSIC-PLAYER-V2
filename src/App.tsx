@@ -273,6 +273,17 @@ export default function App() {
 
   useEffect(() => {
     setPlayerOffset({ x: 0, y: 0 });
+    try {
+      if (viewMode === 'mini') {
+        window.resizeTo(400, 680);
+      } else if (viewMode === 'slim') {
+        window.resizeTo(700, 160);
+      } else {
+        window.resizeTo(1700, 1200);
+      }
+    } catch (e) {
+      console.error('Resize failed', e);
+    }
   }, [viewMode]);
 
   // Load from IndexedDB
@@ -283,9 +294,11 @@ export default function App() {
         const savedPlaylists = await get('solidPlaylists');
         const savedSidebarWidth = await get('solidSidebarWidth');
         const savedColWidths = await get('solidColWidths');
+        const savedThemeIndex = await get('solidThemeIndex');
         
         if (savedSidebarWidth) setSidebarWidth(savedSidebarWidth);
         if (savedColWidths) setColWidths(savedColWidths);
+        if (savedThemeIndex !== undefined) setThemeIndex(savedThemeIndex);
         
         if (savedLibrary && savedPlaylists) {
           const libraryMap = new Map<string, Track>();
@@ -306,18 +319,17 @@ export default function App() {
             return t;
           }));
           
-          const newPlaylists = savedPlaylists.map((p: Playlist) => ({
-            ...p,
-            tracks: p.tracks.map((t: Track) => {
-              return libraryMap.get(t.id) || t;
-            })
-          }));
-          
           setLibrary(newLibrary);
-          setPlaylists(newPlaylists);
+
+          // Restore playlists
+          const validPlaylists = savedPlaylists.map((p: any) => ({
+            ...p,
+            tracks: p.tracks.map((pt: Track) => libraryMap.get(pt.id)).filter(Boolean) as Track[]
+          }));
+          setPlaylists(validPlaylists);
         }
       } catch (err) {
-        console.error("Failed to load state from IndexedDB", err);
+        console.error("Failed to load state", err);
       } finally {
         setIsInitialized(true);
       }
@@ -333,8 +345,9 @@ export default function App() {
       set('solidPlaylists', playlists).catch(console.error);
       set('solidSidebarWidth', sidebarWidth).catch(console.error);
       set('solidColWidths', colWidths).catch(console.error);
+      set('solidThemeIndex', themeIndex).catch(console.error);
     }
-  }, [library, playlists, sidebarWidth, colWidths, isInitialized]);
+  }, [library, playlists, sidebarWidth, colWidths, themeIndex, isInitialized]);
 
   // Player state
   const [playbackQueue, setPlaybackQueue] = useState<Track[]>([]);
