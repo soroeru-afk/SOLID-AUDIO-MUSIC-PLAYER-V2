@@ -762,22 +762,17 @@ export default function App() {
         else if (lowerName.endsWith('.aac')) mimeType = 'audio/aac';
       }
       
-      // Detach from native file system into Memory Blob
-      const buffer = await file.arrayBuffer();
-      const memoryBlob = new Blob([buffer], { type: mimeType });
+      const processedFile = new File([file], file.name, { type: mimeType, lastModified: file.lastModified });
       
-      // Save individual file to IndexedDB immediately
-      await set(`track_file_${trackId}`, memoryBlob);
+      // Save individual file to IndexedDB immediately.
+      // We store the Native File object directly instead of arrayBuffer() 
+      // to save RAM and avoid Chromium's IDB Blob playback bugs.
+      await set(`track_file_${trackId}`, processedFile);
       
-      // Load back disk-backed blob to release memory Blob reference
-      const diskBlob = await get(`track_file_${trackId}`);
-      if (diskBlob) {
-        blobUrl = URL.createObjectURL(diskBlob);
-      } else {
-        blobUrl = URL.createObjectURL(memoryBlob);
-      }
+      // For immediate playback, use the Native File object directly.
+      blobUrl = URL.createObjectURL(processedFile);
     } catch (e) {
-      console.error('Failed to process and store file to IndexedDB', e);
+      console.error('Failed to store file to IndexedDB', e);
       blobUrl = URL.createObjectURL(file);
     }
 
