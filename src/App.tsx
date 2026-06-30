@@ -305,7 +305,7 @@ export default function App() {
           
           const newLibrary = await Promise.all(savedLibrary.map(async (t: Track) => {
             try {
-              const coverData = await get(`track_cover_${t.id}`);
+              const coverData = await get(`v2_track_cover_${t.id}`);
               if (coverData && coverData.buffer) {
                 t.coverUrl = URL.createObjectURL(new Blob([coverData.buffer], { type: coverData.type }));
               }
@@ -337,7 +337,7 @@ export default function App() {
     loadState();
   }, []);
 
-  // Save to IndexedDB (with debounce to prevent transaction overload)
+  // Save to IndexedDB (with debounce)
   useEffect(() => {
     if (isInitialized) {
       const timer = setTimeout(() => {
@@ -821,7 +821,7 @@ export default function App() {
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      // Convert FileList to Array immediately 窶・the FileList reference
+      // Convert FileList to Array immediately — the FileList reference
       // becomes invalid once the input is reset, so we capture it first.
       const fileArray = Array.from(e.target.files) as File[];
       // Reset input AFTER capturing files so it can accept the same folder again
@@ -1038,7 +1038,7 @@ export default function App() {
     if (track && track.url === '' && !track.missing) {
       (async () => {
         try {
-          const audioData = await get(`track_audio_${track.id}`);
+          const audioData = await get(`v2_track_audio_${track.id}`);
           if (audioData && audioData.buffer) {
             const memoryBlob = new Blob([audioData.buffer], { type: audioData.type });
             const blobUrl = URL.createObjectURL(memoryBlob);
@@ -1348,7 +1348,7 @@ export default function App() {
               if (!track.missing) playTrack(idx);
             }
           }}
-          title={track.missing ? `縺薙・PC縺ｫ繝輔ぃ繧､繝ｫ縺後≠繧翫∪縺帙ｓ: ${track.fileName}\n繝輔ぃ繧､繝ｫ繧偵ラ繝ｩ繝・げ&繝峨Ο繝・・縺吶ｋ縺九√ヵ繧ｩ繝ｫ繝繧定ｪｭ縺ｿ霎ｼ繧薙〒縺上□縺輔＞` : undefined}
+          title={track.missing ? `このPCにファイルがありません: ${track.fileName}\nファイルをドラッグ&ドロップするか、フォルダを読み込んでください` : undefined}
           className="group flex items-center text-[11px] h-10 px-2 border-b transition-colors shrink-0 select-none"
           style={{ 
               backgroundColor: isActive ? 'var(--theme-accentMuted)' : (isSelected ? 'var(--theme-surfaceLighter)' : 'transparent'), 
@@ -1457,7 +1457,7 @@ export default function App() {
             </button>
             <button 
               onClick={(e) => moveTrack(e, idx, idx - 1)} 
-              title={sortConfig.key !== 'none' ? '繧ｽ繝ｼ繝医ｒ隗｣髯､縺吶ｋ縺ｨ荳ｦ縺ｹ譖ｿ縺医〒縺阪∪縺・ : '荳縺､荳翫∈遘ｻ蜍・} 
+              title={sortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '一つ上へ移動'} 
               className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20" 
               disabled={idx === 0 || sortConfig.key !== 'none'} 
               style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)', color: iconColor }}
@@ -1466,7 +1466,7 @@ export default function App() {
             </button>
             <button 
               onClick={(e) => moveTrack(e, idx, idx + 1)} 
-              title={sortConfig.key !== 'none' ? '繧ｽ繝ｼ繝医ｒ隗｣髯､縺吶ｋ縺ｨ荳ｦ縺ｹ譖ｿ縺医〒縺阪∪縺・ : '荳縺､荳九∈遘ｻ蜍・} 
+              title={sortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '一つ下へ移動'} 
               className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20" 
               disabled={idx === displayTracks.length - 1 || sortConfig.key !== 'none'} 
               style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)', color: iconColor }}
@@ -1475,7 +1475,7 @@ export default function App() {
             </button>
             <button 
               onClick={(e) => moveTrack(e, idx, displayTracks.length - 1)} 
-              title={sortConfig.key !== 'none' ? '繧ｽ繝ｼ繝医ｒ隗｣髯､縺吶ｋ縺ｨ荳ｦ縺ｹ譖ｿ縺医〒縺阪∪縺・ : '譛ｫ蟆ｾ縺ｸ遘ｻ蜍・} 
+              title={sortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '末尾へ移動'} 
               className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20" 
               disabled={idx === displayTracks.length - 1 || sortConfig.key !== 'none'} 
               style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)', color: iconColor }}
@@ -1782,7 +1782,7 @@ export default function App() {
             <Palette size={12} />
             <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--theme-accent)' }}>THEME: {theme.id}</span>
           </button>
-          <div className="text-xs tracking-widest" style={{ color: 'var(--theme-textMuted)' }}>v2.0.7 OS</div>
+          <div className="text-xs tracking-widest" style={{ color: 'var(--theme-textMuted)' }}>v2.0.8 OS</div>
         </div>
       </header>
 
@@ -2250,7 +2250,7 @@ export default function App() {
                    onClick={() => setSortConfig({ key: 'none', direction: 'asc' })}
                    className="flex items-center gap-1 text-[9px] uppercase tracking-widest border px-2 py-0.5 transition-colors hover:opacity-80 active:scale-95"
                    style={{ borderColor: 'var(--theme-borderActive)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}
-                   title="繧ｽ繝ｼ繝医ｒ隗｣髯､縺励※謇句虚荳ｦ縺ｹ譖ｿ縺医ｒ譛牙柑縺ｫ縺吶ｋ"
+                   title="ソートを解除して手動並べ替えを有効にする"
                  >
                    <X size={9} />
                    SORT: {sortConfig.key.toUpperCase()}
@@ -2268,8 +2268,8 @@ export default function App() {
             >
               <AlertCircle size={12} style={{ color: 'var(--theme-accent)', flexShrink: 0 }} />
               <span>
-                {displayTracks.filter(t => t.missing).length}莉ｶ縺ｮ繝輔ぃ繧､繝ｫ縺後％縺ｮPC縺ｧ隕九▽縺九ｊ縺ｾ縺帙ｓ縲・
-                繝輔ぃ繧､繝ｫ/繝輔か繝ｫ繝繧偵ラ繝ｩ繝・げ&繝峨Ο繝・・縺吶ｋ縺九√軍EAD DIRECTORY縲阪〒隱ｭ縺ｿ霎ｼ繧薙〒縺上□縺輔＞縲・
+                {displayTracks.filter(t => t.missing).length}件のファイルがこのPCで見つかりません。
+                ファイル/フォルダをドラッグ&ドロップするか、「READ DIRECTORY」で読み込んでください。
               </span>
             </div>
           )}
@@ -2310,7 +2310,7 @@ export default function App() {
                     {/* fileName */}
                     <div className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.fileName }}>
                       <div onClick={() => handleSort('fileName')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                        <span className="truncate">蜷榊燕</span>
+                        <span className="truncate">名前</span>
                         {sortConfig.key === 'fileName' && (sortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
                       </div>
                       <div onMouseDown={(e) => handleColMouseDown(e, 'fileName')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
@@ -2327,7 +2327,7 @@ export default function App() {
                     {/* title */}
                     <div className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.title }}>
                       <div onClick={() => handleSort('title')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                        <span className="truncate">繧ｿ繧､繝医Ν</span>
+                        <span className="truncate">タイトル</span>
                         {sortConfig.key === 'title' && (sortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
                       </div>
                       <div onMouseDown={(e) => handleColMouseDown(e, 'title')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
@@ -2338,7 +2338,7 @@ export default function App() {
                     {/* artist */}
                     <div className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.artist }}>
                       <div onClick={() => handleSort('artist')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                        <span className="truncate">蜿ょ刈繧｢繝ｼ繝・ぅ繧ｹ繝・/span>
+                        <span className="truncate">参加アーティスト</span>
                         {sortConfig.key === 'artist' && (sortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
                       </div>
                       <div onMouseDown={(e) => handleColMouseDown(e, 'artist')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
@@ -2349,7 +2349,7 @@ export default function App() {
                     {/* album */}
                     <div className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.album }}>
                       <div onClick={() => handleSort('album')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                        <span className="truncate">繧｢繝ｫ繝舌Β</span>
+                        <span className="truncate">アルバム</span>
                         {sortConfig.key === 'album' && (sortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
                       </div>
                       <div onMouseDown={(e) => handleColMouseDown(e, 'album')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
@@ -2357,7 +2357,7 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                  <div className="w-24 flex-shrink-0 text-center ml-auto">謫堺ｽ・/div>
+                  <div className="w-24 flex-shrink-0 text-center ml-auto">操作</div>
                 </div>
 
                 {/* List Items */}
