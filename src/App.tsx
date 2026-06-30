@@ -291,10 +291,17 @@ export default function App() {
           const libraryMap = new Map<string, Track>();
           
           const newLibrary = await Promise.all(savedLibrary.map(async (t: Track) => {
-            if (t.file) {
+            // Check if individual disk-backed blob exists
+            let fileBlob = await get(`track_file_${t.id}`);
+            
+            // Fallback for old save format
+            if (!fileBlob && t.file) {
+              fileBlob = t.file;
+            }
+
+            if (fileBlob) {
               // File blob exists in this browser's IndexedDB — re-extract everything
               try {
-                let fileBlob = t.file;
                 // Workaround for IndexedDB dropping MIME types, which breaks FLAC playback in Chrome
                 if (!fileBlob.type || fileBlob.type === '') {
                   let mimeType = 'audio/mpeg';
@@ -304,9 +311,7 @@ export default function App() {
                   else if (lowerName.endsWith('.wav')) mimeType = 'audio/wav';
                   else if (lowerName.endsWith('.ogg')) mimeType = 'audio/ogg';
                   else if (lowerName.endsWith('.aac')) mimeType = 'audio/aac';
-                  fileBlob = new File([t.file], t.fileName || 'audio', { type: mimeType });
-                  // Replace old file with reconstructed File that has a proper type
-                  t.file = fileBlob;
+                  fileBlob = new Blob([fileBlob], { type: mimeType });
                 }
                 
                 t.url = URL.createObjectURL(fileBlob);
@@ -331,9 +336,9 @@ export default function App() {
               // No file blob — this track was saved on a different PC/browser
               // Keep metadata (title/artist/album) but mark as missing so UI can show it
               t.missing = true;
-              t.url = '';
-              t.coverUrl = undefined;
             }
+            // Strip file reference from track object to save RAM
+            delete t.file;
             libraryMap.set(t.id, t);
             return t;
           }));
@@ -360,7 +365,8 @@ export default function App() {
   // Save to IndexedDB
   useEffect(() => {
     if (isInitialized) {
-      set('solidLibrary', library).catch(console.error);
+      const strippedLibrary = library.map(t => ({ ...t, file: undefined }));
+      set('solidLibrary', strippedLibrary).catch(console.error);
       set('solidPlaylists', playlists).catch(console.error);
       set('solidSidebarWidth', sidebarWidth).catch(console.error);
       set('solidColWidths', colWidths).catch(console.error);
@@ -741,33 +747,48 @@ export default function App() {
       if (artist === 'Unknown Artist') artist = parsed.artist;
     }
 
+    const trackId = uuidv4();
     let blobUrl = '';
-    let processedFile = file;
+    
     try {
-      if (!processedFile.type || processedFile.type === '') {
-        let mimeType = 'audio/mpeg';
+      let mimeType = file.type;
+      if (!mimeType || mimeType === '') {
+        mimeType = 'audio/mpeg';
         const lowerName = file.name ? file.name.toLowerCase() : '';
         if (lowerName.endsWith('.flac')) mimeType = 'audio/flac';
         else if (lowerName.endsWith('.m4a')) mimeType = 'audio/mp4';
         else if (lowerName.endsWith('.wav')) mimeType = 'audio/wav';
         else if (lowerName.endsWith('.ogg')) mimeType = 'audio/ogg';
         else if (lowerName.endsWith('.aac')) mimeType = 'audio/aac';
-        processedFile = new File([file], file.name, { type: mimeType, lastModified: file.lastModified });
       }
-      blobUrl = URL.createObjectURL(processedFile);
+      
+      // Detach from native file system into Memory Blob
+      const buffer = await file.arrayBuffer();
+      const memoryBlob = new Blob([buffer], { type: mimeType });
+      
+      // Save individual file to IndexedDB immediately
+      await set(`track_file_${trackId}`, memoryBlob);
+      
+      // Load back disk-backed blob to release memory Blob reference
+      const diskBlob = await get(`track_file_${trackId}`);
+      if (diskBlob) {
+        blobUrl = URL.createObjectURL(diskBlob);
+      } else {
+        blobUrl = URL.createObjectURL(memoryBlob);
+      }
     } catch (e) {
+      console.error('Failed to process and store file to IndexedDB', e);
       blobUrl = URL.createObjectURL(file);
     }
 
     return {
-      id: uuidv4(),
+      id: trackId,
       title,
       artist,
       album,
       trackNumber,
       fileName: file.name,
       url: blobUrl,
-      file: processedFile,
       duration,
       coverUrl
     };
@@ -780,25 +801,22 @@ export default function App() {
     setIsLoadingFiles(true);
     setLoadingProgress({ done: 0, total: fileArray.length });
 
-    // Process in parallel batches of 8 to avoid overwhelming the browser
-    // while still being much faster than sequential processing
-    const BATCH_SIZE = 8;
+    // Process sequentially (1 by 1) to prevent V8 memory spikes (OOM)
     const allTracks: Track[] = [];
 
-    for (let i = 0; i < fileArray.length; i += BATCH_SIZE) {
-      const batch = fileArray.slice(i, i + BATCH_SIZE);
-      const results = await Promise.all(batch.map(f => parseSingleFile(f)));
-      const valid = results.filter((t): t is Track => t !== null);
-      allTracks.push(...valid);
-      setLoadingProgress(prev => ({ ...prev, done: Math.min(prev.total, i + BATCH_SIZE) }));
-
-      // Stream results into state as each batch completes so the list fills progressively
-      if (valid.length > 0) {
+    for (let i = 0; i < fileArray.length; i++) {
+      const result = await parseSingleFile(fileArray[i]);
+      if (result) {
+        allTracks.push(result);
+        
+        // Stream results into state progressively
         setLibrary(prev => {
-          // Deduplicate by fileName + file size to avoid double-adding on re-read
-          const existingKeys = new Set(prev.map(t => `${t.fileName}_${t.file?.size ?? 0}`));
-          const fresh = valid.filter(t => !existingKeys.has(`${t.fileName}_${t.file?.size ?? 0}`));
-          return [...prev, ...fresh];
+          // Deduplicate by fileName + duration to avoid double-adding
+          const existingKeys = new Set(prev.map(t => `${t.fileName}_${t.duration}`));
+          if (!existingKeys.has(`${result.fileName}_${result.duration}`)) {
+            return [...prev, result];
+          }
+          return prev;
         });
         
         setPlaylists(prev => {
@@ -816,13 +834,14 @@ export default function App() {
 
           return updatedPlaylists.map(p => {
             if (p.id !== 'all-tracks' && p.id !== currentTargetId) return p;
-            const existingKeys = new Set(p.tracks.map(t => `${t.fileName}_${t.file?.size ?? 0}`));
-            const fresh = valid.filter(t => !existingKeys.has(`${t.fileName}_${t.file?.size ?? 0}`));
+            const existingKeys = new Set(p.tracks.map(t => `${t.fileName}_${t.duration}`));
+            const fresh = [result].filter(t => !existingKeys.has(`${t.fileName}_${t.duration}`));
             if (fresh.length === 0) return p;
             return { ...p, tracks: [...p.tracks, ...fresh] };
           });
         });
       }
+      setLoadingProgress({ done: i + 1, total: fileArray.length });
     }
 
     setIsLoadingFiles(false);

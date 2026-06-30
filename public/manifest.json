@@ -1,0 +1,17 @@
+{
+  "name": "SOLID AUDIO MUSIC PLAYER",
+  "short_name": "AUDIO PLAYER",
+  "description": "A progressive web app music player",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "./icon.png?v=20260625",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
