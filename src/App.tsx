@@ -715,7 +715,7 @@ export default function App() {
         let mimeType = picture.format;
         if (!mimeType.startsWith('image/')) mimeType = `image/${mimeType}`;
         const coverBuffer = picture.data.buffer.slice(picture.data.byteOffset, picture.data.byteOffset + picture.data.byteLength);
-        await set(`track_cover_${trackId}`, { buffer: coverBuffer, type: mimeType });
+        await set(`v2_track_cover_${trackId}`, { buffer: coverBuffer, type: mimeType });
         coverUrl = URL.createObjectURL(new Blob([coverBuffer], { type: mimeType }));
       }
     } catch (err) {
@@ -741,7 +741,7 @@ export default function App() {
       }
       
       const buffer = await file.arrayBuffer();
-      await set(`track_audio_${trackId}`, { buffer, type: mimeType });
+      await set(`v2_track_audio_${trackId}`, { buffer, type: mimeType });
       
       const memoryBlob = new Blob([buffer], { type: mimeType });
       blobUrl = URL.createObjectURL(memoryBlob);
