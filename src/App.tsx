@@ -173,7 +173,28 @@ export default function App() {
   });
   const colResizing = useRef<{ key: string, startX: number, startWidth: number } | null>(null);
   
-  const [sortConfig, setSortConfig] = useState<{ key: 'title' | 'artist' | 'album' | 'fileName' | 'trackNumber' | 'none', direction: 'asc' | 'desc' }>({ key: 'none', direction: 'asc' });
+  type SortKey = 'title' | 'artist' | 'album' | 'fileName' | 'trackNumber' | 'none';
+  type SortConfigType = { key: SortKey, direction: 'asc' | 'desc' };
+  
+  const [sortConfigs, setSortConfigs] = useState<Record<string, SortConfigType>>(() => {
+    try {
+      const saved = localStorage.getItem('v2_sortConfigs');
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return {};
+  });
+
+  const sortConfig = sortConfigs[activePlaylistId] || { key: 'none', direction: 'asc' };
+  
+  const setSortConfig = (newConfig: SortConfigType | ((prev: SortConfigType) => SortConfigType)) => {
+    setSortConfigs(prev => {
+      const current = prev[activePlaylistId] || { key: 'none', direction: 'asc' };
+      const nextConfig = typeof newConfig === 'function' ? newConfig(current) : newConfig;
+      const updated = { ...prev, [activePlaylistId]: nextConfig };
+      localStorage.setItem('v2_sortConfigs', JSON.stringify(updated));
+      return updated;
+    });
+  };
   const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
