@@ -22,6 +22,8 @@ interface Track {
   duration: number;
   coverUrl?: string;
   missing?: boolean; // true when file blob is not available (e.g. different PC)
+  size?: number;
+  lastModified?: number;
 }
 
 interface Playlist {
@@ -690,7 +692,7 @@ export default function App() {
   };
 
   // Parse a single audio file into a Track object
-  const parseSingleFile = async (file: File): Promise<Track | null> => {
+  const parseSingleFile = async (file: File, existingId?: string): Promise<Track | null> => {
     const isAudio = ['audio/mpeg', 'audio/wav', 'audio/flac', 'audio/ogg', 'audio/x-m4a', 'audio/mp4', 'audio/aac'].includes(file.type) ||
                     ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aac'].some(ext => file.name.toLowerCase().endsWith(ext));
     if (!isAudio) return null;
@@ -701,7 +703,7 @@ export default function App() {
     let trackNumber = '';
     let duration = 0;
 
-    const trackId = uuidv4();
+    const trackId = existingId || uuidv4();
     let blobUrl = '';
     let coverUrl: string | undefined = undefined;
 
@@ -762,7 +764,9 @@ export default function App() {
       fileName: file.name,
       url: blobUrl,
       duration,
-      coverUrl
+      coverUrl,
+      size: file.size,
+      lastModified: file.lastModified
     };
   };
 
@@ -775,20 +779,54 @@ export default function App() {
 
     // Process sequentially (1 by 1) to prevent V8 memory spikes (OOM)
     const allTracks: Track[] = [];
+    const processedKeys = new Set<string>();
 
     for (let i = 0; i < fileArray.length; i++) {
-      const result = await parseSingleFile(fileArray[i]);
+      const file = fileArray[i];
+      
+      const existingTracks = library.filter(t => t.fileName === file.name);
+      
+      let exactMatch = false;
+      let existingTrackToUpdate: Track | undefined = undefined;
+      
+      if (existingTracks.length > 0) {
+        if (existingTracks.some(t => t.size === file.size && t.lastModified === file.lastModified)) {
+           exactMatch = true;
+        } else {
+           existingTrackToUpdate = existingTracks[0];
+        }
+      }
+      
+      const batchKey = `${file.name}_${file.size}_${file.lastModified}`;
+      if (processedKeys.has(batchKey)) {
+         exactMatch = true;
+      }
+      
+      if (exactMatch) {
+         setLoadingProgress({ done: i + 1, total: fileArray.length });
+         continue; // 完全な重複はIDB保存・パースごとスキップしてリーク防止
+      }
+      
+      processedKeys.add(batchKey);
+
+      const result = await parseSingleFile(file, existingTrackToUpdate?.id);
       if (result) {
         allTracks.push(result);
         
         // Stream results into state progressively
         setLibrary(prev => {
-          // Deduplicate by fileName + duration to avoid double-adding
-          const existingKeys = new Set(prev.map(t => `${t.fileName}_${t.duration}`));
-          if (!existingKeys.has(`${result.fileName}_${result.duration}`)) {
-            return [...prev, result];
+          if (existingTrackToUpdate) {
+             const idx = prev.findIndex(t => t.id === existingTrackToUpdate!.id);
+             if (idx !== -1) {
+                const updated = [...prev];
+                updated[idx] = result;
+                return updated;
+             }
           }
-          return prev;
+          const isDup = prev.some(t => t.fileName === result.fileName && t.size === result.size && t.lastModified === result.lastModified);
+          if (isDup) return prev;
+          
+          return [...prev, result];
         });
         
         setPlaylists(prev => {
@@ -805,11 +843,22 @@ export default function App() {
           }
 
           return updatedPlaylists.map(p => {
+            if (existingTrackToUpdate) {
+               const idx = p.tracks.findIndex(t => t.id === existingTrackToUpdate!.id);
+               if (idx !== -1) {
+                  const newTracks = [...p.tracks];
+                  newTracks[idx] = result;
+                  return { ...p, tracks: newTracks };
+               }
+            }
+            
             if (p.id !== 'all-tracks' && p.id !== currentTargetId) return p;
-            const existingKeys = new Set(p.tracks.map(t => `${t.fileName}_${t.duration}`));
-            const fresh = [result].filter(t => !existingKeys.has(`${t.fileName}_${t.duration}`));
-            if (fresh.length === 0) return p;
-            return { ...p, tracks: [...p.tracks, ...fresh] };
+            
+            const isDup = p.tracks.some(t => t.fileName === result.fileName && t.size === result.size && t.lastModified === result.lastModified);
+            if (!isDup) {
+               return { ...p, tracks: [...p.tracks, result] };
+            }
+            return p;
           });
         });
       }
