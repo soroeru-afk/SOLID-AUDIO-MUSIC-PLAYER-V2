@@ -102,6 +102,20 @@ const THEMES = [
     accent: '#92c27c',
     accentDark: '#759e62',
     accentMuted: '#2d3d25'
+  },
+  { 
+    id: 'RED', 
+    bg: '#120405', 
+    surface: '#1a0608',
+    surfaceLighter: '#24090b',
+    border: '#7a2832', 
+    borderActive: '#a63c48',
+    textMain: '#e6c3c7',
+    textMuted: '#966066',
+    textDim: '#7a2832',
+    accent: '#d64c5d',
+    accentDark: '#a3303e',
+    accentMuted: '#2e0a0d'
   }
 ];
 
@@ -1986,7 +2000,7 @@ export default function App() {
                 value={isMuted ? 0 : volume}
                 onChange={(e) => setVolume(parseFloat(e.target.value))}
                 className="w-full h-1 appearance-none cursor-pointer"
-                style={{ backgroundColor: 'var(--theme-bg)', accentColor: 'var(--theme-accent)' }}
+                style={{ backgroundColor: 'var(--theme-bg)', accentColor: 'var(--theme-textMain)' }}
               />
             </div>
           </div>
@@ -2005,7 +2019,7 @@ export default function App() {
                 value={eqLow}
                 onChange={(e) => setEqLow(parseInt(e.target.value))}
                 className="w-full h-1 appearance-none cursor-pointer sq-slider"
-                style={{ backgroundColor: 'var(--theme-surfaceLighter)', accentColor: 'var(--theme-accent)' }}
+                style={{ backgroundColor: 'var(--theme-surfaceLighter)', accentColor: 'var(--theme-textMain)' }}
               />
             </div>
 
@@ -2021,7 +2035,7 @@ export default function App() {
                 value={eqMid}
                 onChange={(e) => setEqMid(parseInt(e.target.value))}
                 className="w-full h-1 appearance-none cursor-pointer sq-slider"
-                style={{ backgroundColor: 'var(--theme-surfaceLighter)', accentColor: 'var(--theme-accent)' }}
+                style={{ backgroundColor: 'var(--theme-surfaceLighter)', accentColor: 'var(--theme-textMain)' }}
               />
             </div>
 
@@ -2037,7 +2051,7 @@ export default function App() {
                 value={eqHigh}
                 onChange={(e) => setEqHigh(parseInt(e.target.value))}
                 className="w-full h-1 appearance-none cursor-pointer sq-slider"
-                style={{ backgroundColor: 'var(--theme-surfaceLighter)', accentColor: 'var(--theme-accent)' }}
+                style={{ backgroundColor: 'var(--theme-surfaceLighter)', accentColor: 'var(--theme-textMain)' }}
               />
             </div>
           </div>

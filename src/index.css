@@ -33,21 +33,21 @@
 
 /* Square Slider for EQ */
 .sq-slider {
-  accent-color: var(--theme-accent);
+  accent-color: var(--theme-textMain);
 }
 .sq-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 12px;
   height: 12px;
-  background: var(--theme-accent);
+  background: var(--theme-textMain);
   border-radius: 0; /* Square thumb */
   cursor: pointer;
 }
 .sq-slider::-moz-range-thumb {
   width: 12px;
   height: 12px;
-  background: var(--theme-accent);
+  background: var(--theme-textMain);
   border-radius: 0; /* Square thumb */
   cursor: pointer;
 }
