@@ -18,17 +18,17 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0A0A0C;
+  background: var(--theme-bg, #0A0A0C);
 }
 ::-webkit-scrollbar-thumb {
-  background: #2A2A30;
+  background: var(--theme-border, #2A2A30);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #444;
+  background: var(--theme-borderActive, #444);
 }
 ::-webkit-scrollbar-corner {
-  background: #0A0A0C;
+  background: var(--theme-bg, #0A0A0C);
 }
 
 /* Square Slider for EQ */
