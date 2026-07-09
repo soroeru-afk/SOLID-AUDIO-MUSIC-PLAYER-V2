@@ -488,6 +488,21 @@ export default function App() {
   }, [eqHigh]);
 
   const theme = THEMES[themeIndex];
+  
+  useEffect(() => {
+    document.documentElement.style.setProperty('--theme-bg', theme.bg);
+    document.documentElement.style.setProperty('--theme-surface', theme.surface);
+    document.documentElement.style.setProperty('--theme-surfaceLighter', theme.surfaceLighter);
+    document.documentElement.style.setProperty('--theme-border', theme.border);
+    document.documentElement.style.setProperty('--theme-borderActive', theme.borderActive);
+    document.documentElement.style.setProperty('--theme-textMain', theme.textMain);
+    document.documentElement.style.setProperty('--theme-textMuted', theme.textMuted);
+    document.documentElement.style.setProperty('--theme-textDim', theme.textDim);
+    document.documentElement.style.setProperty('--theme-accent', theme.accent);
+    document.documentElement.style.setProperty('--theme-accentDark', theme.accentDark);
+    document.documentElement.style.setProperty('--theme-accentMuted', theme.accentMuted);
+  }, [theme]);
+
   const isLightTheme = theme.id === 'LIGHT';
   const iconColor = isLightTheme ? '#1a2530' : '#ffffff';
   
