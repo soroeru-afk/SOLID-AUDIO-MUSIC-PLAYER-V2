@@ -321,7 +321,7 @@ export default function App() {
         if (window.innerWidth > 500 && window.innerHeight > 300) {
            lastFullSize.current = { w: window.outerWidth, h: window.outerHeight };
         }
-        window.resizeTo(400, 680);
+        window.resizeTo(400, 800);
       } else if (viewMode === 'slim') {
         if (window.innerWidth > 500 && window.innerHeight > 300) {
            lastFullSize.current = { w: window.outerWidth, h: window.outerHeight };
