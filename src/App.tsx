@@ -3,7 +3,7 @@ import {
   Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, VolumeX,
   FolderOpen, ListMusic, Plus, Search, ChevronUp, ChevronDown, 
   ChevronsUp, ChevronsDown, Palette, Activity, Check, X, Trash2, ListPlus, AlertCircle,
-  Minimize2, Maximize2, Layers, Minus, PanelTop, GripVertical
+  Minimize2, Maximize2, Layers, Minus, PanelTop, GripVertical, Type
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { get, set } from 'idb-keyval';
@@ -178,7 +178,8 @@ export default function App() {
   const [activePlaylistId, setActivePlaylistId] = useState<string>('all-tracks');
   const [playingPlaylistId, setPlayingPlaylistId] = useState<string>('all-tracks');
   const [searchQuery, setSearchQuery] = useState('');
-  const [themeIndex, setThemeIndex] = useState(0); 
+  const [themeIndex, setThemeIndex] = useState(0);
+  const [listFontSize, setListFontSize] = useState<number>(11);
   const [colWidths, setColWidths] = useState({
     fileName: 180,
     title: 300,
@@ -199,6 +200,7 @@ export default function App() {
   });
 
   const sortConfig = sortConfigs[activePlaylistId] || { key: 'none', direction: 'asc' };
+  const activeSortConfig = sortConfig; // Fallback alias
   
   const setSortConfig = (newConfig: SortConfigType | ((prev: SortConfigType) => SortConfigType)) => {
     setSortConfigs(prev => {
@@ -209,6 +211,7 @@ export default function App() {
       return updated;
     });
   };
+
   const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
@@ -310,17 +313,6 @@ export default function App() {
 
   useEffect(() => {
     setPlayerOffset({ x: 0, y: 0 });
-    try {
-      if (viewMode === 'mini') {
-        window.resizeTo(400, 760); // Increased height to prevent bottom cutoff
-      } else if (viewMode === 'slim') {
-        window.resizeTo(700, 160);
-      } else {
-        window.resizeTo(1700, 1200);
-      }
-    } catch (e) {
-      console.error('Resize failed', e);
-    }
   }, [viewMode]);
 
   // Load from IndexedDB
@@ -332,10 +324,13 @@ export default function App() {
         const savedSidebarWidth = await get('v2_solidSidebarWidth');
         const savedColWidths = await get('v2_solidColWidths');
         const savedThemeIndex = await get('v2_solidThemeIndex');
+        const savedListFontSize = await get('v2_solidListFontSize');
         
         if (savedSidebarWidth) setSidebarWidth(savedSidebarWidth);
         if (savedColWidths) setColWidths(savedColWidths);
+        if (savedListFontSize !== undefined) setListFontSize(savedListFontSize);
         if (savedThemeIndex !== undefined) setThemeIndex(savedThemeIndex);
+        if (savedListFontSize !== undefined) setListFontSize(savedListFontSize);
         
         if (savedLibrary && savedPlaylists) {
           const libraryMap = new Map<string, Track>();
@@ -384,10 +379,12 @@ export default function App() {
         set('v2_solidSidebarWidth', sidebarWidth).catch(console.error);
         set('v2_solidColWidths', colWidths).catch(console.error);
         set('v2_solidThemeIndex', themeIndex).catch(console.error);
+        set('v2_solidListFontSize', listFontSize).catch(console.error);
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [library, playlists, sidebarWidth, colWidths, themeIndex, isInitialized]);
+  }, [library, playlists, sidebarWidth, colWidths, themeIndex, listFontSize, isInitialized]);
+
 
   // Player state
   const [playbackQueue, setPlaybackQueue] = useState<Track[]>([]);
@@ -488,21 +485,6 @@ export default function App() {
   }, [eqHigh]);
 
   const theme = THEMES[themeIndex];
-  
-  useEffect(() => {
-    document.documentElement.style.setProperty('--theme-bg', theme.bg);
-    document.documentElement.style.setProperty('--theme-surface', theme.surface);
-    document.documentElement.style.setProperty('--theme-surfaceLighter', theme.surfaceLighter);
-    document.documentElement.style.setProperty('--theme-border', theme.border);
-    document.documentElement.style.setProperty('--theme-borderActive', theme.borderActive);
-    document.documentElement.style.setProperty('--theme-textMain', theme.textMain);
-    document.documentElement.style.setProperty('--theme-textMuted', theme.textMuted);
-    document.documentElement.style.setProperty('--theme-textDim', theme.textDim);
-    document.documentElement.style.setProperty('--theme-accent', theme.accent);
-    document.documentElement.style.setProperty('--theme-accentDark', theme.accentDark);
-    document.documentElement.style.setProperty('--theme-accentMuted', theme.accentMuted);
-  }, [theme]);
-
   const isLightTheme = theme.id === 'LIGHT';
   const iconColor = isLightTheme ? '#1a2530' : '#ffffff';
   
@@ -519,13 +501,13 @@ export default function App() {
   const playingPlaylist = playlists.find(p => p.id === playingPlaylistId) || playlists[0];
 
   const getSortedTracks = (tracks: Track[]) => {
-    if (sortConfig.key === 'none') return tracks;
+    if (activeSortConfig.key === 'none') return tracks;
     
     return [...tracks].sort((a, b) => {
       let valA = '';
       let valB = '';
 
-      switch (sortConfig.key) {
+      switch (activeSortConfig.key) {
         case 'title': valA = a.title; valB = b.title; break;
         case 'artist': valA = a.artist; valB = b.artist; break;
         case 'album': valA = a.album; valB = b.album; break;
@@ -533,15 +515,15 @@ export default function App() {
         case 'trackNumber': 
           const numA = parseInt(a.trackNumber) || 0;
           const numB = parseInt(b.trackNumber) || 0;
-          return sortConfig.direction === 'asc' ? numA - numB : numB - numA;
+          return activeSortConfig.direction === 'asc' ? numA - numB : numB - numA;
         default: break;
       }
       
       valA = (valA || '').toLowerCase();
       valB = (valB || '').toLowerCase();
       
-      if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
-      if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+      if (valA < valB) return activeSortConfig.direction === 'asc' ? -1 : 1;
+      if (valA > valB) return activeSortConfig.direction === 'asc' ? 1 : -1;
       return 0;
     });
   };
@@ -552,6 +534,34 @@ export default function App() {
     t.fileName.toLowerCase().includes(searchQuery.toLowerCase())
   ));
   const currentTrack = playbackQueue[currentTrackIndex] || null;
+
+  useEffect(() => {
+    const track = playbackQueue[currentTrackIndex];
+    if (track && track.url === '' && !track.missing) {
+      (async () => {
+        try {
+          const audioData = await get(`v2_track_audio_${track.id}`);
+          if (audioData && audioData.buffer) {
+            const memoryBlob = new Blob([audioData.buffer], { type: audioData.type });
+            const blobUrl = URL.createObjectURL(memoryBlob);
+            
+            const updateTrack = (t: Track) => t.id === track.id ? { ...t, url: blobUrl } : t;
+            setLibrary(prev => prev.map(updateTrack));
+            setPlaylists(prev => prev.map(p => ({ ...p, tracks: p.tracks.map(updateTrack) })));
+            setPlaybackQueue(prev => prev.map(updateTrack));
+          } else {
+            console.error("Audio data not found for", track.id);
+            const markMissing = (t: Track) => t.id === track.id ? { ...t, missing: true } : t;
+            setLibrary(prev => prev.map(markMissing));
+            setPlaylists(prev => prev.map(p => ({ ...p, tracks: p.tracks.map(markMissing) })));
+            setPlaybackQueue(prev => prev.map(markMissing));
+          }
+        } catch (e) {
+          console.error("Error loading audio data", e);
+        }
+      })();
+    }
+  }, [currentTrackIndex, playbackQueue]);
 
   // Volume Sync
   useEffect(() => {
@@ -690,8 +700,8 @@ export default function App() {
     
     library.forEach(track => {
       let key = '';
-      if (track.file && track.file.size) {
-        key = `file::${track.fileName.toLowerCase()}::${track.file.size}`;
+      if (track.size) {
+        key = `file::${track.fileName.toLowerCase()}::${track.size}`;
       } else if (track.title && track.title !== 'Unknown Title' && track.artist && track.artist !== 'Unknown Artist') {
         key = `meta::${track.title.toLowerCase()}::${track.artist.toLowerCase()}`;
       } else {
@@ -1132,34 +1142,6 @@ export default function App() {
     });
   };
 
-  useEffect(() => {
-    const track = playbackQueue[currentTrackIndex];
-    if (track && track.url === '' && !track.missing) {
-      (async () => {
-        try {
-          const audioData = await get(`v2_track_audio_${track.id}`);
-          if (audioData && audioData.buffer) {
-            const memoryBlob = new Blob([audioData.buffer], { type: audioData.type });
-            const blobUrl = URL.createObjectURL(memoryBlob);
-            
-            const updateTrack = (t: Track) => t.id === track.id ? { ...t, url: blobUrl } : t;
-            setLibrary(prev => prev.map(updateTrack));
-            setPlaylists(prev => prev.map(p => ({ ...p, tracks: p.tracks.map(updateTrack) })));
-            setPlaybackQueue(prev => prev.map(updateTrack));
-          } else {
-            console.error("Audio data not found for", track.id);
-            const markMissing = (t: Track) => t.id === track.id ? { ...t, missing: true } : t;
-            setLibrary(prev => prev.map(markMissing));
-            setPlaylists(prev => prev.map(p => ({ ...p, tracks: p.tracks.map(markMissing) })));
-            setPlaybackQueue(prev => prev.map(markMissing));
-          }
-        } catch (e) {
-          console.error("Error loading audio data", e);
-        }
-      })();
-    }
-  }, [currentTrackIndex, playbackQueue]);
-
   const playTrack = (index: number) => {
     const trackToPlay = displayTracks[index];
     if (!trackToPlay) return;
@@ -1428,6 +1410,9 @@ export default function App() {
     '--theme-accent': theme.accent,
     '--theme-accentDark': theme.accentDark,
     '--theme-accentMuted': theme.accentMuted,
+    '--list-font-size': `${listFontSize}px`,
+    '--list-font-size-sm': `${Math.max(8, listFontSize - 1)}px`,
+    '--list-font-size-xs': `${Math.max(8, listFontSize - 2)}px`,
   } as React.CSSProperties;
 
   // --- UI Components ---
@@ -1448,13 +1433,14 @@ export default function App() {
             }
           }}
           title={track.missing ? `このPCにファイルがありません: ${track.fileName}\nファイルをドラッグ&ドロップするか、フォルダを読み込んでください` : undefined}
-          className="group flex items-center text-[11px] h-10 px-2 border-b transition-colors shrink-0 select-none"
+          className="group flex items-center h-10 px-2 border-b transition-colors shrink-0 select-none"
           style={{ 
               backgroundColor: isActive ? 'var(--theme-accentMuted)' : (isSelected ? 'var(--theme-surfaceLighter)' : 'transparent'), 
               borderColor: isActive ? 'var(--theme-borderActive)' : 'var(--theme-surface)', 
               color: isActive ? 'var(--theme-textMain)' : 'var(--theme-textMuted)',
               cursor: track.missing ? 'not-allowed' : 'pointer',
               opacity: track.missing ? 0.55 : 1,
+              fontSize: 'var(--list-font-size)',
           }}
           onMouseEnter={e => { if (!isActive && !isSelected) e.currentTarget.style.backgroundColor = 'var(--theme-surface)'; }}
           onMouseLeave={e => { if (!isActive && !isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}
@@ -1474,7 +1460,7 @@ export default function App() {
             {isActive ? (
                <div className="absolute w-[6px] h-[6px] rounded-full" style={{ backgroundColor: 'var(--theme-accent)', boxShadow: `0 0 8px var(--theme-accent)` }}></div>
             ) : (
-              <span className="text-[9px]">{(idx + 1).toString().padStart(2, '0')}</span>
+              <span style={{ fontSize: 'var(--list-font-size-xs)' }}>{(idx + 1).toString().padStart(2, '0')}</span>
             )}
           </div>
 
@@ -1501,8 +1487,8 @@ export default function App() {
                  type="text"
                  value={editTitle}
                  onChange={e => setEditTitle(e.target.value)}
-                 className="flex-1 bg-transparent border-b outline-none text-[11px] font-mono"
-                 style={{ borderColor: 'var(--theme-borderActive)', color: 'var(--theme-textMain)' }}
+                 className="flex-1 bg-transparent border-b outline-none font-mono"
+                 style={{ borderColor: 'var(--theme-borderActive)', color: 'var(--theme-textMain)', fontSize: 'var(--list-font-size)' }}
                  autoFocus
                  onKeyDown={e => { if (e.key === 'Enter') saveTrackEdit(track.id); }}
               />
@@ -1510,8 +1496,8 @@ export default function App() {
                  type="text"
                  value={editArtist}
                  onChange={e => setEditArtist(e.target.value)}
-                 className="w-1/4 bg-transparent border-b outline-none text-[11px] font-mono"
-                 style={{ borderColor: 'var(--theme-borderActive)', color: 'var(--theme-textMain)' }}
+                 className="w-1/4 bg-transparent border-b outline-none font-mono"
+                 style={{ borderColor: 'var(--theme-borderActive)', color: 'var(--theme-textMain)', fontSize: 'var(--list-font-size)' }}
                  onKeyDown={e => { if (e.key === 'Enter') saveTrackEdit(track.id); }}
               />
               <button onClick={() => saveTrackEdit(track.id)} className="px-1" title="Save & Fetch Art" style={{ color: 'var(--theme-accent)' }}><Check size={12} /></button>
@@ -1520,19 +1506,19 @@ export default function App() {
             </div>
           ) : (
             <div className="flex items-center gap-3">
-              <div className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide text-[10px]" style={{ width: colWidths.fileName, color: 'var(--theme-textMuted)' }} title={track.fileName}>
+              <div className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.fileName, color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-sm)' }} title={track.fileName}>
                 {track.fileName}
               </div>
-              <div className="w-10 flex-shrink-0 text-center font-mono opacity-80 text-[10px]">
+              <div className="w-10 flex-shrink-0 text-center font-mono opacity-80" style={{ fontSize: 'var(--list-font-size-sm)' }}>
                 {track.trackNumber || '-'}
               </div>
-              <div className="flex-shrink-0 min-w-0 pr-2 truncate font-bold font-mono tracking-wide" style={{ width: colWidths.title, color: 'var(--theme-textMain)' }} title={track.title}>
+              <div className="flex-shrink-0 min-w-0 pr-2 truncate font-bold font-mono tracking-wide" style={{ width: colWidths.title, color: 'var(--theme-textMain)', fontSize: 'var(--list-font-size)' }} title={track.title}>
                 {track.title}
               </div>
-              <div className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.artist, color: 'var(--theme-textMuted)' }} title={track.artist}>
+              <div className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.artist, color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-sm)' }} title={track.artist}>
                 {track.artist}
               </div>
-              <div className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.album, color: 'var(--theme-textDim)' }} title={track.album}>
+              <div className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.album, color: 'var(--theme-textDim)', fontSize: 'var(--list-font-size-sm)' }} title={track.album}>
                 {track.album}
               </div>
             </div>
@@ -1547,36 +1533,36 @@ export default function App() {
             )}
             <button 
               onClick={(e) => moveTrack(e, idx, 0)} 
-              title={sortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '先頭へ移動'} 
+              title={activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '先頭へ移動'} 
               className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20" 
-              disabled={idx === 0 || sortConfig.key !== 'none'} 
+              disabled={idx === 0 || activeSortConfig.key !== 'none'} 
               style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)', color: iconColor }}
             >
               <ChevronsUp size={10} />
             </button>
             <button 
               onClick={(e) => moveTrack(e, idx, idx - 1)} 
-              title={sortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '一つ上へ移動'} 
+              title={activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '一つ上へ移動'} 
               className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20" 
-              disabled={idx === 0 || sortConfig.key !== 'none'} 
+              disabled={idx === 0 || activeSortConfig.key !== 'none'} 
               style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)', color: iconColor }}
             >
               <ChevronUp size={10} />
             </button>
             <button 
               onClick={(e) => moveTrack(e, idx, idx + 1)} 
-              title={sortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '一つ下へ移動'} 
+              title={activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '一つ下へ移動'} 
               className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20" 
-              disabled={idx === displayTracks.length - 1 || sortConfig.key !== 'none'} 
+              disabled={idx === displayTracks.length - 1 || activeSortConfig.key !== 'none'} 
               style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)', color: iconColor }}
             >
               <ChevronDown size={10} />
             </button>
             <button 
               onClick={(e) => moveTrack(e, idx, displayTracks.length - 1)} 
-              title={sortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '末尾へ移動'} 
+              title={activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '末尾へ移動'} 
               className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20" 
-              disabled={idx === displayTracks.length - 1 || sortConfig.key !== 'none'} 
+              disabled={idx === displayTracks.length - 1 || activeSortConfig.key !== 'none'} 
               style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)', color: iconColor }}
             >
               <ChevronsDown size={10} />
@@ -1585,7 +1571,7 @@ export default function App() {
         </div>
       );
     });
-  }, [displayTracks, activePlaylistId, playingPlaylistId, currentTrackIndex, currentTrack?.id, selectedTrackIds, editingTrackId, editTitle, editArtist, iconColor, sortConfig.key, colWidths]);
+  }, [displayTracks, activePlaylistId, playingPlaylistId, currentTrackIndex, currentTrack?.id, selectedTrackIds, editingTrackId, editTitle, editArtist, iconColor, activeSortConfig.key, colWidths]);
 
   // Replace old PanelBlock definition location
   return (
@@ -1871,6 +1857,23 @@ export default function App() {
           >
             <Minimize2 size={12} />
           </button>
+          
+          <div 
+            className="flex items-center gap-3 border h-6 px-3"
+            style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}
+          >
+            <span className="text-[9px] uppercase tracking-widest font-bold" style={{ color: 'var(--theme-textMuted)' }}>SIZE</span>
+            <input
+              type="range"
+              min="9"
+              max="24"
+              value={listFontSize}
+              onChange={(e) => setListFontSize(parseInt(e.target.value))}
+              className="w-20 sq-slider"
+            />
+            <span className="text-[9px] uppercase tracking-widest font-mono" style={{ color: 'var(--theme-accent)', width: '24px', textAlign: 'right' }}>{listFontSize}PX</span>
+          </div>
+
           <button 
             onClick={cycleTheme}
             className="flex items-center justify-center gap-2 border h-6 px-2 transition-colors hover:opacity-80"
@@ -1881,7 +1884,7 @@ export default function App() {
             <Palette size={12} />
             <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--theme-accent)' }}>THEME: {theme.id}</span>
           </button>
-          <div className="text-xs tracking-widest" style={{ color: 'var(--theme-textMuted)' }}>v2.0.9 OS</div>
+          <div className="text-xs tracking-widest font-mono" style={{ color: 'var(--theme-textMuted)' }}>v2.0.8 OS</div>
         </div>
       </header>
 
@@ -2014,8 +2017,8 @@ export default function App() {
                 min="0" max="1" step="0.01" 
                 value={isMuted ? 0 : volume}
                 onChange={(e) => setVolume(parseFloat(e.target.value))}
-                className="w-full h-1 appearance-none cursor-pointer"
-                style={{ backgroundColor: 'var(--theme-bg)', accentColor: 'var(--theme-textMain)' }}
+                className="w-full appearance-none cursor-pointer sq-slider"
+                style={{ backgroundColor: 'transparent', accentColor: 'var(--theme-accent)' }}
               />
             </div>
           </div>
@@ -2033,8 +2036,8 @@ export default function App() {
                 min="0" max="100" step="1" 
                 value={eqLow}
                 onChange={(e) => setEqLow(parseInt(e.target.value))}
-                className="w-full h-1 appearance-none cursor-pointer sq-slider"
-                style={{ backgroundColor: 'var(--theme-surfaceLighter)', accentColor: 'var(--theme-textMain)' }}
+                className="w-full appearance-none cursor-pointer sq-slider"
+                style={{ accentColor: 'var(--theme-accent)' }}
               />
             </div>
 
@@ -2049,8 +2052,8 @@ export default function App() {
                 min="0" max="100" step="1" 
                 value={eqMid}
                 onChange={(e) => setEqMid(parseInt(e.target.value))}
-                className="w-full h-1 appearance-none cursor-pointer sq-slider"
-                style={{ backgroundColor: 'var(--theme-surfaceLighter)', accentColor: 'var(--theme-textMain)' }}
+                className="w-full appearance-none cursor-pointer sq-slider"
+                style={{ accentColor: 'var(--theme-accent)' }}
               />
             </div>
 
@@ -2065,8 +2068,8 @@ export default function App() {
                 min="0" max="100" step="1" 
                 value={eqHigh}
                 onChange={(e) => setEqHigh(parseInt(e.target.value))}
-                className="w-full h-1 appearance-none cursor-pointer sq-slider"
-                style={{ backgroundColor: 'var(--theme-surfaceLighter)', accentColor: 'var(--theme-textMain)' }}
+                className="w-full appearance-none cursor-pointer sq-slider"
+                style={{ accentColor: 'var(--theme-accent)' }}
               />
             </div>
           </div>
@@ -2150,7 +2153,7 @@ export default function App() {
           onDrop={handleDrop}
         >
           <div className="border-b px-2 py-1 flex items-center justify-between h-8 shrink-0" style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)' }}>
-            <span className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--theme-textMuted)' }}>INDEX MAP</span>
+            <span className="uppercase tracking-widest" style={{ color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-sm)' }}>INDEX MAP</span>
           </div>
           <div className="flex flex-col h-full overflow-y-auto w-full">
             {playlists.map((pl, plIdx) => (
@@ -2168,13 +2171,14 @@ export default function App() {
                     setRenamingPlaylistName(pl.name);
                   }
                 }}
-                className={`text-left px-3 py-2 text-[10px] tracking-widest flex items-center justify-between border-b transition-colors cursor-pointer group ${pl.id !== 'all-tracks' ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                className={`text-left px-3 py-2 tracking-widest flex items-center justify-between border-b transition-colors cursor-pointer group ${pl.id !== 'all-tracks' ? 'cursor-grab active:cursor-grabbing' : ''}`}
                 style={{
                   backgroundColor: activePlaylistId === pl.id ? 'var(--theme-accentMuted)' : (dragOverPlaylistId === pl.id ? 'var(--theme-surfaceLighter)' : 'transparent'),
                   borderBottomColor: dragOverPlaylistId === pl.id ? 'var(--theme-accent)' : 'var(--theme-border)',
                   borderLeft: `2px solid ${activePlaylistId === pl.id ? 'var(--theme-accent)' : 'transparent'}`,
                   color: activePlaylistId === pl.id ? 'var(--theme-textMain)' : 'var(--theme-textMuted)',
-                  opacity: draggedPlaylistId === pl.id ? 0.5 : 1
+                  opacity: draggedPlaylistId === pl.id ? 0.5 : 1,
+                  fontSize: 'var(--list-font-size-sm)'
                 }}
               >
                 {renamingPlaylistId === pl.id ? (
@@ -2344,15 +2348,15 @@ export default function App() {
                )}
              </div>
             <div className="flex items-center gap-3 shrink-0">
-               {sortConfig.key !== 'none' && (
+               {activeSortConfig.key !== 'none' && (
                  <button
-                   onClick={() => setSortConfig({ key: 'none', direction: 'asc' })}
+                   onClick={() => handleSort(activeSortConfig.key as any)}
                    className="flex items-center gap-1 text-[9px] uppercase tracking-widest border px-2 py-0.5 transition-colors hover:opacity-80 active:scale-95"
                    style={{ borderColor: 'var(--theme-borderActive)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}
                    title="ソートを解除して手動並べ替えを有効にする"
                  >
                    <X size={9} />
-                   SORT: {sortConfig.key.toUpperCase()}
+                   SORT: {activeSortConfig.key.toUpperCase()}
                  </button>
                )}
                <span className="text-[9px] font-mono tracking-widest" style={{ color: 'var(--theme-textDim)' }}>{displayTracks.length} ITEMS</span>
@@ -2402,7 +2406,7 @@ export default function App() {
             <div className="flex flex-col h-full overflow-auto relative">
               <div className="min-w-max flex flex-col min-h-full">
                 {/* List Header */}
-                <div className="flex items-center text-[9px] uppercase tracking-widest px-2 h-8 border-b shrink-0 sticky top-0 z-20" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMuted)' }}>
+                <div className="flex items-center uppercase tracking-widest px-2 h-8 border-b shrink-0 sticky top-0 z-20" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-xs)' }}>
                   <div className="w-10 flex-shrink-0 text-center">#</div>
                   <div className="w-8 mr-3 text-center">ART</div>
                   <div className="flex items-center gap-3">
@@ -2410,7 +2414,7 @@ export default function App() {
                     <div className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.fileName }}>
                       <div onClick={() => handleSort('fileName')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
                         <span className="truncate">名前</span>
-                        {sortConfig.key === 'fileName' && (sortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
+                        {activeSortConfig.key === 'fileName' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
                       </div>
                       <div onMouseDown={(e) => handleColMouseDown(e, 'fileName')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
                         <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
@@ -2420,14 +2424,14 @@ export default function App() {
                     {/* trackNumber */}
                     <div onClick={() => handleSort('trackNumber')} className="w-10 flex-shrink-0 flex items-center justify-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
                       #No
-                      {sortConfig.key === 'trackNumber' && (sortConfig.direction === 'asc' ? <ChevronUp size={10} /> : <ChevronDown size={10} />)}
+                      {activeSortConfig.key === 'trackNumber' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} /> : <ChevronDown size={10} />)}
                     </div>
 
                     {/* title */}
                     <div className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.title }}>
                       <div onClick={() => handleSort('title')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
                         <span className="truncate">タイトル</span>
-                        {sortConfig.key === 'title' && (sortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
+                        {activeSortConfig.key === 'title' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
                       </div>
                       <div onMouseDown={(e) => handleColMouseDown(e, 'title')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
                         <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
@@ -2438,7 +2442,7 @@ export default function App() {
                     <div className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.artist }}>
                       <div onClick={() => handleSort('artist')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
                         <span className="truncate">参加アーティスト</span>
-                        {sortConfig.key === 'artist' && (sortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
+                        {activeSortConfig.key === 'artist' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
                       </div>
                       <div onMouseDown={(e) => handleColMouseDown(e, 'artist')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
                         <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
@@ -2449,7 +2453,7 @@ export default function App() {
                     <div className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.album }}>
                       <div onClick={() => handleSort('album')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
                         <span className="truncate">アルバム</span>
-                        {sortConfig.key === 'album' && (sortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
+                        {activeSortConfig.key === 'album' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
                       </div>
                       <div onMouseDown={(e) => handleColMouseDown(e, 'album')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
                         <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
@@ -2508,7 +2512,7 @@ export default function App() {
                               {group.map((track) => (
                                  <div key={track.id} className="flex justify-between items-center p-2 border-b last:border-b-0 text-[10px]" style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-bg)' }}>
                                     <div className="truncate pr-4 flex-1" style={{ color: 'var(--theme-textMuted)' }}>
-                                       {track.fileName} {track.file && track.file.size ? `[${(track.file.size / 1024 / 1024).toFixed(1)}MB]` : ''}
+                                       {track.fileName} {track.size ? `[${(track.size / 1024 / 1024).toFixed(1)}MB]` : ''}
                                     </div>
                                     <button 
                                        onClick={() => handleDeleteMultipleGlobal([track.id])}
