@@ -105,17 +105,17 @@ const THEMES = [
   },
   { 
     id: 'RED', 
-    bg: '#120405', 
-    surface: '#1a0608',
-    surfaceLighter: '#24090b',
-    border: '#7a2832', 
-    borderActive: '#a63c48',
-    textMain: '#e6c3c7',
-    textMuted: '#966066',
-    textDim: '#7a2832',
-    accent: '#d64c5d',
-    accentDark: '#a3303e',
-    accentMuted: '#2e0a0d'
+    bg: '#140808', 
+    surface: '#1f0d0d',
+    surfaceLighter: '#2b1212',
+    border: '#6e1f1f', 
+    borderActive: '#962b2b',
+    textMain: '#f2cdcd',
+    textMuted: '#c99393',
+    textDim: '#946262',
+    accent: '#e65c5c',
+    accentDark: '#b34747',
+    accentMuted: '#421a1a'
   }
 ];
 
