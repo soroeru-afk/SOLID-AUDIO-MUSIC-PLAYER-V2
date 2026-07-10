@@ -311,7 +311,8 @@ export default function App() {
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   };
 
-  const lastFullSize = useRef({ w: 1200, h: 800 });
+  const lastFullSize = useRef({ w: 1400, h: 900 });
+  const hasResized = useRef(false);
 
   useEffect(() => {
     setPlayerOffset({ x: 0, y: 0 });
@@ -321,15 +322,19 @@ export default function App() {
         if (window.innerWidth > 500 && window.innerHeight > 300) {
            lastFullSize.current = { w: window.outerWidth, h: window.outerHeight };
         }
+        hasResized.current = true;
         window.resizeTo(400, 800);
       } else if (viewMode === 'slim') {
         if (window.innerWidth > 500 && window.innerHeight > 300) {
            lastFullSize.current = { w: window.outerWidth, h: window.outerHeight };
         }
+        hasResized.current = true;
         window.resizeTo(800, 150);
       } else {
-        // Restore previous full window size
-        window.resizeTo(lastFullSize.current.w, lastFullSize.current.h);
+        // Restore previous full window size ONLY if we changed modes during this session
+        if (hasResized.current) {
+          window.resizeTo(lastFullSize.current.w, lastFullSize.current.h);
+        }
       }
     } catch (e) {
       console.warn("Window resize not supported in this environment");
