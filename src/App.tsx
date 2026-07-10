@@ -311,8 +311,29 @@ export default function App() {
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   };
 
+  const lastFullSize = useRef({ w: 1200, h: 800 });
+
   useEffect(() => {
     setPlayerOffset({ x: 0, y: 0 });
+    try {
+      if (viewMode === 'mini') {
+        // Save current window size if it's large enough (likely full mode)
+        if (window.innerWidth > 500 && window.innerHeight > 300) {
+           lastFullSize.current = { w: window.outerWidth, h: window.outerHeight };
+        }
+        window.resizeTo(400, 680);
+      } else if (viewMode === 'slim') {
+        if (window.innerWidth > 500 && window.innerHeight > 300) {
+           lastFullSize.current = { w: window.outerWidth, h: window.outerHeight };
+        }
+        window.resizeTo(800, 150);
+      } else {
+        // Restore previous full window size
+        window.resizeTo(lastFullSize.current.w, lastFullSize.current.h);
+      }
+    } catch (e) {
+      console.warn("Window resize not supported in this environment");
+    }
   }, [viewMode]);
 
   // Load from IndexedDB
