@@ -1503,13 +1503,10 @@ export default function App() {
             if (e.shiftKey || e.ctrlKey || e.metaKey) {
               toggleTrackSelection(e, track.id);
             } else {
+              if (!track.missing) playTrack(idx);
               setSelectedTrackIds(new Set([track.id]));
               lastSelectedTrackIdRef.current = track.id;
             }
-          }}
-          onDoubleClick={(e) => {
-             if (editingTrackId === track.id) return;
-             if (!track.missing) playTrack(idx);
           }}
           title={track.missing ? `このPCにファイルがありません: ${track.fileName}\nファイルをドラッグ&ドロップするか、フォルダを読み込んでください` : undefined}
           className="group flex items-center h-10 px-2 border-b transition-colors shrink-0 select-none"
