@@ -1392,7 +1392,7 @@ export default function App() {
     const onMove = (ev: MouseEvent) => {
       if (!sidebarResizing.current) return;
       const delta = ev.clientX - startX;
-      const newWidth = Math.max(120, Math.min(400, startWidth + delta));
+      const newWidth = Math.max(120, Math.min(800, startWidth + delta));
       setSidebarWidth(newWidth);
     };
     const onUp = () => {
@@ -2220,7 +2220,7 @@ export default function App() {
           style={{ 
             width: sidebarWidth, 
             minWidth: 120, 
-            maxWidth: 400, 
+            maxWidth: 800, 
             backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : 'var(--theme-bg)', 
             borderColor: isDragOver ? 'var(--theme-accent)' : 'var(--theme-border)',
             boxShadow: isDragOver ? 'inset 0 0 0 2px var(--theme-accent)' : 'none'
