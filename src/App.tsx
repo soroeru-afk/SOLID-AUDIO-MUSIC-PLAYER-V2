@@ -370,8 +370,14 @@ export default function App() {
         const savedColVisibility = await get('v2_solidColVisibility');
         const savedColOrder = await get('v2_solidColOrder');
         
-        if (savedSidebarWidth) setSidebarWidth(savedSidebarWidth);
-        if (savedColWidths) setColWidths(prev => ({ ...prev, ...savedColWidths }));
+        if (savedSidebarWidth && !isNaN(savedSidebarWidth)) setSidebarWidth(savedSidebarWidth);
+        if (savedColWidths) {
+          const sanitized = { ...savedColWidths };
+          Object.keys(sanitized).forEach(k => {
+            if (isNaN(sanitized[k])) sanitized[k] = 100;
+          });
+          setColWidths(prev => ({ ...prev, ...sanitized }));
+        }
         if (savedColVisibility) setColVisibility(prev => ({ ...prev, ...savedColVisibility }));
         if (savedColOrder) {
           let updatedColOrder = savedColOrder;
@@ -1313,7 +1319,7 @@ export default function App() {
   const submitPlaylist = () => {
     if (newPlaylistName.trim()) {
       const newPlaylist: Playlist = { id: uuidv4(), name: newPlaylistName.trim().toUpperCase(), tracks: [] };
-      setPlaylists([...playlists, newPlaylist]);
+      setPlaylists([playlists[0], newPlaylist, ...playlists.slice(1)]);
       setActivePlaylistId(newPlaylist.id);
     }
     setIsCreatingPlaylist(false);
@@ -1418,7 +1424,7 @@ export default function App() {
     const onMove = (ev: MouseEvent) => {
       if (!sidebarResizing.current) return;
       const delta = ev.clientX - startX;
-      const newWidth = Math.max(120, Math.min(800, startWidth + delta));
+      const newWidth = Math.max(120, Math.min(800, (startWidth || 220) + delta));
       setSidebarWidth(newWidth);
     };
     const onUp = () => {
@@ -1783,7 +1789,7 @@ export default function App() {
                              >
                                 <div 
                                   className="absolute top-0 left-0 h-full transition-all duration-75 ease-linear pointer-events-none"
-                                  style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%`, backgroundColor: 'var(--theme-accent)' }}
+                                  style={{ width: `${duration && !isNaN(duration) && !isNaN(currentTime) ? (currentTime / duration) * 100 : 0}%`, backgroundColor: 'var(--theme-accent)' }}
                                 />
                              </div>
                           </div>
@@ -1890,7 +1896,7 @@ export default function App() {
                          >
                             <div 
                                className="absolute top-0 left-0 h-full transition-all duration-75 ease-linear pointer-events-none"
-                               style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%`, backgroundColor: 'var(--theme-accent)' }}
+                               style={{ width: `${duration && !isNaN(duration) && !isNaN(currentTime) ? (currentTime / duration) * 100 : 0}%`, backgroundColor: 'var(--theme-accent)' }}
                             />
                          </div>
                       </div>
@@ -2059,7 +2065,7 @@ export default function App() {
             >
               <div 
                 className="absolute top-0 left-0 h-full transition-all duration-75 ease-linear"
-                style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%`, backgroundColor: 'var(--theme-accent)' }}
+                style={{ width: `${duration && !isNaN(duration) && !isNaN(currentTime) ? (currentTime / duration) * 100 : 0}%`, backgroundColor: 'var(--theme-accent)' }}
               />
             </div>
           </div>
@@ -2257,11 +2263,19 @@ export default function App() {
         >
           <div className="border-b px-2 py-1 flex items-center justify-between h-8 shrink-0" style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)' }}>
             <span className="uppercase tracking-wider text-[11px]" style={{ color: 'var(--theme-textMuted)' }}>INDEX MAP</span>
+            <button 
+              onClick={() => { setIsCreatingPlaylist(true); setNewPlaylistName(''); }}
+              className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+              style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)' }}
+              title="CREATE LIST"
+            >
+              <Plus size={10} style={{ color: 'var(--theme-textMuted)' }} />
+            </button>
           </div>
           <div className="flex flex-col h-full overflow-y-auto w-full">
             {playlists.map((pl, plIdx) => (
+              <React.Fragment key={pl.id}>
               <div
-                key={pl.id}
                 draggable={pl.id !== 'all-tracks'}
                 onDragStart={(e) => handlePlaylistDragStart(e, pl.id)}
                 onDragOver={(e) => handlePlaylistDragOver(e, pl.id)}
@@ -2339,26 +2353,27 @@ export default function App() {
                   )}
                 </div>
               </div>
+
+              {/* Inline Create Playlist Input right after ALL TRACKS */}
+              {plIdx === 0 && isCreatingPlaylist && (
+                 <div className="flex flex-col gap-2 p-2 border-b" style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}>
+                    <input 
+                       type="text" 
+                       value={newPlaylistName}
+                       onChange={e => setNewPlaylistName(e.target.value)}
+                       placeholder="NAME..."
+                       className="w-full text-[10px] outline-none font-mono tracking-widest px-2 py-1"
+                       style={{ backgroundColor: 'var(--theme-bg)', color: 'var(--theme-textMain)', border: '1px solid var(--theme-border)' }}
+                       onKeyDown={e => { if (e.key === 'Enter') submitPlaylist(); else if (e.key === 'Escape') setIsCreatingPlaylist(false); }}
+                    />
+                    <div className="flex gap-1 justify-end">
+                       <button onClick={() => setIsCreatingPlaylist(false)} className="p-1 hover:opacity-80"><X size={12} style={{ color: 'var(--theme-textDim)' }}/></button>
+                       <button onClick={submitPlaylist} className="p-1 hover:opacity-80"><Check size={12} style={{ color: 'var(--theme-accent)' }}/></button>
+                    </div>
+                 </div>
+              )}
+              </React.Fragment>
             ))}
-            
-            {/* Inline Create Playlist Input */}
-            {isCreatingPlaylist && (
-               <div className="flex flex-col gap-2 p-2 border-b" style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}>
-                  <input 
-                     type="text" 
-                     value={newPlaylistName}
-                     onChange={e => setNewPlaylistName(e.target.value)}
-                     placeholder="NAME..."
-                     className="w-full text-[10px] outline-none font-mono tracking-widest px-2 py-1"
-                     style={{ backgroundColor: 'var(--theme-bg)', color: 'var(--theme-textMain)', border: '1px solid var(--theme-border)' }}
-                     onKeyDown={e => { if (e.key === 'Enter') submitPlaylist(); else if (e.key === 'Escape') setIsCreatingPlaylist(false); }}
-                  />
-                  <div className="flex gap-1 justify-end">
-                     <button onClick={() => setIsCreatingPlaylist(false)} className="p-1 hover:opacity-80"><X size={12} style={{ color: 'var(--theme-textDim)' }}/></button>
-                     <button onClick={submitPlaylist} className="p-1 hover:opacity-80"><Check size={12} style={{ color: 'var(--theme-accent)' }}/></button>
-                  </div>
-               </div>
-            )}
           </div>
           {/* Resize Handle */}
           <div
