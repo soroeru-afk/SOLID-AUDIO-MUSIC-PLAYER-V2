@@ -704,24 +704,9 @@ export default function App() {
 
   // --- Handlers ---
   const saveTrackEdit = async (trackId: string) => {
-    let updatedCoverUrl = '';
-    try {
-      if (editTitle || editArtist) {
-        let query = encodeURIComponent(`${editTitle} ${editArtist}`.trim());
-        const res = await fetch(`https://itunes.apple.com/search?term=${query}&entity=album&limit=1`);
-        const data = await res.json();
-        if (data.results && data.results.length > 0) {
-          // Get high-res cover art by replacing 100x100bb with a larger size
-          updatedCoverUrl = data.results[0].artworkUrl100?.replace('100x100bb', '600x600bb');
-        }
-      }
-    } catch (e) {
-      console.error("Failed to fetch cover art", e);
-    }
-
     setLibrary(prev => prev.map(t => {
       if (t.id === trackId) {
-        return { ...t, title: editTitle || t.title, artist: editArtist || t.artist, coverUrl: updatedCoverUrl || t.coverUrl };
+        return { ...t, title: editTitle || t.title, artist: editArtist || t.artist };
       }
       return t;
     }));
@@ -730,7 +715,7 @@ export default function App() {
       ...p,
       tracks: p.tracks.map(t => {
         if (t.id === trackId) {
-           return { ...t, title: editTitle || t.title, artist: editArtist || t.artist, coverUrl: updatedCoverUrl || t.coverUrl };
+           return { ...t, title: editTitle || t.title, artist: editArtist || t.artist };
         }
         return t;
       })
@@ -1514,11 +1499,17 @@ export default function App() {
         <div
           key={`${track.id}-${idx}`}
           onClick={(e) => {
+            if (editingTrackId === track.id) return;
             if (e.shiftKey || e.ctrlKey || e.metaKey) {
               toggleTrackSelection(e, track.id);
             } else {
-              if (!track.missing) playTrack(idx);
+              setSelectedTrackIds(new Set([track.id]));
+              lastSelectedTrackIdRef.current = track.id;
             }
+          }}
+          onDoubleClick={(e) => {
+             if (editingTrackId === track.id) return;
+             if (!track.missing) playTrack(idx);
           }}
           title={track.missing ? `このPCにファイルがありません: ${track.fileName}\nファイルをドラッグ&ドロップするか、フォルダを読み込んでください` : undefined}
           className="group flex items-center h-10 px-2 border-b transition-colors shrink-0 select-none"
@@ -1566,7 +1557,7 @@ export default function App() {
           </div>
           {/* Track Info with Inline Edit */}
           {editingTrackId === track.id ? (
-            <div className="flex-1 flex gap-2 pr-4 h-full items-center" onClick={e => e.stopPropagation()}>
+            <div className="flex-1 flex gap-2 pr-4 h-full items-center" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
               <input
                  type="text"
                  value={editTitle}
@@ -1584,7 +1575,7 @@ export default function App() {
                  style={{ borderColor: 'var(--theme-borderActive)', color: 'var(--theme-textMain)', fontSize: 'var(--list-font-size)' }}
                  onKeyDown={e => { if (e.key === 'Enter') saveTrackEdit(track.id); }}
               />
-              <button onClick={() => saveTrackEdit(track.id)} className="px-1" title="Save & Fetch Art" style={{ color: 'var(--theme-accent)' }}><Check size={12} /></button>
+              <button onClick={() => saveTrackEdit(track.id)} className="px-1" title="Save" style={{ color: 'var(--theme-accent)' }}><Check size={12} /></button>
               <button title="Remove Artwork" onClick={(e) => removeArtwork(e, track.id)} className="px-1" style={{ color: 'var(--theme-textDim)' }}><Trash2 size={12} /></button>
               <button onClick={() => setEditingTrackId(null)} className="px-1" title="Cancel" style={{ color: 'var(--theme-textDim)' }}><X size={12} /></button>
             </div>
@@ -1635,7 +1626,7 @@ export default function App() {
           {colVisibility.actions && (
             <div className="w-24 flex-shrink-0 flex items-center justify-end gap-1 transition-opacity pr-2">
               {editingTrackId !== track.id && (
-                  <button onClick={(e) => startEditTrack(e, track)} title="Edit Info & Fetch Artwork" className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95" style={{ backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-borderActive)', color: iconColor }}>
+                  <button onClick={(e) => startEditTrack(e, track)} title="Edit Info" className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95" style={{ backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-borderActive)', color: iconColor }}>
                     <Palette size={10} />
                   </button>
               )}
@@ -2276,7 +2267,7 @@ export default function App() {
             {playlists.map((pl, plIdx) => (
               <React.Fragment key={pl.id}>
               <div
-                draggable={pl.id !== 'all-tracks'}
+                draggable={pl.id !== 'all-tracks' && renamingPlaylistId !== pl.id}
                 onDragStart={(e) => handlePlaylistDragStart(e, pl.id)}
                 onDragOver={(e) => handlePlaylistDragOver(e, pl.id)}
                 onDrop={(e) => handlePlaylistDrop(e, pl.id)}
@@ -2288,7 +2279,7 @@ export default function App() {
                     setRenamingPlaylistName(pl.name);
                   }
                 }}
-                className={`text-left px-3 py-2 tracking-widest flex items-center justify-between border-b transition-colors cursor-pointer group ${pl.id !== 'all-tracks' ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                className={`text-left px-3 py-2 tracking-widest flex items-center justify-between border-b transition-colors cursor-pointer group ${pl.id !== 'all-tracks' && renamingPlaylistId !== pl.id ? 'cursor-grab active:cursor-grabbing' : ''}`}
                 style={{
                   backgroundColor: activePlaylistId === pl.id ? 'var(--theme-accentMuted)' : (dragOverPlaylistId === pl.id ? 'var(--theme-surfaceLighter)' : 'transparent'),
                   borderBottomColor: dragOverPlaylistId === pl.id ? 'var(--theme-accent)' : 'var(--theme-border)',
@@ -2299,7 +2290,7 @@ export default function App() {
                 }}
               >
                 {renamingPlaylistId === pl.id ? (
-                  <div className="flex-1 flex gap-2 mr-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex-1 flex gap-2 mr-2" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
                     <input
                       autoFocus
                       type="text"
