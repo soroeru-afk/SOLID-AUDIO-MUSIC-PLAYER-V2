@@ -3,7 +3,7 @@ import {
   Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, VolumeX,
   FolderOpen, ListMusic, Plus, Search, ChevronUp, ChevronDown, 
   ChevronsUp, ChevronsDown, Palette, Activity, Check, X, Trash2, ListPlus, AlertCircle,
-  Minimize2, Maximize2, Layers, Minus, PanelTop, GripVertical, Type
+  Minimize2, Maximize2, Layers, Minus, PanelTop, GripVertical, Type, Eye, EyeOff
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { get, set } from 'idb-keyval';
@@ -66,14 +66,14 @@ const THEMES = [
     bg: '#e8ecef', 
     surface: '#f4f6f8',
     surfaceLighter: '#ffffff',
-    border: '#c0cbd3', 
-    borderActive: '#8c9ead',
-    textMain: '#2c3b4a',
-    textMuted: '#5d7386',
-    textDim: '#8ea3b5',
-    accent: '#34495e',
-    accentDark: '#22303d',
-    accentMuted: '#d1dadd'
+    border: '#9ba9b5', 
+    borderActive: '#617789',
+    textMain: '#111a24',
+    textMuted: '#3a4d5e',
+    textDim: '#637b8f',
+    accent: '#213040',
+    accentDark: '#121c26',
+    accentMuted: '#b8c5ce'
   },
   { 
     id: 'BROWN', 
@@ -181,11 +181,26 @@ export default function App() {
   const [themeIndex, setThemeIndex] = useState(0);
   const [listFontSize, setListFontSize] = useState<number>(11);
   const [colWidths, setColWidths] = useState({
+    index: 96,
+    art: 40,
+    trackNumber: 48,
     fileName: 180,
     title: 300,
     artist: 180,
     album: 180
   });
+  const [colVisibility, setColVisibility] = useState({
+    art: true,
+    fileName: true,
+    trackNumber: true,
+    title: true,
+    artist: true,
+    album: true,
+    actions: true
+  });
+  const [colOrder, setColOrder] = useState<string[]>([
+    'fileName', 'trackNumber', 'title', 'artist', 'album'
+  ]);
   const colResizing = useRef<{ key: string, startX: number, startWidth: number } | null>(null);
   
   type SortKey = 'title' | 'artist' | 'album' | 'fileName' | 'trackNumber' | 'none';
@@ -215,6 +230,7 @@ export default function App() {
   const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
+  const [showColMenu, setShowColMenu] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState({ done: 0, total: 0 });
@@ -311,34 +327,8 @@ export default function App() {
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   };
 
-  const lastFullSize = useRef({ w: 1400, h: 900 });
-  const hasResized = useRef(false);
-
   useEffect(() => {
     setPlayerOffset({ x: 0, y: 0 });
-    try {
-      if (viewMode === 'mini') {
-        // Save current window size if it's large enough (likely full mode)
-        if (window.innerWidth > 500 && window.innerHeight > 300) {
-           lastFullSize.current = { w: window.outerWidth, h: window.outerHeight };
-        }
-        hasResized.current = true;
-        window.resizeTo(400, 800);
-      } else if (viewMode === 'slim') {
-        if (window.innerWidth > 500 && window.innerHeight > 300) {
-           lastFullSize.current = { w: window.outerWidth, h: window.outerHeight };
-        }
-        hasResized.current = true;
-        window.resizeTo(800, 150);
-      } else {
-        // Restore previous full window size ONLY if we changed modes during this session
-        if (hasResized.current) {
-          window.resizeTo(lastFullSize.current.w, lastFullSize.current.h);
-        }
-      }
-    } catch (e) {
-      console.warn("Window resize not supported in this environment");
-    }
   }, [viewMode]);
 
   // Load from IndexedDB
@@ -351,12 +341,21 @@ export default function App() {
         const savedColWidths = await get('v2_solidColWidths');
         const savedThemeIndex = await get('v2_solidThemeIndex');
         const savedListFontSize = await get('v2_solidListFontSize');
+        const savedColVisibility = await get('v2_solidColVisibility');
+        const savedColOrder = await get('v2_solidColOrder');
         
         if (savedSidebarWidth) setSidebarWidth(savedSidebarWidth);
-        if (savedColWidths) setColWidths(savedColWidths);
+        if (savedColWidths) setColWidths(prev => ({ ...prev, ...savedColWidths }));
+        if (savedColVisibility) setColVisibility(prev => ({ ...prev, ...savedColVisibility }));
+        if (savedColOrder) {
+          let updatedColOrder = savedColOrder;
+          updatedColOrder = updatedColOrder.filter(c => c !== 'art');
+          setColOrder(updatedColOrder);
+        } else {
+          setColOrder(['fileName', 'trackNumber', 'title', 'artist', 'album']);
+        }
         if (savedListFontSize !== undefined) setListFontSize(savedListFontSize);
         if (savedThemeIndex !== undefined) setThemeIndex(savedThemeIndex);
-        if (savedListFontSize !== undefined) setListFontSize(savedListFontSize);
         
         if (savedLibrary && savedPlaylists) {
           const libraryMap = new Map<string, Track>();
@@ -404,12 +403,14 @@ export default function App() {
         set('v2_solidPlaylists', playlists).catch(console.error);
         set('v2_solidSidebarWidth', sidebarWidth).catch(console.error);
         set('v2_solidColWidths', colWidths).catch(console.error);
+        set('v2_solidColVisibility', colVisibility).catch(console.error);
+        set('v2_solidColOrder', colOrder).catch(console.error);
         set('v2_solidThemeIndex', themeIndex).catch(console.error);
         set('v2_solidListFontSize', listFontSize).catch(console.error);
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [library, playlists, sidebarWidth, colWidths, themeIndex, listFontSize, isInitialized]);
+  }, [library, playlists, sidebarWidth, colWidths, colVisibility, colOrder, themeIndex, listFontSize, isInitialized]);
 
 
   // Player state
@@ -1410,9 +1411,10 @@ export default function App() {
     colResizing.current = { key, startX: e.clientX, startWidth: colWidths[key] };
     const onMove = (ev: MouseEvent) => {
       if (!colResizing.current) return;
+      const resizeKey = colResizing.current.key;
       const delta = ev.clientX - colResizing.current.startX;
-      const newWidth = Math.max(50, colResizing.current.startWidth + delta);
-      setColWidths(prev => ({ ...prev, [colResizing.current!.key]: newWidth }));
+      const newWidth = Math.max(20, colResizing.current.startWidth + delta);
+      setColWidths(prev => ({ ...prev, [resizeKey]: newWidth }));
     };
     const onUp = () => {
       colResizing.current = null;
@@ -1421,6 +1423,34 @@ export default function App() {
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+  };
+
+  const handleColDragStart = (e: React.DragEvent, colName: string) => {
+    e.dataTransfer.setData('text/plain', colName);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleColDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleColDrop = (e: React.DragEvent, targetCol: string) => {
+    e.preventDefault();
+    const sourceCol = e.dataTransfer.getData('text/plain');
+    if (sourceCol && sourceCol !== targetCol) {
+      setColOrder(prev => {
+        const newOrder = [...prev];
+        const sourceIdx = newOrder.indexOf(sourceCol);
+        const targetIdx = newOrder.indexOf(targetCol);
+        if (sourceIdx !== -1 && targetIdx !== -1) {
+          newOrder.splice(sourceIdx, 1);
+          newOrder.splice(targetIdx, 0, sourceCol);
+          return newOrder;
+        }
+        return prev;
+      });
+    }
   };
 
   // CSS Variables
@@ -1471,41 +1501,37 @@ export default function App() {
           onMouseEnter={e => { if (!isActive && !isSelected) e.currentTarget.style.backgroundColor = 'var(--theme-surface)'; }}
           onMouseLeave={e => { if (!isActive && !isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}
         >
-          <div className="w-8 flex-shrink-0 flex items-center justify-center" onClick={(e) => toggleTrackSelection(e, track.id)}>
-              <div 
-                  className="w-3 h-3 flex items-center justify-center border transition-colors"
-                  style={{ 
-                      backgroundColor: isSelected ? 'var(--theme-accent)' : 'transparent',
-                      borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-border)'
-                  }}
-              >
-                  {isSelected && <Check size={8} className="text-white" />}
+          <div className="flex items-center h-full flex-shrink-0" style={{ width: colWidths.index }}>
+            <div className="w-8 flex-shrink-0 flex items-center justify-center" onClick={(e) => toggleTrackSelection(e, track.id)}>
+                <div 
+                    className="w-3 h-3 flex items-center justify-center border transition-colors"
+                    style={{ 
+                        backgroundColor: isSelected ? 'var(--theme-accent)' : 'transparent',
+                        borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-border)'
+                    }}
+                >
+                    {isSelected && <Check size={8} className="text-white" />}
+                </div>
+            </div>
+            <div className="w-8 flex-shrink-0 flex items-center justify-center relative" style={{ color: 'var(--theme-textDim)' }}>
+              {isActive ? (
+                 <div className="absolute w-[6px] h-[6px] rounded-full" style={{ backgroundColor: 'var(--theme-accent)', boxShadow: `0 0 8px var(--theme-accent)` }}></div>
+              ) : (
+                <span style={{ fontSize: '11px' }}>{(idx + 1).toString().padStart(2, '0')}</span>
+              )}
+            </div>
+            {colVisibility.art && (
+              <div className="w-8 flex-shrink-0 flex items-center relative overflow-hidden" style={{ opacity: track.missing ? 0.5 : 1 }}>
+                {track.coverUrl ? (
+                   <img src={track.coverUrl} className="w-[28px] h-[28px] object-cover border" style={{ borderColor: 'var(--theme-border)' }} alt="" />
+                ) : (
+                   <div className="w-[28px] h-[28px] border flex items-center justify-center" style={{ borderColor: track.missing ? 'var(--theme-accent)' : 'var(--theme-border)', backgroundColor: 'var(--theme-bg)' }}>
+                     <Activity size={8} style={{ color: 'var(--theme-textDim)' }} />
+                   </div>
+                )}
               </div>
-          </div>
-          <div className="w-8 flex-shrink-0 flex items-center justify-center relative" style={{ color: 'var(--theme-textDim)' }}>
-            {isActive ? (
-               <div className="absolute w-[6px] h-[6px] rounded-full" style={{ backgroundColor: 'var(--theme-accent)', boxShadow: `0 0 8px var(--theme-accent)` }}></div>
-            ) : (
-              <span style={{ fontSize: 'var(--list-font-size-xs)' }}>{(idx + 1).toString().padStart(2, '0')}</span>
             )}
           </div>
-
-          {/* List Album Art Small */}
-          <div 
-            className="w-8 h-8 flex-shrink-0 mr-3 border flex items-center justify-center overflow-hidden relative"
-            style={{ 
-              borderColor: track.missing ? 'var(--theme-accent)' : 'var(--theme-border)', 
-              backgroundColor: 'var(--theme-bg)',
-              opacity: track.missing ? 0.5 : 1
-            }}
-          >
-             {track.coverUrl ? (
-                <img src={track.coverUrl} className="w-full h-full object-cover" alt="" />
-             ) : (
-                <Activity size={10} style={{ color: 'var(--theme-textDim)' }} />
-             )}
-          </div>
-          
           {/* Track Info with Inline Edit */}
           {editingTrackId === track.id ? (
             <div className="flex-1 flex gap-2 pr-4 h-full items-center" onClick={e => e.stopPropagation()}>
@@ -1531,32 +1557,56 @@ export default function App() {
               <button onClick={() => setEditingTrackId(null)} className="px-1" title="Cancel" style={{ color: 'var(--theme-textDim)' }}><X size={12} /></button>
             </div>
           ) : (
-            <div className="flex items-center gap-3">
-              <div className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.fileName, color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-sm)' }} title={track.fileName}>
-                {track.fileName}
-              </div>
-              <div className="w-10 flex-shrink-0 text-center font-mono opacity-80" style={{ fontSize: 'var(--list-font-size-sm)' }}>
-                {track.trackNumber || '-'}
-              </div>
-              <div className="flex-shrink-0 min-w-0 pr-2 truncate font-bold font-mono tracking-wide" style={{ width: colWidths.title, color: 'var(--theme-textMain)', fontSize: 'var(--list-font-size)' }} title={track.title}>
-                {track.title}
-              </div>
-              <div className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.artist, color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-sm)' }} title={track.artist}>
-                {track.artist}
-              </div>
-              <div className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.album, color: 'var(--theme-textDim)', fontSize: 'var(--list-font-size-sm)' }} title={track.album}>
-                {track.album}
-              </div>
+            <div className="flex items-center gap-3 pl-3">
+              {colOrder.map(col => {
+
+                if (col === 'fileName' && colVisibility.fileName) {
+                  return (
+                    <div key="fileName" className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.fileName, color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-sm)' }} title={track.fileName}>
+                      {track.fileName}
+                    </div>
+                  );
+                }
+                if (col === 'trackNumber' && colVisibility.trackNumber) {
+                  return (
+                    <div key="trackNumber" className="flex-shrink-0 text-center font-mono opacity-80" style={{ width: colWidths.trackNumber, fontSize: 'var(--list-font-size-sm)' }}>
+                      {track.trackNumber ? track.trackNumber.toString().padStart(2, '0') : '-'}
+                    </div>
+                  );
+                }
+                if (col === 'title' && colVisibility.title) {
+                  return (
+                    <div key="title" className="flex-shrink-0 min-w-0 pr-2 truncate font-bold font-mono tracking-wide" style={{ width: colWidths.title, color: 'var(--theme-textMain)', fontSize: 'var(--list-font-size)' }} title={track.title}>
+                      {track.title}
+                    </div>
+                  );
+                }
+                if (col === 'artist' && colVisibility.artist) {
+                  return (
+                    <div key="artist" className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.artist, color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-sm)' }} title={track.artist}>
+                      {track.artist}
+                    </div>
+                  );
+                }
+                if (col === 'album' && colVisibility.album) {
+                  return (
+                    <div key="album" className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.album, color: 'var(--theme-textDim)', fontSize: 'var(--list-font-size-sm)' }} title={track.album}>
+                      {track.album}
+                    </div>
+                  );
+                }
+                return null;
+              })}
             </div>
           )}
-
           {/* Explicit Reordering Tools */}
-          <div className="w-24 flex-shrink-0 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity pr-2">
-            {editingTrackId !== track.id && (
-                <button onClick={(e) => startEditTrack(e, track)} title="Edit Info & Fetch Artwork" className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95" style={{ backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-borderActive)', color: iconColor }}>
-                  <Palette size={10} />
-                </button>
-            )}
+          {colVisibility.actions && (
+            <div className="w-24 flex-shrink-0 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity pr-2">
+              {editingTrackId !== track.id && (
+                  <button onClick={(e) => startEditTrack(e, track)} title="Edit Info & Fetch Artwork" className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95" style={{ backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-borderActive)', color: iconColor }}>
+                    <Palette size={10} />
+                  </button>
+              )}
             <button 
               onClick={(e) => moveTrack(e, idx, 0)} 
               title={activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '先頭へ移動'} 
@@ -1594,10 +1644,11 @@ export default function App() {
               <ChevronsDown size={10} />
             </button>
           </div>
+          )}
         </div>
       );
     });
-  }, [displayTracks, activePlaylistId, playingPlaylistId, currentTrackIndex, currentTrack?.id, selectedTrackIds, editingTrackId, editTitle, editArtist, iconColor, activeSortConfig.key, colWidths]);
+  }, [displayTracks, activePlaylistId, playingPlaylistId, currentTrackIndex, currentTrack?.id, selectedTrackIds, editingTrackId, editTitle, editArtist, iconColor, activeSortConfig.key, colWidths, colVisibility]);
 
   // Replace old PanelBlock definition location
   return (
@@ -1751,7 +1802,7 @@ export default function App() {
                 ) : (
                     <div className="p-12 flex flex-col items-center justify-center gap-4 text-center">
                        <Activity size={32} style={{ color: 'var(--theme-textDim)' }} />
-                       <p className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--theme-textMuted)' }}>NO TRACK SELECTED</p>
+                       <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--theme-textMuted)' }}>NO TRACK SELECTED</p>
                     </div>
                 )}
              </div>
@@ -1888,7 +1939,7 @@ export default function App() {
             className="flex items-center gap-3 border h-6 px-3"
             style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}
           >
-            <span className="text-[9px] uppercase tracking-widest font-bold" style={{ color: 'var(--theme-textMuted)' }}>SIZE</span>
+            <span className="text-[9px] uppercase tracking-wider font-bold" style={{ color: 'var(--theme-textMuted)' }}>SIZE</span>
             <input
               type="range"
               min="9"
@@ -1897,7 +1948,7 @@ export default function App() {
               onChange={(e) => setListFontSize(parseInt(e.target.value))}
               className="w-20 sq-slider"
             />
-            <span className="text-[9px] uppercase tracking-widest font-mono" style={{ color: 'var(--theme-accent)', width: '24px', textAlign: 'right' }}>{listFontSize}PX</span>
+            <span className="text-[9px] uppercase tracking-wider font-mono" style={{ color: 'var(--theme-accent)', width: '24px', textAlign: 'right' }}>{listFontSize}PX</span>
           </div>
 
           <button 
@@ -1908,7 +1959,7 @@ export default function App() {
             onMouseLeave={e => e.currentTarget.style.color = 'var(--theme-textMuted)'}
           >
             <Palette size={12} />
-            <span className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--theme-accent)' }}>THEME: {theme.id}</span>
+            <span className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--theme-accent)' }}>THEME: {theme.id}</span>
           </button>
           <div className="text-xs tracking-widest font-mono" style={{ color: 'var(--theme-textMuted)' }}>v2.0.8 OS</div>
         </div>
@@ -2179,7 +2230,7 @@ export default function App() {
           onDrop={handleDrop}
         >
           <div className="border-b px-2 py-1 flex items-center justify-between h-8 shrink-0" style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)' }}>
-            <span className="uppercase tracking-widest" style={{ color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-sm)' }}>INDEX MAP</span>
+            <span className="uppercase tracking-wider text-[11px]" style={{ color: 'var(--theme-textMuted)' }}>INDEX MAP</span>
           </div>
           <div className="flex flex-col h-full overflow-y-auto w-full">
             {playlists.map((pl, plIdx) => (
@@ -2204,7 +2255,7 @@ export default function App() {
                   borderLeft: `2px solid ${activePlaylistId === pl.id ? 'var(--theme-accent)' : 'transparent'}`,
                   color: activePlaylistId === pl.id ? 'var(--theme-textMain)' : 'var(--theme-textMuted)',
                   opacity: draggedPlaylistId === pl.id ? 0.5 : 1,
-                  fontSize: 'var(--list-font-size-sm)'
+                  fontSize: 'var(--list-font-size)'
                 }}
               >
                 {renamingPlaylistId === pl.id ? (
@@ -2308,8 +2359,8 @@ export default function App() {
           <div className="border-b px-3 py-1 flex items-center h-8 justify-between shrink-0" style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)' }}>
              <div className="flex items-center gap-4">
                <div className="flex items-center gap-2">
-                 <span className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--theme-textMain)' }}>VIEW:</span>
-                 <span className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--theme-accent)' }}>{activePlaylist.name}</span>
+                 <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--theme-textMain)' }}>VIEW:</span>
+                 <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--theme-accent)' }}>{activePlaylist.name}</span>
                </div>
                
                {displayTracks.length > 0 && (
@@ -2322,7 +2373,7 @@ export default function App() {
                             setSelectedTrackIds(new Set(displayTracks.map(t => t.id)));
                         }
                      }}
-                     className="flex items-center gap-1 text-[9px] uppercase tracking-widest transition-colors hover:opacity-80 active:scale-95"
+                     className="flex items-center gap-1 text-[9px] uppercase tracking-wider transition-colors hover:opacity-80 active:scale-95"
                      style={{ color: selectedTrackIds.size > 0 ? 'var(--theme-accent)' : 'var(--theme-textMuted)' }}
                    >
                      {selectedTrackIds.size === displayTracks.length ? <Check size={10} /> : selectedTrackIds.size > 0 ? <Minus size={10} /> : <div className="w-[10px] h-[10px] border rounded-[1px]" style={{ borderColor: 'currentcolor' }}></div>}
@@ -2333,7 +2384,7 @@ export default function App() {
                        <div className="relative">
                          <button 
                            onClick={() => setShowAddToPlaylist(!showAddToPlaylist)}
-                           className="flex items-center gap-1 text-[9px] uppercase tracking-widest transition-colors hover:opacity-80 active:scale-95"
+                           className="flex items-center gap-1 text-[9px] uppercase tracking-wider transition-colors hover:opacity-80 active:scale-95"
                            style={{ color: 'var(--theme-textMain)' }}
                          >
                            <ListPlus size={10} style={{ color: 'var(--theme-accent)' }} />
@@ -2345,7 +2396,7 @@ export default function App() {
                                   <button 
                                      key={p.id}
                                      onClick={() => handleAddSelectedToPlaylist(p.id)}
-                                     className="text-left px-2 py-1.5 text-[9px] uppercase tracking-widest hover:opacity-80 transition-colors"
+                                     className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider hover:opacity-80 transition-colors"
                                      style={{ color: 'var(--theme-textMain)' }}
                                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'}
                                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -2354,7 +2405,7 @@ export default function App() {
                                   </button>
                                ))}
                                {playlists.length === 1 && (
-                                  <div className="px-2 py-1 text-[9px] uppercase tracking-widest opacity-50 text-center" style={{ color: 'var(--theme-textMuted)' }}>NO CUSTOM VIEWS</div>
+                                  <div className="px-2 py-1 text-[9px] uppercase tracking-wider opacity-50 text-center" style={{ color: 'var(--theme-textMuted)' }}>NO CUSTOM VIEWS</div>
                                )}
                             </div>
                          )}
@@ -2362,7 +2413,7 @@ export default function App() {
                        
                        <button 
                          onClick={deleteSelectedTracks}
-                         className="flex items-center gap-1 text-[9px] uppercase tracking-widest transition-colors hover:opacity-80 active:scale-95"
+                         className="flex items-center gap-1 text-[9px] uppercase tracking-wider transition-colors hover:opacity-80 active:scale-95"
                          style={{ color: 'var(--theme-textMain)' }}
                        >
                          <Trash2 size={10} style={{ color: 'var(--theme-accent)' }} />
@@ -2374,10 +2425,34 @@ export default function App() {
                )}
              </div>
             <div className="flex items-center gap-3 shrink-0">
+               <div className="relative">
+                 <button
+                   onClick={() => setShowColMenu(!showColMenu)}
+                   className="flex items-center gap-1 text-[9px] uppercase tracking-wider border px-2 py-0.5 transition-colors hover:opacity-80 active:scale-95"
+                   style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)', backgroundColor: showColMenu ? 'var(--theme-surfaceLighter)' : 'transparent' }}
+                   title="表示項目の設定"
+                 >
+                   <Eye size={9} />
+                   COLUMNS
+                 </button>
+                 {showColMenu && (
+                   <div className="absolute top-full right-0 mt-2 w-36 border z-50 flex flex-col p-1 shadow-lg" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }}>
+                     {(Object.keys(colVisibility) as (keyof typeof colVisibility)[]).map(key => {
+                       const labelMap = { art: 'アルバムアート', fileName: '名前', trackNumber: '#No', title: 'タイトル', artist: 'アーティスト', album: 'アルバム', actions: '操作' };
+                       return (
+                         <label key={key} className="flex items-center gap-2 px-2 py-1.5 cursor-pointer hover:opacity-80 transition-colors" style={{ color: 'var(--theme-textMain)' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                           <input type="checkbox" className="accent-[var(--theme-accent)] w-3 h-3" checked={colVisibility[key]} onChange={(e) => setColVisibility(prev => ({ ...prev, [key]: e.target.checked }))} />
+                           <span className="text-[9px] uppercase tracking-wider mt-[1px]">{labelMap[key]}</span>
+                         </label>
+                       );
+                     })}
+                   </div>
+                 )}
+               </div>
                {activeSortConfig.key !== 'none' && (
                  <button
                    onClick={() => handleSort(activeSortConfig.key as any)}
-                   className="flex items-center gap-1 text-[9px] uppercase tracking-widest border px-2 py-0.5 transition-colors hover:opacity-80 active:scale-95"
+                   className="flex items-center gap-1 text-[9px] uppercase tracking-wider border px-2 py-0.5 transition-colors hover:opacity-80 active:scale-95"
                    style={{ borderColor: 'var(--theme-borderActive)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}
                    title="ソートを解除して手動並べ替えを有効にする"
                  >
@@ -2432,63 +2507,94 @@ export default function App() {
             <div className="flex flex-col h-full overflow-auto relative">
               <div className="min-w-max flex flex-col min-h-full">
                 {/* List Header */}
-                <div className="flex items-center uppercase tracking-widest px-2 h-8 border-b shrink-0 sticky top-0 z-20" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-xs)' }}>
-                  <div className="w-10 flex-shrink-0 text-center">#</div>
-                  <div className="w-8 mr-3 text-center">ART</div>
-                  <div className="flex items-center gap-3">
-                    {/* fileName */}
-                    <div className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.fileName }}>
-                      <div onClick={() => handleSort('fileName')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                        <span className="truncate">名前</span>
-                        {activeSortConfig.key === 'fileName' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
-                      </div>
-                      <div onMouseDown={(e) => handleColMouseDown(e, 'fileName')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
-                        <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
-                      </div>
+                <div className="flex items-center uppercase tracking-normal px-2 h-8 border-b shrink-0 sticky top-0 z-20 text-[10px]" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMuted)' }}>
+                  <div className="relative flex-shrink-0 flex items-center h-full" style={{ width: colWidths.index }}>
+                    <div className="w-8 flex-shrink-0 flex items-center justify-center"></div>
+                    <div className="w-8 flex-shrink-0 flex items-center justify-center text-[var(--theme-textDim)]">
+                      #
                     </div>
-
-                    {/* trackNumber */}
-                    <div onClick={() => handleSort('trackNumber')} className="w-10 flex-shrink-0 flex items-center justify-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                      #No
-                      {activeSortConfig.key === 'trackNumber' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} /> : <ChevronDown size={10} />)}
-                    </div>
-
-                    {/* title */}
-                    <div className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.title }}>
-                      <div onClick={() => handleSort('title')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                        <span className="truncate">タイトル</span>
-                        {activeSortConfig.key === 'title' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
+                    {colVisibility.art && (
+                      <div className="w-8 flex-shrink-0 flex items-center pl-1 text-[var(--theme-textDim)]">
+                        ART
                       </div>
-                      <div onMouseDown={(e) => handleColMouseDown(e, 'title')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
-                        <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
-                      </div>
-                    </div>
-
-                    {/* artist */}
-                    <div className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.artist }}>
-                      <div onClick={() => handleSort('artist')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                        <span className="truncate">参加アーティスト</span>
-                        {activeSortConfig.key === 'artist' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
-                      </div>
-                      <div onMouseDown={(e) => handleColMouseDown(e, 'artist')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
-                        <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
-                      </div>
-                    </div>
-
-                    {/* album */}
-                    <div className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.album }}>
-                      <div onClick={() => handleSort('album')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                        <span className="truncate">アルバム</span>
-                        {activeSortConfig.key === 'album' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
-                      </div>
-                      <div onMouseDown={(e) => handleColMouseDown(e, 'album')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
-                        <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
-                      </div>
+                    )}
+                    <div onMouseDown={(e) => handleColMouseDown(e, 'index')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
+                      <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
                     </div>
                   </div>
-                  <div className="w-24 flex-shrink-0 text-center ml-auto">操作</div>
-                </div>
+                  <div className="flex items-center gap-3 pl-3">
+                    {colOrder.map(col => {
 
+                      if (col === 'fileName' && colVisibility.fileName) {
+                        return (
+                          <div key="fileName" draggable onDragStart={(e) => handleColDragStart(e, 'fileName')} onDragOver={handleColDragOver} onDrop={(e) => handleColDrop(e, 'fileName')} className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.fileName }}>
+                            <div onClick={() => handleSort('fileName')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
+                              <span className="truncate">名前</span>
+                              {activeSortConfig.key === 'fileName' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
+                            </div>
+                            <div onMouseDown={(e) => handleColMouseDown(e, 'fileName')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
+                              <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (col === 'trackNumber' && colVisibility.trackNumber) {
+                        return (
+                          <div key="trackNumber" draggable onDragStart={(e) => handleColDragStart(e, 'trackNumber')} onDragOver={handleColDragOver} onDrop={(e) => handleColDrop(e, 'trackNumber')} className="relative flex-shrink-0 flex items-center justify-center" style={{ width: colWidths.trackNumber }}>
+                            <div onClick={() => handleSort('trackNumber')} className="flex-1 min-w-0 flex items-center justify-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
+                              #No
+                              {activeSortConfig.key === 'trackNumber' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
+                            </div>
+                            <div onMouseDown={(e) => handleColMouseDown(e, 'trackNumber')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
+                              <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (col === 'title' && colVisibility.title) {
+                        return (
+                          <div key="title" draggable onDragStart={(e) => handleColDragStart(e, 'title')} onDragOver={handleColDragOver} onDrop={(e) => handleColDrop(e, 'title')} className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.title }}>
+                            <div onClick={() => handleSort('title')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
+                              <span className="truncate">タイトル</span>
+                              {activeSortConfig.key === 'title' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
+                            </div>
+                            <div onMouseDown={(e) => handleColMouseDown(e, 'title')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
+                              <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (col === 'artist' && colVisibility.artist) {
+                        return (
+                          <div key="artist" draggable onDragStart={(e) => handleColDragStart(e, 'artist')} onDragOver={handleColDragOver} onDrop={(e) => handleColDrop(e, 'artist')} className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.artist }}>
+                            <div onClick={() => handleSort('artist')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
+                              <span className="truncate">参加アーティスト</span>
+                              {activeSortConfig.key === 'artist' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
+                            </div>
+                            <div onMouseDown={(e) => handleColMouseDown(e, 'artist')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
+                              <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (col === 'album' && colVisibility.album) {
+                        return (
+                          <div key="album" draggable onDragStart={(e) => handleColDragStart(e, 'album')} onDragOver={handleColDragOver} onDrop={(e) => handleColDrop(e, 'album')} className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.album }}>
+                            <div onClick={() => handleSort('album')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
+                              <span className="truncate">アルバム</span>
+                              {activeSortConfig.key === 'album' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
+                            </div>
+                            <div onMouseDown={(e) => handleColMouseDown(e, 'album')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
+                              <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })}
+                  </div>
+                  {colVisibility.actions && <div className="w-24 flex-shrink-0 text-center">操作</div>}
+                </div>
                 {/* List Items */}
                 <div className="flex flex-col flex-1 pb-4">
                   {memoizedTrackList}
