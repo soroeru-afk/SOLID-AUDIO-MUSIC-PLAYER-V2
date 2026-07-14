@@ -1601,7 +1601,7 @@ export default function App() {
           )}
           {/* Explicit Reordering Tools */}
           {colVisibility.actions && (
-            <div className="w-24 flex-shrink-0 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity pr-2">
+            <div className="w-24 flex-shrink-0 flex items-center justify-end gap-1 transition-opacity pr-2">
               {editingTrackId !== track.id && (
                   <button onClick={(e) => startEditTrack(e, track)} title="Edit Info & Fetch Artwork" className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95" style={{ backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-borderActive)', color: iconColor }}>
                     <Palette size={10} />
