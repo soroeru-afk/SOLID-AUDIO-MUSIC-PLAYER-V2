@@ -574,6 +574,17 @@ export default function App() {
   const isLightTheme = theme.id === 'LIGHT';
   const iconColor = isLightTheme ? '#1a2530' : '#ffffff';
   
+  // Dynamically update browser theme-color meta tag
+  useEffect(() => {
+    let metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (!metaThemeColor) {
+      metaThemeColor = document.createElement('meta');
+      metaThemeColor.setAttribute('name', 'theme-color');
+      document.head.appendChild(metaThemeColor);
+    }
+    metaThemeColor.setAttribute('content', theme.bg);
+  }, [theme]);
+
   // Refs for visualizer to prevent loop restarts
   const visualizerActive = useRef(isPlaying);
   visualizerActive.current = isPlaying;
