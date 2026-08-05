@@ -369,6 +369,10 @@ export default function App() {
         const savedListFontSize = await get('v2_solidListFontSize');
         const savedColVisibility = await get('v2_solidColVisibility');
         const savedColOrder = await get('v2_solidColOrder');
+        const savedActivePlaylistId = await get('v2_solidActivePlaylistId');
+        const savedPlayingPlaylistId = await get('v2_solidPlayingPlaylistId');
+        const savedPlaybackQueueIds = await get('v2_solidPlaybackQueueIds');
+        const savedCurrentTrackIndex = await get('v2_solidCurrentTrackIndex');
         
         if (savedSidebarWidth && !isNaN(savedSidebarWidth)) setSidebarWidth(savedSidebarWidth);
         if (savedColWidths) {
@@ -387,6 +391,7 @@ export default function App() {
           setColOrder(['fileName', 'trackNumber', 'title', 'artist', 'album']);
         }
         if (savedListFontSize !== undefined) setListFontSize(savedListFontSize);
+        if (savedActivePlaylistId) setActivePlaylistId(savedActivePlaylistId);
         if (savedThemeIndex !== undefined) setThemeIndex(savedThemeIndex);
         
         if (savedLibrary && savedPlaylists) {
@@ -416,6 +421,15 @@ export default function App() {
             tracks: p.tracks.map((pt: Track) => libraryMap.get(pt.id)).filter(Boolean) as Track[]
           }));
           setPlaylists(validPlaylists);
+          
+          if (savedPlayingPlaylistId) setPlayingPlaylistId(savedPlayingPlaylistId);
+          if (savedPlaybackQueueIds && Array.isArray(savedPlaybackQueueIds)) {
+            const restoredQueue = savedPlaybackQueueIds.map((id: string) => libraryMap.get(id)).filter(Boolean) as Track[];
+            setPlaybackQueue(restoredQueue);
+            if (savedCurrentTrackIndex !== undefined && savedCurrentTrackIndex >= 0 && savedCurrentTrackIndex < restoredQueue.length) {
+              setCurrentTrackIndex(savedCurrentTrackIndex);
+            }
+          }
         }
       } catch (err) {
         console.error("Failed to load state", err);
@@ -443,6 +457,19 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [library, playlists, sidebarWidth, colWidths, colVisibility, colOrder, themeIndex, listFontSize, isInitialized]);
+
+  // Save playback state to IndexedDB
+  useEffect(() => {
+    if (isInitialized) {
+      const timer = setTimeout(() => {
+        set('v2_solidActivePlaylistId', activePlaylistId).catch(console.error);
+        set('v2_solidPlayingPlaylistId', playingPlaylistId).catch(console.error);
+        set('v2_solidPlaybackQueueIds', playbackQueue.map(t => t.id)).catch(console.error);
+        set('v2_solidCurrentTrackIndex', currentTrackIndex).catch(console.error);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [activePlaylistId, playingPlaylistId, playbackQueue, currentTrackIndex, isInitialized]);
 
 
   // Player state
