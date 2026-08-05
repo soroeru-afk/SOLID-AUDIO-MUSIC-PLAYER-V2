@@ -458,19 +458,6 @@ export default function App() {
     }
   }, [library, playlists, sidebarWidth, colWidths, colVisibility, colOrder, themeIndex, listFontSize, isInitialized]);
 
-  // Save playback state to IndexedDB
-  useEffect(() => {
-    if (isInitialized) {
-      const timer = setTimeout(() => {
-        set('v2_solidActivePlaylistId', activePlaylistId).catch(console.error);
-        set('v2_solidPlayingPlaylistId', playingPlaylistId).catch(console.error);
-        set('v2_solidPlaybackQueueIds', playbackQueue.map(t => t.id)).catch(console.error);
-        set('v2_solidCurrentTrackIndex', currentTrackIndex).catch(console.error);
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [activePlaylistId, playingPlaylistId, playbackQueue, currentTrackIndex, isInitialized]);
-
 
   // Player state
   const [playbackQueue, setPlaybackQueue] = useState<Track[]>([]);
@@ -487,6 +474,19 @@ export default function App() {
   const [eqLow, setEqLow] = useState(60);
   const [eqMid, setEqMid] = useState(50);
   const [eqHigh, setEqHigh] = useState(40);
+
+  // Save playback state to IndexedDB
+  useEffect(() => {
+    if (isInitialized) {
+      const timer = setTimeout(() => {
+        set('v2_solidActivePlaylistId', activePlaylistId).catch(console.error);
+        set('v2_solidPlayingPlaylistId', playingPlaylistId).catch(console.error);
+        set('v2_solidPlaybackQueueIds', playbackQueue.map(t => t.id)).catch(console.error);
+        set('v2_solidCurrentTrackIndex', currentTrackIndex).catch(console.error);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [activePlaylistId, playingPlaylistId, playbackQueue, currentTrackIndex, isInitialized]);
 
   // --- Refs ---
   const audioRef = useRef<HTMLAudioElement>(null);
