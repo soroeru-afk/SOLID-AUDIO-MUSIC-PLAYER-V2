@@ -2656,7 +2656,7 @@ export default function App() {
                                    <button 
                                       key={p.id}
                                       onClick={() => handleAddSelectedToPlaylist(p.id)}
-                                      className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider hover:opacity-80 transition-colors truncate"
+                                      className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider hover:opacity-80 transition-colors truncate flex-shrink-0"
                                       style={{ color: 'var(--theme-textMain)' }}
                                       onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'}
                                       onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
