@@ -8,7 +8,7 @@
 
 @layer base {
   body {
-    @apply bg-[#0A0A0C] text-[#E0E0E6] font-sans overflow-hidden antialiased;
+    @apply bg-[#0B0C0D] text-[#E1E4EA] font-sans overflow-hidden antialiased;
   }
 }
 
@@ -18,17 +18,17 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--theme-bg, #0A0A0C);
+  background: var(--theme-bg, #0B0C0D);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--theme-border, #2A2A30);
+  background: var(--theme-border, #252932);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--theme-borderActive, #444);
+  background: var(--theme-borderActive, #3B4352);
 }
 ::-webkit-scrollbar-corner {
-  background: var(--theme-bg, #0A0A0C);
+  background: var(--theme-bg, #0B0C0D);
 }
 
 /* Square Slider for EQ */
@@ -74,15 +74,4 @@
   border-radius: 0; /* Square thumb */
   cursor: pointer;
   box-shadow: inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.2), 1px 1px 3px rgba(0,0,0,0.5);
-}
-
-/* Drag support for desktop PWAs */
-.drag-region {
-  -webkit-app-region: drag;
-  app-region: drag;
-}
-
-.no-drag {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, VolumeX,
   FolderOpen, ListMusic, Plus, Search, ChevronUp, ChevronDown, 
@@ -48,18 +48,18 @@ const THEMES = [
     accentMuted: '#1d2738'
   },
   { 
-    id: 'GRAY', 
-    bg: '#111111', 
-    surface: '#181818',
-    surfaceLighter: '#222222',
-    border: '#333333', 
-    borderActive: '#555555',
-    textMain: '#e0e0e0',
-    textMuted: '#888888',
-    textDim: '#555555',
-    accent: '#aaaaaa',
-    accentDark: '#666666',
-    accentMuted: '#2a2a2a'
+    id: 'BLACK', 
+    bg: '#0B0C0D', 
+    surface: '#14161A',
+    surfaceLighter: '#1C2026',
+    border: '#252932', 
+    borderActive: '#3B4352',
+    textMain: '#E1E4EA',
+    textMuted: '#7B8494',
+    textDim: '#4A5260',
+    accent: '#8EA1BD',
+    accentDark: '#5D6B80',
+    accentMuted: '#161C26'
   },
   { 
     id: 'LIGHT', 
@@ -139,6 +139,14 @@ const parseFilename = (filename: string): { title: string, artist: string } => {
   return { title: nameWithoutExt, artist: 'Unknown Artist' };
 };
 
+const COL_LABELS: Record<string, string> = {
+  fileName: '名前',
+  trackNumber: '#No',
+  title: 'タイトル',
+  artist: '参加アーティスト',
+  album: 'アルバム'
+};
+
 const PanelBlock = ({ title, children, className = "", styleVars }: { title: string, children: React.ReactNode, className?: string, styleVars?: React.CSSProperties }) => (
   <div className={`border flex flex-col relative ${className}`} style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)', ...styleVars }}>
     {title && (
@@ -214,7 +222,23 @@ export default function App() {
   const [colOrder, setColOrder] = useState<string[]>([
     'fileName', 'trackNumber', 'title', 'artist', 'album'
   ]);
-  const colResizing = useRef<{ key: string, startX: number, startWidth: number } | null>(null);
+  const columnsContainerRef = useRef<HTMLDivElement>(null);
+  const colResizing = useRef<{
+    type: 'index' | 'pair';
+    key?: string;
+    leftKey?: string;
+    rightKey?: string;
+    startX: number;
+    startWidth?: number;
+    startLeft?: number;
+    startRight?: number;
+    containerWidth?: number;
+    totalWeight?: number;
+  } | null>(null);
+
+  const visibleCols = useMemo(() => {
+    return colOrder.filter(col => colVisibility[col as keyof typeof colVisibility]);
+  }, [colOrder, colVisibility]);
   
   type SortKey = 'title' | 'artist' | 'album' | 'fileName' | 'trackNumber' | 'none';
   type SortConfigType = { key: SortKey, direction: 'asc' | 'desc' };
@@ -1521,22 +1545,99 @@ export default function App() {
   };
 
   // Column resize handlers
-  const handleColMouseDown = (e: React.MouseEvent, key: keyof typeof colWidths) => {
+  const handleColMouseDown = (e: React.MouseEvent, leftCol: string, rightCol?: string) => {
     e.preventDefault();
     e.stopPropagation();
-    colResizing.current = { key, startX: e.clientX, startWidth: colWidths[key] };
-    const onMove = (ev: MouseEvent) => {
-      if (!colResizing.current) return;
-      const resizeKey = colResizing.current.key;
-      const delta = ev.clientX - colResizing.current.startX;
-      const newWidth = Math.max(20, colResizing.current.startWidth + delta);
-      setColWidths(prev => ({ ...prev, [resizeKey]: newWidth }));
+
+    if (leftCol === 'index' || !rightCol) {
+      // Index column resizing
+      const startWidth = colWidths.index;
+      colResizing.current = {
+        type: 'index',
+        key: 'index',
+        startX: e.clientX,
+        startWidth
+      };
+
+      const onMove = (ev: MouseEvent) => {
+        if (!colResizing.current || colResizing.current.type !== 'index') return;
+        const delta = ev.clientX - colResizing.current.startX;
+        const newWidth = Math.min(240, Math.max(60, (colResizing.current.startWidth || 96) + delta));
+        setColWidths(prev => ({ ...prev, index: newWidth }));
+      };
+
+      const onUp = () => {
+        colResizing.current = null;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+      return;
+    }
+
+    // Pair resizing between adjacent visible columns
+    const containerWidth = columnsContainerRef.current?.clientWidth || 800;
+    const totalWeight = visibleCols.reduce((sum, col) => sum + (colWidths[col as keyof typeof colWidths] || 150), 0) || 1;
+    const startLeft = colWidths[leftCol as keyof typeof colWidths] || 150;
+    const startRight = colWidths[rightCol as keyof typeof colWidths] || 150;
+
+    colResizing.current = {
+      type: 'pair',
+      leftKey: leftCol,
+      rightKey: rightCol,
+      startX: e.clientX,
+      startLeft,
+      startRight,
+      containerWidth,
+      totalWeight
     };
+
+    const onMove = (ev: MouseEvent) => {
+      if (!colResizing.current || colResizing.current.type !== 'pair') return;
+      const { leftKey, rightKey, startX, startLeft, startRight, containerWidth, totalWeight } = colResizing.current;
+      if (!leftKey || !rightKey || startLeft === undefined || startRight === undefined || !containerWidth || !totalWeight) return;
+
+      const deltaX = ev.clientX - startX;
+      // Convert pixel delta to proportional weight delta
+      const weightPerPx = totalWeight / containerWidth;
+      const deltaWeight = deltaX * weightPerPx;
+      const minWeight = Math.max(20, 40 * weightPerPx); // Minimum ~40px width
+
+      let newLeft = startLeft + deltaWeight;
+      let newRight = startRight - deltaWeight;
+
+      const totalPairWeight = startLeft + startRight;
+      if (newLeft < minWeight) {
+        newLeft = minWeight;
+        newRight = totalPairWeight - minWeight;
+      } else if (newRight < minWeight) {
+        newRight = minWeight;
+        newLeft = totalPairWeight - minWeight;
+      }
+
+      setColWidths(prev => ({
+        ...prev,
+        [leftKey]: Math.round(newLeft),
+        [rightKey]: Math.round(newRight)
+      }));
+    };
+
     const onUp = () => {
       colResizing.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   };
@@ -1608,7 +1709,7 @@ export default function App() {
             }
           }}
           title={track.missing ? `このPCにファイルがありません: ${track.fileName}\nファイルをドラッグ&ドロップするか、フォルダを読み込んでください` : undefined}
-          className="group flex items-center h-10 px-2 border-b transition-colors shrink-0 select-none"
+          className="group flex items-center h-10 px-2 border-b transition-colors shrink-0 select-none w-full"
           style={{ 
               backgroundColor: isActive ? 'var(--theme-accentMuted)' : (isSelected ? 'var(--theme-surfaceLighter)' : 'transparent'), 
               borderColor: isActive ? 'var(--theme-borderActive)' : 'var(--theme-surface)', 
@@ -1653,7 +1754,7 @@ export default function App() {
           </div>
           {/* Track Info with Inline Edit */}
           {editingTrackId === track.id ? (
-            <div className="flex-1 flex gap-2 pr-4 h-full items-center" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
+            <div className="flex-1 min-w-0 flex gap-2 pr-4 h-full items-center pl-3" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
               <input
                  type="text"
                  value={editTitle}
@@ -1676,40 +1777,41 @@ export default function App() {
               <button onClick={() => setEditingTrackId(null)} className="px-1" title="Cancel" style={{ color: 'var(--theme-textDim)' }}><X size={12} /></button>
             </div>
           ) : (
-            <div className="flex items-center gap-3 pl-3">
-              {colOrder.map(col => {
+            <div className="flex-1 min-w-0 flex items-center gap-3 pl-3 h-full">
+              {visibleCols.map(col => {
+                const weight = colWidths[col as keyof typeof colWidths] || 150;
 
-                if (col === 'fileName' && colVisibility.fileName) {
+                if (col === 'fileName') {
                   return (
-                    <div key="fileName" className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.fileName, color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-sm)' }} title={track.fileName}>
+                    <div key="fileName" className="min-w-0 pr-2 truncate font-mono tracking-wide" style={{ flex: `${weight} 0 0%`, minWidth: 40, color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-sm)' }} title={track.fileName}>
                       {track.fileName}
                     </div>
                   );
                 }
-                if (col === 'trackNumber' && colVisibility.trackNumber) {
+                if (col === 'trackNumber') {
                   return (
-                    <div key="trackNumber" className="flex-shrink-0 text-center font-mono opacity-80" style={{ width: colWidths.trackNumber, fontSize: 'var(--list-font-size-sm)' }}>
+                    <div key="trackNumber" className="min-w-0 text-center font-mono opacity-80 truncate pr-1" style={{ flex: `${weight} 0 0%`, minWidth: 30, fontSize: 'var(--list-font-size-sm)' }}>
                       {track.trackNumber ? track.trackNumber.toString().padStart(2, '0') : '-'}
                     </div>
                   );
                 }
-                if (col === 'title' && colVisibility.title) {
+                if (col === 'title') {
                   return (
-                    <div key="title" className="flex-shrink-0 min-w-0 pr-2 truncate font-bold font-mono tracking-wide" style={{ width: colWidths.title, color: 'var(--theme-textMain)', fontSize: 'var(--list-font-size)' }} title={track.title}>
+                    <div key="title" className="min-w-0 pr-2 truncate font-bold font-mono tracking-wide" style={{ flex: `${weight} 0 0%`, minWidth: 40, color: 'var(--theme-textMain)', fontSize: 'var(--list-font-size)' }} title={track.title}>
                       {track.title}
                     </div>
                   );
                 }
-                if (col === 'artist' && colVisibility.artist) {
+                if (col === 'artist') {
                   return (
-                    <div key="artist" className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.artist, color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-sm)' }} title={track.artist}>
+                    <div key="artist" className="min-w-0 pr-2 truncate font-mono tracking-wide" style={{ flex: `${weight} 0 0%`, minWidth: 40, color: 'var(--theme-textMuted)', fontSize: 'var(--list-font-size-sm)' }} title={track.artist}>
                       {track.artist}
                     </div>
                   );
                 }
-                if (col === 'album' && colVisibility.album) {
+                if (col === 'album') {
                   return (
-                    <div key="album" className="flex-shrink-0 min-w-0 pr-2 truncate font-mono tracking-wide" style={{ width: colWidths.album, color: 'var(--theme-textDim)', fontSize: 'var(--list-font-size-sm)' }} title={track.album}>
+                    <div key="album" className="min-w-0 pr-2 truncate font-mono tracking-wide" style={{ flex: `${weight} 0 0%`, minWidth: 40, color: 'var(--theme-textDim)', fontSize: 'var(--list-font-size-sm)' }} title={track.album}>
                       {track.album}
                     </div>
                   );
@@ -2765,10 +2867,10 @@ export default function App() {
               )}
             </div>
           ) : (
-            <div className="flex flex-col h-full overflow-auto relative">
-              <div className="min-w-max flex flex-col min-h-full">
+            <div className="flex flex-col h-full overflow-y-auto overflow-x-hidden relative w-full">
+              <div className="w-full flex flex-col min-h-full">
                 {/* List Header */}
-                <div className="flex items-center uppercase tracking-normal px-2 h-8 border-b shrink-0 sticky top-0 z-20 text-[10px]" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMuted)' }}>
+                <div className="flex items-center uppercase tracking-normal px-2 h-8 border-b shrink-0 sticky top-0 z-20 text-[10px] w-full" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMuted)' }}>
                   <div className="relative flex-shrink-0 flex items-center h-full" style={{ width: colWidths.index }}>
                     <div className="w-8 flex-shrink-0 flex items-center justify-center"></div>
                     <div className="w-8 flex-shrink-0 flex items-center justify-center text-[var(--theme-textDim)]">
@@ -2783,81 +2885,39 @@ export default function App() {
                       <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 pl-3">
-                    {colOrder.map(col => {
+                  <div ref={columnsContainerRef} className="flex-1 min-w-0 flex items-center gap-3 pl-3 h-full">
+                    {visibleCols.map((col, idx) => {
+                      const isLast = idx === visibleCols.length - 1;
+                      const nextCol = isLast ? undefined : visibleCols[idx + 1];
+                      const weight = colWidths[col as keyof typeof colWidths] || 150;
 
-                      if (col === 'fileName' && colVisibility.fileName) {
-                        return (
-                          <div key="fileName" draggable onDragStart={(e) => handleColDragStart(e, 'fileName')} onDragOver={handleColDragOver} onDrop={(e) => handleColDrop(e, 'fileName')} className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.fileName }}>
-                            <div onClick={() => handleSort('fileName')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                              <span className="truncate">名前</span>
-                              {activeSortConfig.key === 'fileName' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
-                            </div>
-                            <div onMouseDown={(e) => handleColMouseDown(e, 'fileName')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
+                      return (
+                        <div 
+                          key={col} 
+                          draggable 
+                          onDragStart={(e) => handleColDragStart(e, col)} 
+                          onDragOver={handleColDragOver} 
+                          onDrop={(e) => handleColDrop(e, col)} 
+                          className="relative min-w-0 pr-2 flex items-center h-full select-none" 
+                          style={{ flex: `${weight} 0 0%`, minWidth: col === 'trackNumber' ? 30 : 40 }}
+                        >
+                          <div onClick={() => handleSort(col as 'title' | 'artist' | 'album' | 'fileName' | 'trackNumber')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
+                            <span className="truncate">{COL_LABELS[col] || col}</span>
+                            {activeSortConfig.key === col && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
+                          </div>
+                          {!isLast && nextCol && (
+                            <div onMouseDown={(e) => handleColMouseDown(e, col, nextCol)} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
                               <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
                             </div>
-                          </div>
-                        );
-                      }
-                      if (col === 'trackNumber' && colVisibility.trackNumber) {
-                        return (
-                          <div key="trackNumber" draggable onDragStart={(e) => handleColDragStart(e, 'trackNumber')} onDragOver={handleColDragOver} onDrop={(e) => handleColDrop(e, 'trackNumber')} className="relative flex-shrink-0 flex items-center justify-center" style={{ width: colWidths.trackNumber }}>
-                            <div onClick={() => handleSort('trackNumber')} className="flex-1 min-w-0 flex items-center justify-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                              #No
-                              {activeSortConfig.key === 'trackNumber' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
-                            </div>
-                            <div onMouseDown={(e) => handleColMouseDown(e, 'trackNumber')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
-                              <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
-                            </div>
-                          </div>
-                        );
-                      }
-                      if (col === 'title' && colVisibility.title) {
-                        return (
-                          <div key="title" draggable onDragStart={(e) => handleColDragStart(e, 'title')} onDragOver={handleColDragOver} onDrop={(e) => handleColDrop(e, 'title')} className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.title }}>
-                            <div onClick={() => handleSort('title')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                              <span className="truncate">タイトル</span>
-                              {activeSortConfig.key === 'title' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
-                            </div>
-                            <div onMouseDown={(e) => handleColMouseDown(e, 'title')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
-                              <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
-                            </div>
-                          </div>
-                        );
-                      }
-                      if (col === 'artist' && colVisibility.artist) {
-                        return (
-                          <div key="artist" draggable onDragStart={(e) => handleColDragStart(e, 'artist')} onDragOver={handleColDragOver} onDrop={(e) => handleColDrop(e, 'artist')} className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.artist }}>
-                            <div onClick={() => handleSort('artist')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                              <span className="truncate">参加アーティスト</span>
-                              {activeSortConfig.key === 'artist' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
-                            </div>
-                            <div onMouseDown={(e) => handleColMouseDown(e, 'artist')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
-                              <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
-                            </div>
-                          </div>
-                        );
-                      }
-                      if (col === 'album' && colVisibility.album) {
-                        return (
-                          <div key="album" draggable onDragStart={(e) => handleColDragStart(e, 'album')} onDragOver={handleColDragOver} onDrop={(e) => handleColDrop(e, 'album')} className="relative flex-shrink-0 min-w-0 pr-2 flex items-center" style={{ width: colWidths.album }}>
-                            <div onClick={() => handleSort('album')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer hover:text-[var(--theme-textMain)]">
-                              <span className="truncate">アルバム</span>
-                              {activeSortConfig.key === 'album' && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
-                            </div>
-                            <div onMouseDown={(e) => handleColMouseDown(e, 'album')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
-                              <div className="w-[1px] h-full bg-[var(--theme-border)] opacity-40 group-hover:bg-[var(--theme-accent)] group-hover:opacity-100 transition-colors" />
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
+                          )}
+                        </div>
+                      );
                     })}
                   </div>
                   {colVisibility.actions && <div className="w-24 flex-shrink-0 text-center">操作</div>}
                 </div>
                 {/* List Items */}
-                <div className="flex flex-col flex-1 pb-4">
+                <div className="flex flex-col flex-1 pb-4 w-full">
                   {memoizedTrackList}
                 </div>
               </div>
