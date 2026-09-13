@@ -202,8 +202,22 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState<number>(() => {
+    try {
+      const savedVol = localStorage.getItem('v2_solidVolume');
+      if (savedVol !== null) {
+        const parsed = parseFloat(savedVol);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) return parsed;
+      }
+    } catch(e) {}
+    return 1;
+  });
+  const [isMuted, setIsMuted] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('v2_solidIsMuted') === 'true';
+    } catch(e) {}
+    return false;
+  });
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState<0|1|2|3>(0); // 0: off, 1: all, 2: one, 3: set (selected lists)
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
@@ -399,6 +413,17 @@ export default function App() {
         const savedListFontSize = await get('v2_solidListFontSize');
         const savedColVisibility = await get('v2_solidColVisibility');
         const savedColOrder = await get('v2_solidColOrder');
+        const savedVolume = await get('v2_solidVolume');
+        const savedIsMuted = await get('v2_solidIsMuted');
+        const savedEqLow = await get('v2_solidEqLow');
+        const savedEqMid = await get('v2_solidEqMid');
+        const savedEqHigh = await get('v2_solidEqHigh');
+        
+        if (savedVolume !== undefined && !isNaN(savedVolume) && savedVolume >= 0 && savedVolume <= 1) setVolume(savedVolume);
+        if (savedIsMuted !== undefined) setIsMuted(!!savedIsMuted);
+        if (savedEqLow !== undefined && !isNaN(savedEqLow)) setEqLow(savedEqLow);
+        if (savedEqMid !== undefined && !isNaN(savedEqMid)) setEqMid(savedEqMid);
+        if (savedEqHigh !== undefined && !isNaN(savedEqHigh)) setEqHigh(savedEqHigh);
         
         if (savedSidebarWidth && !isNaN(savedSidebarWidth)) setSidebarWidth(savedSidebarWidth);
         if (savedColWidths) {
@@ -493,9 +518,57 @@ export default function App() {
 
 
   // (Moved player state)
-  const [eqLow, setEqLow] = useState(60);
-  const [eqMid, setEqMid] = useState(50);
-  const [eqHigh, setEqHigh] = useState(40);
+  const [eqLow, setEqLow] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solidEqLow');
+      if (saved !== null) {
+        const parsed = parseInt(saved);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) return parsed;
+      }
+    } catch(e) {}
+    return 60;
+  });
+  const [eqMid, setEqMid] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solidEqMid');
+      if (saved !== null) {
+        const parsed = parseInt(saved);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) return parsed;
+      }
+    } catch(e) {}
+    return 50;
+  });
+  const [eqHigh, setEqHigh] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solidEqHigh');
+      if (saved !== null) {
+        const parsed = parseInt(saved);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) return parsed;
+      }
+    } catch(e) {}
+    return 40;
+  });
+
+  // Persist volume, mute, and EQ settings immediately to localStorage & IndexedDB
+  useEffect(() => {
+    try {
+      localStorage.setItem('v2_solidVolume', volume.toString());
+      localStorage.setItem('v2_solidIsMuted', isMuted ? 'true' : 'false');
+      set('v2_solidVolume', volume).catch(() => {});
+      set('v2_solidIsMuted', isMuted).catch(() => {});
+    } catch(e) {}
+  }, [volume, isMuted]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('v2_solidEqLow', eqLow.toString());
+      localStorage.setItem('v2_solidEqMid', eqMid.toString());
+      localStorage.setItem('v2_solidEqHigh', eqHigh.toString());
+      set('v2_solidEqLow', eqLow).catch(() => {});
+      set('v2_solidEqMid', eqMid).catch(() => {});
+      set('v2_solidEqHigh', eqHigh).catch(() => {});
+    } catch(e) {}
+  }, [eqLow, eqMid, eqHigh]);
 
   // --- Refs ---
   const audioRef = useRef<HTMLAudioElement>(null);
