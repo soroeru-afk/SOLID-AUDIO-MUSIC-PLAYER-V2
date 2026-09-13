@@ -59,7 +59,9 @@ const THEMES = [
     textDim: '#4A5260',
     accent: '#8EA1BD',
     accentDark: '#5D6B80',
-    accentMuted: '#161C26'
+    accentMuted: '#161C26',
+    sliderTrackBg: '#040506',
+    sliderTrackBorder: '#353c48'
   },
   { 
     id: 'LIGHT', 
@@ -73,7 +75,9 @@ const THEMES = [
     textDim: '#637b8f',
     accent: '#213040',
     accentDark: '#121c26',
-    accentMuted: '#b8c5ce'
+    accentMuted: '#b8c5ce',
+    sliderTrackBg: '#ffffff',
+    sliderTrackBorder: '#9ba9b5'
   },
   { 
     id: 'BROWN', 
@@ -87,7 +91,9 @@ const THEMES = [
     textDim: '#6b5f58',
     accent: '#d6a076',
     accentDark: '#b58560',
-    accentMuted: '#3d2e24'
+    accentMuted: '#3d2e24',
+    sliderTrackBg: '#0d0b0a',
+    sliderTrackBorder: '#61534b'
   },
   { 
     id: 'OLIVE', 
@@ -101,7 +107,9 @@ const THEMES = [
     textDim: '#5b7053',
     accent: '#92c27c',
     accentDark: '#759e62',
-    accentMuted: '#2d3d25'
+    accentMuted: '#2d3d25',
+    sliderTrackBg: '#0a0d09',
+    sliderTrackBorder: '#51664a'
   },
   { 
     id: 'RED', 
@@ -115,7 +123,9 @@ const THEMES = [
     textDim: '#946262',
     accent: '#e65c5c',
     accentDark: '#b34747',
-    accentMuted: '#421a1a'
+    accentMuted: '#421a1a',
+    sliderTrackBg: '#0a0303',
+    sliderTrackBorder: '#8a2727'
   }
 ];
 
@@ -195,7 +205,7 @@ export default function App() {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
-  const [repeatMode, setRepeatMode] = useState<0|1|2>(0); // 0: off, 1: all, 2: one
+  const [repeatMode, setRepeatMode] = useState<0|1|2|3>(0); // 0: off, 1: all, 2: one, 3: set (selected lists)
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -287,6 +297,7 @@ export default function App() {
   const [dragOverPlaylistId, setDragOverPlaylistId] = useState<string | null>(null);
   const [confirmDeletePlaylistId, setConfirmDeletePlaylistId] = useState<string | null>(null);
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<Set<string>>(new Set());
+  const [isPlaylistSelectionMode, setIsPlaylistSelectionMode] = useState(false);
   const lastSelectedPlaylistIdRef = useRef<string | null>(null);
   const [confirmDeleteSelectedPlaylists, setConfirmDeleteSelectedPlaylists] = useState(false);
 
@@ -1266,6 +1277,64 @@ export default function App() {
   };
 
   const handleNext = () => {
+    // Mode 3: SET repeat across selected playlists
+    if (repeatMode === 3 && selectedPlaylistIds.size > 0) {
+      // Gather all selected playlists that actually exist
+      const chosenPlaylists = playlists.filter(p => p.id !== 'all-tracks' && selectedPlaylistIds.has(p.id));
+      if (chosenPlaylists.length > 0) {
+        // If shuffle is active, pick random playlist and random track from it
+        if (isShuffle) {
+          const validPlaylists = chosenPlaylists.filter(p => p.tracks.length > 0);
+          if (validPlaylists.length > 0) {
+            const randomPl = validPlaylists[Math.floor(Math.random() * validPlaylists.length)];
+            const randomTrackIdx = Math.floor(Math.random() * randomPl.tracks.length);
+            setPlaybackQueue(randomPl.tracks);
+            setPlayingPlaylistId(randomPl.id);
+            setCurrentTrackIndex(randomTrackIdx);
+            setIsPlaying(true);
+            return;
+          }
+        }
+
+        // Sequential: if within current playing playlist and has next track
+        const currentPlIdx = chosenPlaylists.findIndex(p => p.id === playingPlaylistId);
+        if (currentPlIdx !== -1) {
+          const currentPl = chosenPlaylists[currentPlIdx];
+          if (currentTrackIndex + 1 < playbackQueue.length) {
+            setCurrentTrackIndex(currentTrackIndex + 1);
+            setIsPlaying(true);
+            return;
+          } else {
+            // Move to next selected playlist with tracks
+            let nextPlIdx = (currentPlIdx + 1) % chosenPlaylists.length;
+            let attempts = 0;
+            while (chosenPlaylists[nextPlIdx].tracks.length === 0 && attempts < chosenPlaylists.length) {
+              nextPlIdx = (nextPlIdx + 1) % chosenPlaylists.length;
+              attempts++;
+            }
+            const nextPl = chosenPlaylists[nextPlIdx];
+            if (nextPl.tracks.length > 0) {
+              setPlaybackQueue(nextPl.tracks);
+              setPlayingPlaylistId(nextPl.id);
+              setCurrentTrackIndex(0);
+              setIsPlaying(true);
+              return;
+            }
+          }
+        } else {
+          // Current playing playlist is not in selected set, start from first selected playlist with tracks
+          const firstWithTracks = chosenPlaylists.find(p => p.tracks.length > 0);
+          if (firstWithTracks) {
+            setPlaybackQueue(firstWithTracks.tracks);
+            setPlayingPlaylistId(firstWithTracks.id);
+            setCurrentTrackIndex(0);
+            setIsPlaying(true);
+            return;
+          }
+        }
+      }
+    }
+
     if (playbackQueue.length === 0) return;
     
     if (repeatMode === 2) {
@@ -1311,11 +1380,34 @@ export default function App() {
       setIsPlaying(true);
       return;
     }
+
+    // Mode 3: SET repeat across selected playlists for prev track
+    if (repeatMode === 3 && selectedPlaylistIds.size > 0 && currentTrackIndex <= 0) {
+      const chosenPlaylists = playlists.filter(p => p.id !== 'all-tracks' && selectedPlaylistIds.has(p.id));
+      const currentPlIdx = chosenPlaylists.findIndex(p => p.id === playingPlaylistId);
+      if (currentPlIdx !== -1) {
+        let prevPlIdx = (currentPlIdx - 1 + chosenPlaylists.length) % chosenPlaylists.length;
+        let attempts = 0;
+        while (chosenPlaylists[prevPlIdx].tracks.length === 0 && attempts < chosenPlaylists.length) {
+          prevPlIdx = (prevPlIdx - 1 + chosenPlaylists.length) % chosenPlaylists.length;
+          attempts++;
+        }
+        const prevPl = chosenPlaylists[prevPlIdx];
+        if (prevPl.tracks.length > 0) {
+          setPlaybackQueue(prevPl.tracks);
+          setPlayingPlaylistId(prevPl.id);
+          setCurrentTrackIndex(prevPl.tracks.length - 1);
+          setIsPlaying(true);
+          return;
+        }
+      }
+    }
+
     if (playbackQueue.length === 0 || currentTrackIndex === -1) return;
     
     let prevIndex = currentTrackIndex - 1;
     if (prevIndex < 0) {
-      prevIndex = repeatMode === 1 ? playbackQueue.length - 1 : 0;
+      prevIndex = (repeatMode === 1 || repeatMode === 3) ? playbackQueue.length - 1 : 0;
     }
     setCurrentTrackIndex(prevIndex);
     setIsPlaying(true);
@@ -1683,6 +1775,8 @@ export default function App() {
     '--theme-accent': theme.accent,
     '--theme-accentDark': theme.accentDark,
     '--theme-accentMuted': theme.accentMuted,
+    '--theme-sliderTrackBg': theme.sliderTrackBg,
+    '--theme-sliderTrackBorder': theme.sliderTrackBorder,
     '--list-font-size': `${listFontSize}px`,
     '--list-font-size-sm': `${Math.max(8, listFontSize - 1)}px`,
     '--list-font-size-xs': `${Math.max(8, listFontSize - 2)}px`,
@@ -2010,12 +2104,14 @@ export default function App() {
                              </div>
 
                              <button 
-                               onClick={() => setRepeatMode((prev) => (prev + 1) % 3 as 0|1|2)}
+                               onClick={() => setRepeatMode((prev) => (prev + 1) % 4 as 0|1|2|3)}
                                className="w-8 h-8 flex items-center justify-center rounded transition-colors relative hover:opacity-80"
                                style={{ color: repeatMode > 0 ? 'var(--theme-accent)' : 'var(--theme-textMuted)' }}
+                               title={repeatMode === 1 ? "Repeat All" : repeatMode === 2 ? "Repeat One" : repeatMode === 3 ? "Repeat Set" : "Repeat Off"}
                              >
                                 <Repeat size={14} />
-                                {repeatMode === 2 && <span className="absolute top-0 right-0 text-[8px]" style={{ color: 'var(--theme-accent)' }}>1</span>}
+                                {repeatMode === 2 && <span className="absolute top-0 right-0 text-[8px] font-bold" style={{ color: 'var(--theme-accent)' }}>1</span>}
+                                {repeatMode === 3 && <span className="absolute -top-1 -right-1 text-[7px] font-bold px-0.5 rounded leading-none" style={{ backgroundColor: 'var(--theme-accentDark)', color: '#fff' }}>SET</span>}
                              </button>
                           </div>
                        </div>
@@ -2099,12 +2195,14 @@ export default function App() {
                              <Shuffle size={12} />
                           </button>
                           <button 
-                            onClick={() => setRepeatMode((prev) => (prev + 1) % 3 as 0|1|2)}
+                            onClick={() => setRepeatMode((prev) => (prev + 1) % 4 as 0|1|2|3)}
                             className="w-6 h-6 flex items-center justify-center rounded transition-colors relative hover:opacity-80"
                             style={{ color: repeatMode > 0 ? 'var(--theme-accent)' : 'var(--theme-textMuted)', backgroundColor: repeatMode > 0 ? 'var(--theme-accentMuted)' : 'transparent' }}
+                            title={repeatMode === 1 ? "Repeat All" : repeatMode === 2 ? "Repeat One" : repeatMode === 3 ? "Repeat Set" : "Repeat Off"}
                           >
                              <Repeat size={12} />
-                             {repeatMode === 2 && <span className="absolute -top-1 -right-1 text-[8px]" style={{ color: 'var(--theme-accent)' }}>1</span>}
+                             {repeatMode === 2 && <span className="absolute -top-1 -right-1 text-[8px] font-bold" style={{ color: 'var(--theme-accent)' }}>1</span>}
+                             {repeatMode === 3 && <span className="absolute -top-1.5 -right-2 text-[6px] font-bold px-0.5 rounded leading-none" style={{ backgroundColor: 'var(--theme-accentDark)', color: '#fff' }}>SET</span>}
                           </button>
                       </div>
                       
@@ -2246,7 +2344,7 @@ export default function App() {
             <div 
               ref={progressBarRef}
               className="h-[6px] border cursor-pointer relative"
-              style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', touchAction: 'none' }}
+              style={{ backgroundColor: 'var(--theme-sliderTrackBg, var(--theme-bg))', borderColor: 'var(--theme-sliderTrackBorder, var(--theme-border))', touchAction: 'none' }}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
@@ -2259,75 +2357,118 @@ export default function App() {
             </div>
           </div>
 
-          {/* Controls Route */}
-          <div className="flex items-center justify-between">
-            {/* Play modes */}
-            <div className="flex gap-2">
+          {/* Controls & EQ - 6 Unified Panels (3 columns x 2 rows, matching width and height) */}
+          {/* Row 1: Top 3 Panels (Play modes, Transport, Volume) */}
+          <div className="grid grid-cols-3 gap-4 items-center">
+            {/* Panel 1: Play modes (Shuffle / Repeat) - Centered in panel with dark buttons */}
+            <div 
+              className="border h-14 flex items-center justify-center gap-3 px-2 w-full"
+              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}
+            >
               <button 
                 onClick={() => setIsShuffle(!isShuffle)}
-                className="w-8 h-8 flex items-center justify-center border transition-colors hover:opacity-80 active:scale-95"
-                style={isShuffle ? { backgroundColor: 'var(--theme-accentMuted)', color: 'var(--theme-accent)', borderColor: 'var(--theme-borderActive)' } : { backgroundColor: 'var(--theme-bg)', color: 'var(--theme-textMuted)', borderColor: 'var(--theme-border)' }}
+                className="w-12 h-9 flex items-center justify-center border transition-all hover:opacity-80 active:scale-95"
+                style={isShuffle 
+                  ? { backgroundColor: 'var(--theme-accentMuted)', color: 'var(--theme-accent)', borderColor: 'var(--theme-borderActive)' } 
+                  : { backgroundColor: 'var(--theme-bg)', color: 'var(--theme-textMain)', borderColor: 'var(--theme-border)' }
+                }
+                title="Shuffle"
               >
-                <Shuffle size={14} />
+                <Shuffle size={15} />
               </button>
               <button 
-                onClick={() => setRepeatMode((prev) => (prev + 1) % 3 as 0|1|2)}
-                className="w-8 h-8 flex items-center justify-center border transition-colors relative hover:opacity-80 active:scale-95"
-                style={repeatMode > 0 ? { backgroundColor: 'var(--theme-accentMuted)', color: 'var(--theme-accent)', borderColor: 'var(--theme-borderActive)' } : { backgroundColor: 'var(--theme-bg)', color: 'var(--theme-textMuted)', borderColor: 'var(--theme-border)' }}
+                onClick={() => setRepeatMode((prev) => (prev + 1) % 4 as 0|1|2|3)}
+                className="w-12 h-9 flex items-center justify-center border transition-all relative hover:opacity-80 active:scale-95"
+                style={repeatMode > 0 
+                  ? { backgroundColor: 'var(--theme-accentMuted)', color: 'var(--theme-accent)', borderColor: 'var(--theme-borderActive)' } 
+                  : { backgroundColor: 'var(--theme-bg)', color: 'var(--theme-textMain)', borderColor: 'var(--theme-border)' }
+                }
+                title={repeatMode === 1 ? "Repeat All" : repeatMode === 2 ? "Repeat One" : repeatMode === 3 ? "Repeat Set (Selected Lists)" : "Repeat Off"}
               >
-                <Repeat size={14} />
-                {repeatMode === 2 && <span className="absolute -top-1.5 -right-1.5 text-[8px] rounded-sm px-1 flex items-center justify-center z-10" style={{ backgroundColor: 'var(--theme-accentDark)', color: '#fff' }}>1</span>}
+                <Repeat size={15} />
+                {repeatMode === 2 && (
+                  <span className="absolute -top-1.5 -right-1.5 text-[8px] rounded-sm px-1 flex items-center justify-center z-10 font-bold" style={{ backgroundColor: 'var(--theme-accentDark)', color: '#fff' }}>1</span>
+                )}
+                {repeatMode === 3 && (
+                  <span className="absolute -top-1.5 -right-1.5 text-[7px] font-bold rounded-sm px-1 py-0.2 flex items-center justify-center z-10 leading-none tracking-tighter" style={{ backgroundColor: 'var(--theme-accentDark)', color: '#fff' }}>SET</span>
+                )}
               </button>
             </div>
 
-            {/* Transport Core */}
-            <div className="flex gap-1 justify-center">
+            {/* Panel 2: Transport Core - Centered in panel with dark buttons */}
+            <div 
+              className="border h-14 flex items-center justify-center gap-1.5 px-2 w-full"
+              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}
+            >
               <button 
                 onClick={handlePrev} 
-                className="w-12 h-10 flex items-center justify-center border transition-colors hover:opacity-80 active:scale-95"
+                className="w-11 h-9 flex items-center justify-center border transition-all hover:opacity-80 active:scale-95"
                 style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                title="Previous Track"
               >
                 <SkipBack size={16} />
               </button>
               <button 
                 onClick={togglePlay} 
-                className="w-16 h-10 flex items-center justify-center transition-colors border hover:opacity-90 active:scale-95"
-                style={isPlaying ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accentDark)', color: 'var(--theme-accent)' } : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                className="w-14 h-9 flex items-center justify-center transition-all border hover:opacity-90 active:scale-95"
+                style={isPlaying 
+                  ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accentDark)', color: 'var(--theme-accent)' } 
+                  : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }
+                }
+                title={isPlaying ? "Pause" : "Play"}
               >
-                {isPlaying ? <Pause size={16} /> : <Play size={16} className="ml-1" />}
+                {isPlaying ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
               </button>
               <button 
                 onClick={handleNext} 
-                className="w-12 h-10 flex items-center justify-center border transition-colors hover:opacity-80 active:scale-95"
+                className="w-11 h-9 flex items-center justify-center border transition-all hover:opacity-80 active:scale-95"
                 style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                title="Next Track"
               >
                 <SkipForward size={16} />
               </button>
             </div>
 
-            {/* Volume */}
-            <div className="flex items-center gap-2 w-24">
-              <button onClick={() => setIsMuted(!isMuted)} className="hover:opacity-80" style={{ color: 'var(--theme-textMuted)' }}>
-                {isMuted || volume === 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
+            {/* Panel 3: Volume Box - matching the panel's background color */}
+            <div 
+              className="border h-14 flex items-center gap-2 px-3 w-full"
+              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}
+            >
+              <button 
+                onClick={() => setIsMuted(!isMuted)} 
+                className="hover:opacity-80 p-1 shrink-0 flex items-center transition-colors" 
+                style={{ color: isMuted ? 'var(--theme-textDim)' : 'var(--theme-textMain)' }}
+                title={isMuted ? "Unmute" : "Mute"}
+              >
+                {isMuted || volume === 0 ? <VolumeX size={15} /> : <Volume2 size={15} />}
               </button>
               <input 
                 type="range" 
                 min="0" max="1" step="0.01" 
                 value={isMuted ? 0 : volume}
-                onChange={(e) => setVolume(parseFloat(e.target.value))}
-                className="w-full appearance-none cursor-pointer sq-slider"
-                style={{ backgroundColor: 'transparent', accentColor: 'var(--theme-accent)' }}
+                onChange={(e) => {
+                  setVolume(parseFloat(e.target.value));
+                  if (isMuted) setIsMuted(false);
+                }}
+                className="flex-1 min-w-0 appearance-none vol-slider"
+                title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
               />
+              <span 
+                className="text-[10px] font-mono tracking-wider text-right shrink-0 select-none font-bold" 
+                style={{ color: 'var(--theme-accent)', width: '32px' }}
+              >
+                {Math.round((isMuted ? 0 : volume) * 100)}%
+              </span>
             </div>
           </div>
 
-          {/* EQ Section */}
-          <div className="grid grid-cols-3 gap-4 mt-4">
-            {/* LOW EQ */}
-            <div className="border p-2 flex flex-col justify-between" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)' }}>
-              <div className="flex justify-between items-center text-[10px] font-mono tracking-widest mb-4" style={{ color: 'var(--theme-textMuted)' }}>
+          {/* Row 2: Bottom 3 Panels (EQ Section) - Restored to theme-bg */}
+          <div className="grid grid-cols-3 gap-4 mt-3">
+            {/* Panel 4: LOW EQ */}
+            <div className="border h-14 p-2.5 flex flex-col justify-between" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)' }}>
+              <div className="flex justify-between items-center text-[10px] font-mono tracking-widest" style={{ color: 'var(--theme-textMuted)' }}>
                 <span>01 LOW</span>
-                <span>{eqLow}</span>
+                <span className="font-bold" style={{ color: 'var(--theme-textMain)' }}>{eqLow}</span>
               </div>
               <input 
                 type="range" 
@@ -2339,11 +2480,11 @@ export default function App() {
               />
             </div>
 
-            {/* MID EQ */}
-            <div className="border p-2 flex flex-col justify-between" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)' }}>
-              <div className="flex justify-between items-center text-[10px] font-mono tracking-widest mb-4" style={{ color: 'var(--theme-textMuted)' }}>
+            {/* Panel 5: MID EQ */}
+            <div className="border h-14 p-2.5 flex flex-col justify-between" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)' }}>
+              <div className="flex justify-between items-center text-[10px] font-mono tracking-widest" style={{ color: 'var(--theme-textMuted)' }}>
                 <span>02 MID</span>
-                <span>{eqMid}</span>
+                <span className="font-bold" style={{ color: 'var(--theme-textMain)' }}>{eqMid}</span>
               </div>
               <input 
                 type="range" 
@@ -2355,11 +2496,11 @@ export default function App() {
               />
             </div>
 
-            {/* HIGH EQ */}
-            <div className="border p-2 flex flex-col justify-between" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)' }}>
-              <div className="flex justify-between items-center text-[10px] font-mono tracking-widest mb-4" style={{ color: 'var(--theme-textMuted)' }}>
+            {/* Panel 6: HIGH EQ */}
+            <div className="border h-14 p-2.5 flex flex-col justify-between" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)' }}>
+              <div className="flex justify-between items-center text-[10px] font-mono tracking-widest" style={{ color: 'var(--theme-textMuted)' }}>
                 <span>03 HIGH</span>
-                <span>{eqHigh}</span>
+                <span className="font-bold" style={{ color: 'var(--theme-textMain)' }}>{eqHigh}</span>
               </div>
               <input 
                 type="range" 
@@ -2461,6 +2602,25 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-1 shrink-0">
+              {/* SELECT button to toggle selection mode */}
+              <button 
+                onClick={() => {
+                  const nextMode = !isPlaylistSelectionMode;
+                  setIsPlaylistSelectionMode(nextMode);
+                  if (!nextMode && selectedPlaylistIds.size === 0) {
+                    setConfirmDeleteSelectedPlaylists(false);
+                  }
+                }}
+                className="flex items-center justify-center border rounded-[2px] px-1.5 h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95"
+                style={isPlaylistSelectionMode 
+                  ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' } 
+                  : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMuted)' }
+                }
+                title={isPlaylistSelectionMode ? "選択モード終了" : "プレイリスト選択モード (SETリピート・一括操作)"}
+              >
+                SELECT
+              </button>
+
               {selectedPlaylistIds.size > 0 && (
                 <>
                   <button 
@@ -2553,6 +2713,11 @@ export default function App() {
                     lastSelectedPlaylistIdRef.current = null;
                     return;
                   }
+                  if (isPlaylistSelectionMode) {
+                    togglePlaylistSelection(e, pl.id);
+                    setActivePlaylistId(pl.id);
+                    return;
+                  }
                   if (e.shiftKey || e.ctrlKey || e.metaKey) {
                     togglePlaylistSelection(e, pl.id);
                   } else {
@@ -2608,10 +2773,30 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 truncate">
-                    {isSelected ? (
-                      <Check size={12} style={{ color: 'var(--theme-accent)' }} />
+                    {isPlaylistSelectionMode && pl.id !== 'all-tracks' ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          togglePlaylistSelection(e, pl.id);
+                        }}
+                        className="w-3.5 h-3.5 border rounded-[2px] flex items-center justify-center shrink-0 transition-colors"
+                        style={{
+                          borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-border)',
+                          backgroundColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-bg)'
+                        }}
+                        title={isSelected ? "選択解除" : "選択"}
+                      >
+                        {isSelected && <Check size={10} style={{ color: '#fff' }} strokeWidth={3} />}
+                      </button>
                     ) : (
-                      <ListMusic size={12} style={{ color: isActive ? 'var(--theme-accent)' : 'var(--theme-textDim)' }} />
+                      <>
+                        {isSelected ? (
+                          <Check size={12} style={{ color: 'var(--theme-accent)' }} />
+                        ) : (
+                          <ListMusic size={12} style={{ color: isActive ? 'var(--theme-accent)' : 'var(--theme-textDim)' }} />
+                        )}
+                      </>
                     )}
                     <span className="truncate">{pl.name}</span>
                   </div>

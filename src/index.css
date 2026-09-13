@@ -43,9 +43,9 @@
 .sq-slider::-webkit-slider-runnable-track {
   width: 100%;
   height: 6px;
-  background: var(--theme-surfaceLighter);
-  border: 1px solid var(--theme-border);
-  box-shadow: inset 1px 1px 2px rgba(0,0,0,0.3);
+  background: var(--theme-sliderTrackBg, var(--theme-bg));
+  border: 1px solid var(--theme-sliderTrackBorder, var(--theme-border));
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
 }
 .sq-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -62,9 +62,9 @@
 .sq-slider::-moz-range-track {
   width: 100%;
   height: 6px;
-  background: var(--theme-surfaceLighter);
-  border: 1px solid var(--theme-border);
-  box-shadow: inset 1px 1px 2px rgba(0,0,0,0.3);
+  background: var(--theme-sliderTrackBg, var(--theme-bg));
+  border: 1px solid var(--theme-sliderTrackBorder, var(--theme-border));
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
 }
 .sq-slider::-moz-range-thumb {
   width: 14px;
@@ -74,4 +74,86 @@
   border-radius: 0; /* Square thumb */
   cursor: pointer;
   box-shadow: inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.2), 1px 1px 3px rgba(0,0,0,0.5);
+}
+
+/* Horizontal Wide Fader Slider for Volume */
+.vol-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 20px;
+  cursor: pointer;
+}
+.vol-slider:focus {
+  outline: none;
+}
+.vol-slider::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 6px;
+  background: var(--theme-sliderTrackBg, var(--theme-bg));
+  border: 1px solid var(--theme-sliderTrackBorder, var(--theme-border));
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
+  border-radius: 1px;
+}
+.vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 12px;
+  background: linear-gradient(
+    to right,
+    var(--theme-surfaceLighter, #1C2026) 0%,
+    var(--theme-textMain, #E1E4EA) 15%,
+    var(--theme-textMain, #E1E4EA) 45%,
+    var(--theme-bg, #0B0C0D) 47%,
+    var(--theme-bg, #0B0C0D) 53%,
+    var(--theme-textMain, #E1E4EA) 55%,
+    var(--theme-textMain, #E1E4EA) 85%,
+    var(--theme-surfaceLighter, #1C2026) 100%
+  );
+  border: 1px solid var(--theme-borderActive, #3B4352);
+  border-radius: 1px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.2);
+  margin-top: -4px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.vol-slider:hover::-webkit-slider-thumb,
+.vol-slider:active::-webkit-slider-thumb {
+  border-color: var(--theme-accent);
+  box-shadow: 0 0 6px rgba(142, 161, 189, 0.4), inset 0 1px 0 rgba(255,255,255,0.3);
+}
+
+.vol-slider::-moz-range-track {
+  width: 100%;
+  height: 6px;
+  background: var(--theme-sliderTrackBg, var(--theme-bg));
+  border: 1px solid var(--theme-sliderTrackBorder, var(--theme-border));
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
+  border-radius: 1px;
+}
+.vol-slider::-moz-range-thumb {
+  width: 22px;
+  height: 11px;
+  background: linear-gradient(
+    to right,
+    var(--theme-surfaceLighter, #1C2026) 0%,
+    var(--theme-textMain, #E1E4EA) 15%,
+    var(--theme-textMain, #E1E4EA) 45%,
+    var(--theme-bg, #0B0C0D) 47%,
+    var(--theme-bg, #0B0C0D) 53%,
+    var(--theme-textMain, #E1E4EA) 55%,
+    var(--theme-textMain, #E1E4EA) 85%,
+    var(--theme-surfaceLighter, #1C2026) 100%
+  );
+  border: 1px solid var(--theme-borderActive, #3B4352);
+  border-radius: 1px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.2);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.vol-slider:hover::-moz-range-thumb,
+.vol-slider:active::-moz-range-thumb {
+  border-color: var(--theme-accent);
+  box-shadow: 0 0 6px rgba(142, 161, 189, 0.4), inset 0 1px 0 rgba(255,255,255,0.3);
 }
