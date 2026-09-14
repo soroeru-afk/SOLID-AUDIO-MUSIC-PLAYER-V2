@@ -397,15 +397,81 @@ export default function App() {
     setPlayerOffset({ x: 0, y: 0 });
     try {
       if (viewMode === 'mini') {
-        window.resizeTo(420, 680);
+        const savedW = localStorage.getItem('solid_audio_mini_w');
+        const savedH = localStorage.getItem('solid_audio_mini_h');
+        const savedX = localStorage.getItem('solid_audio_mini_x');
+        const savedY = localStorage.getItem('solid_audio_mini_y');
+        const w = savedW ? parseInt(savedW, 10) : 520;
+        const h = savedH ? parseInt(savedH, 10) : 740;
+        window.resizeTo(w, h);
+        if (savedX !== null && savedY !== null) {
+          window.moveTo(parseInt(savedX, 10), parseInt(savedY, 10));
+        }
       } else if (viewMode === 'slim') {
-        window.resizeTo(520, 180);
+        const savedW = localStorage.getItem('solid_audio_slim_w');
+        const savedH = localStorage.getItem('solid_audio_slim_h');
+        const savedX = localStorage.getItem('solid_audio_slim_x');
+        const savedY = localStorage.getItem('solid_audio_slim_y');
+        const w = savedW ? parseInt(savedW, 10) : 720;
+        const h = savedH ? parseInt(savedH, 10) : 220;
+        window.resizeTo(w, h);
+        if (savedX !== null && savedY !== null) {
+          window.moveTo(parseInt(savedX, 10), parseInt(savedY, 10));
+        }
       } else if (viewMode === 'full') {
-        window.resizeTo(1280, 880);
+        const savedW = localStorage.getItem('solid_audio_full_w');
+        const savedH = localStorage.getItem('solid_audio_full_h');
+        const savedX = localStorage.getItem('solid_audio_full_x');
+        const savedY = localStorage.getItem('solid_audio_full_y');
+        const w = savedW ? parseInt(savedW, 10) : 1440;
+        const h = savedH ? parseInt(savedH, 10) : 920;
+        window.resizeTo(w, h);
+        if (savedX !== null && savedY !== null) {
+          window.moveTo(parseInt(savedX, 10), parseInt(savedY, 10));
+        }
       }
     } catch (e) {
       console.error('Failed to resize window', e);
     }
+  }, [viewMode]);
+
+  // Track and persist window size & position changes
+  useEffect(() => {
+    let timer: any;
+    const handleResizeOrMove = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        try {
+          const w = window.outerWidth || window.innerWidth;
+          const h = window.outerHeight || window.innerHeight;
+          const x = window.screenX;
+          const y = window.screenY;
+          if (viewMode === 'mini') {
+            localStorage.setItem('solid_audio_mini_w', String(w));
+            localStorage.setItem('solid_audio_mini_h', String(h));
+            localStorage.setItem('solid_audio_mini_x', String(x));
+            localStorage.setItem('solid_audio_mini_y', String(y));
+          } else if (viewMode === 'slim') {
+            localStorage.setItem('solid_audio_slim_w', String(w));
+            localStorage.setItem('solid_audio_slim_h', String(h));
+            localStorage.setItem('solid_audio_slim_x', String(x));
+            localStorage.setItem('solid_audio_slim_y', String(y));
+          } else if (viewMode === 'full') {
+            localStorage.setItem('solid_audio_full_w', String(w));
+            localStorage.setItem('solid_audio_full_h', String(h));
+            localStorage.setItem('solid_audio_full_x', String(x));
+            localStorage.setItem('solid_audio_full_y', String(y));
+          }
+        } catch (e) {
+          console.error('Failed to save window metrics', e);
+        }
+      }, 300);
+    };
+
+    window.addEventListener('resize', handleResizeOrMove);
+    return () => {
+      window.removeEventListener('resize', handleResizeOrMove);
+    };
   }, [viewMode]);
 
   // Load from IndexedDB
@@ -2089,7 +2155,7 @@ export default function App() {
           {viewMode === 'mini' ? (
              <div 
                 ref={playerRef}
-                className="w-[360px] rounded-xl flex flex-col overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.5)] border pointer-events-auto"
+                className="w-[440px] max-w-[95vw] rounded-xl flex flex-col overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.5)] border pointer-events-auto"
                 style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)', transform: `translate(${playerOffset.x}px, ${playerOffset.y}px)` }}
              >
                 {/* Embedded Draggable Header */}
