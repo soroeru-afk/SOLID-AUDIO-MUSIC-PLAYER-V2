@@ -395,6 +395,17 @@ export default function App() {
 
   useEffect(() => {
     setPlayerOffset({ x: 0, y: 0 });
+    try {
+      if (viewMode === 'mini') {
+        window.resizeTo(420, 680);
+      } else if (viewMode === 'slim') {
+        window.resizeTo(520, 180);
+      } else if (viewMode === 'full') {
+        window.resizeTo(1280, 880);
+      }
+    } catch (e) {
+      console.error('Failed to resize window', e);
+    }
   }, [viewMode]);
 
   // Load from IndexedDB
