@@ -157,3 +157,16 @@
   border-color: var(--theme-accent);
   box-shadow: 0 0 6px rgba(142, 161, 189, 0.4), inset 0 1px 0 rgba(255,255,255,0.3);
 }
+
+@keyframes spinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spinSlow 8s linear infinite;
+}

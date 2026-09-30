@@ -6,8 +6,9 @@ import {
   Minimize2, Maximize2, Layers, Minus, PanelTop, GripVertical, Type, Eye, EyeOff
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { get, set } from 'idb-keyval';
+import { get, set, del } from 'idb-keyval';
 import * as mm from 'music-metadata-browser';
+import { AlbumArt3D } from './components/AlbumArt3D';
 
 // --- Types ---
 interface Track {
@@ -35,6 +36,7 @@ interface Playlist {
 const THEMES = [
   { 
     id: 'NAVY', 
+    dotColor: '#2563eb',
     bg: '#0d1117', 
     surface: '#121822',
     surfaceLighter: '#1a2332',
@@ -51,6 +53,7 @@ const THEMES = [
   },
   { 
     id: 'BLACK', 
+    dotColor: '#252932',
     bg: '#0B0C0D', 
     surface: '#14161A',
     surfaceLighter: '#1C2026',
@@ -67,6 +70,7 @@ const THEMES = [
   },
   { 
     id: 'GRAY', 
+    dotColor: '#64748b',
     bg: '#363d47', 
     surface: '#434b57',
     surfaceLighter: '#4e5765',
@@ -100,6 +104,7 @@ const THEMES = [
   },
   { 
     id: 'LIGHT', 
+    dotColor: '#0284c7',
     bg: '#e8ecef', 
     surface: '#f4f6f8',
     surfaceLighter: '#ffffff',
@@ -116,6 +121,7 @@ const THEMES = [
   },
   { 
     id: 'BROWN', 
+    dotColor: '#b45309',
     bg: '#1a1614', 
     surface: '#241e1b',
     surfaceLighter: '#2e2723',
@@ -131,7 +137,43 @@ const THEMES = [
     sliderTrackBorder: '#61534b'
   },
   { 
+    id: 'MOCHA', 
+    dotColor: '#c4a48b',
+    bg: '#46382c', 
+    surface: '#59483a',
+    surfaceLighter: '#685646',
+    border: '#78685a', 
+    borderActive: '#c4a48b',
+    textMain: '#f7ece1',
+    textMuted: '#d4bfae',
+    textDim: '#a39081',
+    accent: '#c4a48b',
+    accentDark: '#947864',
+    accentMuted: '#3d3025',
+    sliderTrackBg: '#382c22',
+    sliderTrackBorder: '#78685a',
+    controlBoxBg: '#46382c',
+    // 04 & 05 ヘッダーバー (#59483A / #78685A)
+    listHeaderBg: '#59483a',
+    listHeaderBorder: '#78685a',
+    listHeaderText: '#f7ece1',
+    listHeaderTextMuted: '#c4a48b',
+    // 04 & 05 LIST AREA (プレイリスト一覧 & トラックリスト: #F7ECE1 クリーム背景 & 濃いめモカ文字)
+    listBg: '#f7ece1',
+    listSurface: '#efe2d5',
+    listSurfaceLighter: '#e5d6c7',
+    listBorder: '#dec8b7',
+    listBorderActive: '#78685a',
+    listTextMain: '#2b2018',
+    listTextMuted: '#59483a',
+    listTextDim: '#78685a',
+    listAccent: '#59483a',
+    listAccentMuted: '#dfcdbd',
+    listIconColor: '#2b2018',
+  },
+  { 
     id: 'OLIVE', 
+    dotColor: '#84cc16',
     bg: '#161a15', 
     surface: '#1e241c',
     surfaceLighter: '#283025',
@@ -148,6 +190,7 @@ const THEMES = [
   },
   { 
     id: 'RED', 
+    dotColor: '#ef4444',
     bg: '#140808', 
     surface: '#1f0d0d',
     surfaceLighter: '#2b1212',
@@ -273,6 +316,8 @@ export default function App() {
     } catch(e) {}
     return 0;
   });
+  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
+  const themeMenuRef = useRef<HTMLDivElement | null>(null);
   const [listFontSize, setListFontSize] = useState<number>(11);
   const [colWidths, setColWidths] = useState({
     index: 96,
@@ -444,83 +489,6 @@ export default function App() {
 
   useEffect(() => {
     setPlayerOffset({ x: 0, y: 0 });
-    try {
-      if (viewMode === 'mini') {
-        const savedW = localStorage.getItem('solid_audio_mini_w');
-        const savedH = localStorage.getItem('solid_audio_mini_h');
-        const savedX = localStorage.getItem('solid_audio_mini_x');
-        const savedY = localStorage.getItem('solid_audio_mini_y');
-        const w = savedW ? parseInt(savedW, 10) : 520;
-        const h = savedH ? parseInt(savedH, 10) : 740;
-        window.resizeTo(w, h);
-        if (savedX !== null && savedY !== null) {
-          window.moveTo(parseInt(savedX, 10), parseInt(savedY, 10));
-        }
-      } else if (viewMode === 'slim') {
-        const savedW = localStorage.getItem('solid_audio_slim_w');
-        const savedH = localStorage.getItem('solid_audio_slim_h');
-        const savedX = localStorage.getItem('solid_audio_slim_x');
-        const savedY = localStorage.getItem('solid_audio_slim_y');
-        const w = savedW ? parseInt(savedW, 10) : 720;
-        const h = savedH ? parseInt(savedH, 10) : 220;
-        window.resizeTo(w, h);
-        if (savedX !== null && savedY !== null) {
-          window.moveTo(parseInt(savedX, 10), parseInt(savedY, 10));
-        }
-      } else if (viewMode === 'full') {
-        const savedW = localStorage.getItem('solid_audio_full_w');
-        const savedH = localStorage.getItem('solid_audio_full_h');
-        const savedX = localStorage.getItem('solid_audio_full_x');
-        const savedY = localStorage.getItem('solid_audio_full_y');
-        const w = savedW ? parseInt(savedW, 10) : 1440;
-        const h = savedH ? parseInt(savedH, 10) : 920;
-        window.resizeTo(w, h);
-        if (savedX !== null && savedY !== null) {
-          window.moveTo(parseInt(savedX, 10), parseInt(savedY, 10));
-        }
-      }
-    } catch (e) {
-      console.error('Failed to resize window', e);
-    }
-  }, [viewMode]);
-
-  // Track and persist window size & position changes
-  useEffect(() => {
-    let timer: any;
-    const handleResizeOrMove = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        try {
-          const w = window.outerWidth || window.innerWidth;
-          const h = window.outerHeight || window.innerHeight;
-          const x = window.screenX;
-          const y = window.screenY;
-          if (viewMode === 'mini') {
-            localStorage.setItem('solid_audio_mini_w', String(w));
-            localStorage.setItem('solid_audio_mini_h', String(h));
-            localStorage.setItem('solid_audio_mini_x', String(x));
-            localStorage.setItem('solid_audio_mini_y', String(y));
-          } else if (viewMode === 'slim') {
-            localStorage.setItem('solid_audio_slim_w', String(w));
-            localStorage.setItem('solid_audio_slim_h', String(h));
-            localStorage.setItem('solid_audio_slim_x', String(x));
-            localStorage.setItem('solid_audio_slim_y', String(y));
-          } else if (viewMode === 'full') {
-            localStorage.setItem('solid_audio_full_w', String(w));
-            localStorage.setItem('solid_audio_full_h', String(h));
-            localStorage.setItem('solid_audio_full_x', String(x));
-            localStorage.setItem('solid_audio_full_y', String(y));
-          }
-        } catch (e) {
-          console.error('Failed to save window metrics', e);
-        }
-      }, 300);
-    };
-
-    window.addEventListener('resize', handleResizeOrMove);
-    return () => {
-      window.removeEventListener('resize', handleResizeOrMove);
-    };
   }, [viewMode]);
 
   // Load from IndexedDB
@@ -647,6 +615,25 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [library, playlists, sidebarWidth, colWidths, colVisibility, colOrder, themeIndex, listFontSize, activePlaylistId, playingPlaylistId, playbackQueue, currentTrackIndex, isInitialized]);
+
+  // Close theme menu on outside click or Escape key
+  useEffect(() => {
+    if (!isThemeMenuOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (themeMenuRef.current && !themeMenuRef.current.contains(e.target as Node)) {
+        setIsThemeMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsThemeMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isThemeMenuOpen]);
 
 
   // (Moved player state)
@@ -997,6 +984,165 @@ export default function App() {
     })));
   };
 
+  const getArtworkTargetTracks = (track: Track): Track[] => {
+    const idSet = new Set<string>();
+    idSet.add(track.id);
+
+    // 1. If currently playing a specific playlist
+    if (playingPlaylistId !== 'all-tracks' && playingPlaylist) {
+      playingPlaylist.tracks.forEach(t => idSet.add(t.id));
+    } else {
+      // 2. If in all-tracks or playback queue:
+      playbackQueue.forEach(t => idSet.add(t.id));
+
+      // Also if track has a designated album, include all tracks with that album
+      const hasAlbum = track.album && track.album !== 'Unknown Album' && track.album.trim() !== '';
+      if (hasAlbum) {
+        library.forEach(t => {
+          if (t.album && t.album.toLowerCase() === track.album.toLowerCase()) {
+            idSet.add(t.id);
+          }
+        });
+      }
+    }
+
+    // Collect full track references
+    const targetMap = new Map<string, Track>();
+    library.forEach(t => { if (idSet.has(t.id)) targetMap.set(t.id, t); });
+    playbackQueue.forEach(t => { if (idSet.has(t.id)) targetMap.set(t.id, t); });
+    if (playingPlaylist) {
+      playingPlaylist.tracks.forEach(t => { if (idSet.has(t.id)) targetMap.set(t.id, t); });
+    }
+    return Array.from(targetMap.values());
+  };
+
+  const handleUpdateArtwork = async (file: File): Promise<number> => {
+    if (!currentTrack) return 0;
+    try {
+      const targetTracks = getArtworkTargetTracks(currentTrack);
+      const buffer = await file.arrayBuffer();
+      const mimeType = file.type || 'image/jpeg';
+      const sharedCoverUrl = URL.createObjectURL(new Blob([buffer], { type: mimeType }));
+
+      // 1. For all target tracks, ensure original cover is backed up, then set new cover
+      await Promise.all(targetTracks.map(async (t) => {
+        try {
+          const existingOrig = await get(`v2_track_original_cover_${t.id}`);
+          if (!existingOrig) {
+            const currentCoverData = await get(`v2_track_cover_${t.id}`);
+            if (currentCoverData && currentCoverData.buffer) {
+              await set(`v2_track_original_cover_${t.id}`, currentCoverData);
+            } else {
+              let audioBlob: Blob | null = t.file || null;
+              if (!audioBlob) {
+                const audioData = await get(`v2_track_audio_${t.id}`);
+                if (audioData && audioData.buffer) {
+                  audioBlob = new Blob([audioData.buffer], { type: audioData.type });
+                }
+              }
+              if (audioBlob) {
+                try {
+                  const meta = await mm.parseBlob(audioBlob, { skipCovers: false });
+                  const pic = meta.common.picture?.[0];
+                  if (pic) {
+                    let mime = pic.format;
+                    if (!mime.startsWith('image/')) mime = `image/${mime}`;
+                    const origBuf = pic.data.buffer.slice(pic.data.byteOffset, pic.data.byteOffset + pic.data.byteLength);
+                    await set(`v2_track_original_cover_${t.id}`, { buffer: origBuf, type: mime });
+                  }
+                } catch (e) {
+                  // Ignore parse error on backup
+                }
+              }
+            }
+          }
+          // Set new custom cover for this track
+          await set(`v2_track_cover_${t.id}`, { buffer, type: mimeType });
+        } catch (e) {
+          console.error(`Failed to update cover for track ${t.id}`, e);
+        }
+      }));
+
+      // 2. Update React states atomically across library, playlists, and queue
+      const targetIds = new Set(targetTracks.map(t => t.id));
+      const updateCover = (t: Track) => targetIds.has(t.id) ? { ...t, coverUrl: sharedCoverUrl } : t;
+      setLibrary(prev => prev.map(updateCover));
+      setPlaylists(prev => prev.map(p => ({ ...p, tracks: p.tracks.map(updateCover) })));
+      setPlaybackQueue(prev => prev.map(updateCover));
+
+      return targetTracks.length;
+    } catch (err) {
+      console.error('Failed to update cover artwork for list:', err);
+      return 0;
+    }
+  };
+
+  const handleResetArtwork = async (): Promise<number | boolean> => {
+    if (!currentTrack) return false;
+    try {
+      const targetTracks = getArtworkTargetTracks(currentTrack);
+      const restoredUrlMap = new Map<string, string | undefined>();
+
+      // Restore each track's own original embedded cover
+      await Promise.all(targetTracks.map(async (t) => {
+        try {
+          let originalCover = await get(`v2_track_original_cover_${t.id}`);
+          if (!originalCover || !originalCover.buffer) {
+            let audioBlob: Blob | null = t.file || null;
+            if (!audioBlob) {
+              const audioData = await get(`v2_track_audio_${t.id}`);
+              if (audioData && audioData.buffer) {
+                audioBlob = new Blob([audioData.buffer], { type: audioData.type });
+              }
+            }
+            if (audioBlob) {
+              try {
+                const meta = await mm.parseBlob(audioBlob, { skipCovers: false });
+                const pic = meta.common.picture?.[0];
+                if (pic) {
+                  let mime = pic.format;
+                  if (!mime.startsWith('image/')) mime = `image/${mime}`;
+                  const origBuf = pic.data.buffer.slice(pic.data.byteOffset, pic.data.byteOffset + pic.data.byteLength);
+                  originalCover = { buffer: origBuf, type: mime };
+                  await set(`v2_track_original_cover_${t.id}`, originalCover);
+                }
+              } catch (e) {
+                // Ignore
+              }
+            }
+          }
+
+          if (originalCover && originalCover.buffer) {
+            await set(`v2_track_cover_${t.id}`, originalCover);
+            const restoredUrl = URL.createObjectURL(new Blob([originalCover.buffer], { type: originalCover.type }));
+            restoredUrlMap.set(t.id, restoredUrl);
+          } else {
+            await del(`v2_track_cover_${t.id}`);
+            restoredUrlMap.set(t.id, undefined);
+          }
+        } catch (e) {
+          console.error(`Failed to restore cover for track ${t.id}`, e);
+        }
+      }));
+
+      // Update React state for all target tracks
+      const updateCover = (t: Track) => {
+        if (restoredUrlMap.has(t.id)) {
+          return { ...t, coverUrl: restoredUrlMap.get(t.id) };
+        }
+        return t;
+      };
+      setLibrary(prev => prev.map(updateCover));
+      setPlaylists(prev => prev.map(p => ({ ...p, tracks: p.tracks.map(updateCover) })));
+      setPlaybackQueue(prev => prev.map(updateCover));
+
+      return targetTracks.length;
+    } catch (err) {
+      console.error('Failed to restore original artwork for list:', err);
+      return false;
+    }
+  };
+
   const startEditTrack = (e: React.MouseEvent, track: Track) => {
     e.stopPropagation();
     setEditingTrackId(track.id);
@@ -1090,6 +1236,7 @@ export default function App() {
         if (!mimeType.startsWith('image/')) mimeType = `image/${mimeType}`;
         const coverBuffer = picture.data.buffer.slice(picture.data.byteOffset, picture.data.byteOffset + picture.data.byteLength);
         await set(`v2_track_cover_${trackId}`, { buffer: coverBuffer, type: mimeType });
+        await set(`v2_track_original_cover_${trackId}`, { buffer: coverBuffer, type: mimeType });
         coverUrl = URL.createObjectURL(new Blob([coverBuffer], { type: mimeType }));
       }
     } catch (err) {
@@ -1666,8 +1813,15 @@ export default function App() {
     setNewPlaylistName('');
   };
 
-  const cycleTheme = () => {
-    setThemeIndex((prev) => (prev + 1) % THEMES.length);
+  const cycleTheme = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setThemeIndex((prev) => {
+      const next = (prev + 1) % THEMES.length;
+      try {
+        localStorage.setItem('v2_solidThemeId', THEMES[next].id);
+      } catch {}
+      return next;
+    });
   };
 
   // --- Playlist Drag and Drop ---
@@ -2240,7 +2394,7 @@ export default function App() {
           {viewMode === 'mini' ? (
              <div 
                 ref={playerRef}
-                className="w-[440px] max-w-[95vw] rounded-xl flex flex-col overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.5)] border pointer-events-auto"
+                className="w-[360px] rounded-xl flex flex-col overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.5)] border pointer-events-auto"
                 style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)', transform: `translate(${playerOffset.x}px, ${playerOffset.y}px)` }}
              >
                 {/* Embedded Draggable Header */}
@@ -2505,17 +2659,130 @@ export default function App() {
             <span className="text-[9px] uppercase tracking-wider font-mono" style={{ color: 'var(--theme-accent)', width: '24px', textAlign: 'right' }}>{listFontSize}PX</span>
           </div>
 
-          <button 
-            onClick={cycleTheme}
-            className="flex items-center justify-center gap-2 border h-6 px-2 transition-colors hover:opacity-80"
-            style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-textMuted)' }}
-            onMouseEnter={e => e.currentTarget.style.color = 'var(--theme-textMain)'}
-            onMouseLeave={e => e.currentTarget.style.color = 'var(--theme-textMuted)'}
-          >
-            <Palette size={12} />
-            <span className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--theme-accent)' }}>THEME: {theme.id}</span>
-          </button>
-          <div className="text-xs tracking-widest font-mono" style={{ color: 'var(--theme-textMuted)' }}>v2.0.8 OS</div>
+          {/* Theme Control: Split Button (Click name = Cycle next theme, Click arrow = Dropdown list) */}
+          <div className="relative flex items-center" ref={themeMenuRef}>
+            <div 
+              className="flex items-center h-6 border rounded-[1px] select-none overflow-hidden"
+              style={{
+                borderColor: isThemeMenuOpen ? 'var(--theme-accent)' : 'var(--theme-border)',
+                backgroundColor: 'var(--theme-surface)',
+              }}
+            >
+              {/* Left Button: Click name to cycle to next theme in sequence (Fixed width prevents layout shift) */}
+              <button
+                onClick={cycleTheme}
+                className="flex items-center h-full pl-2 pr-1.5 transition-colors hover:bg-black/10 dark:hover:bg-white/10 cursor-pointer w-[78px] justify-start"
+                title={`クリックで次のテーマへ順送り (${theme.id})`}
+                style={{ color: 'var(--theme-textMain)' }}
+              >
+                {/* Current Theme Dot */}
+                <span 
+                  className="w-2.5 h-2.5 rounded-full mr-1.5 shrink-0 border"
+                  style={{
+                    backgroundColor: theme.dotColor || theme.accent,
+                    borderColor: 'rgba(0,0,0,0.3)',
+                    boxShadow: '0 0 2px rgba(0,0,0,0.3)',
+                  }}
+                />
+                {/* Current Theme Name */}
+                <span className="text-[10px] font-mono font-bold tracking-wider truncate">
+                  {theme.id}
+                </span>
+              </button>
+
+              {/* Right Button: Click arrow to toggle dropdown list */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsThemeMenuOpen(prev => !prev);
+                }}
+                className="flex items-center justify-center h-full w-5 border-l transition-colors hover:bg-black/10 dark:hover:bg-white/10 cursor-pointer"
+                style={{
+                  borderColor: 'var(--theme-border)',
+                  color: isThemeMenuOpen ? 'var(--theme-accent)' : 'var(--theme-textMuted)',
+                  backgroundColor: isThemeMenuOpen ? 'var(--theme-surfaceLighter)' : 'transparent',
+                }}
+                title="テーマ一覧メニューを開く"
+              >
+                <span className="text-[7px]">▼</span>
+              </button>
+            </div>
+
+            {/* Dropdown Menu Popup */}
+            {isThemeMenuOpen && (
+              <div 
+                className="absolute right-0 top-full mt-1 z-50 w-44 border shadow-2xl rounded-[1px] py-1 select-none animate-fade-in"
+                style={{
+                  backgroundColor: 'var(--theme-surfaceLighter)',
+                  borderColor: 'var(--theme-borderActive)',
+                  color: 'var(--theme-textMain)',
+                }}
+              >
+                {/* Header: 🎨 テーマ切り替え */}
+                <div 
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold border-b tracking-wider select-none"
+                  style={{
+                    borderColor: 'var(--theme-border)',
+                    color: 'var(--theme-textMain)',
+                  }}
+                >
+                  <span className="text-[11px]">🎨</span>
+                  <span>テーマ切り替え</span>
+                </div>
+
+                {/* Theme List */}
+                <div className="py-1">
+                  {THEMES.map((t, idx) => {
+                    const isSelected = idx === themeIndex;
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => {
+                          setThemeIndex(idx);
+                          try {
+                            localStorage.setItem('v2_solidThemeId', t.id);
+                          } catch {}
+                          setIsThemeMenuOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-1.5 text-[10.5px] font-mono font-bold tracking-wider text-left transition-colors cursor-pointer"
+                        style={{
+                          backgroundColor: isSelected ? 'var(--theme-surface)' : 'transparent',
+                          color: isSelected ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'var(--theme-surface)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {/* Theme Color Dot */}
+                          <span 
+                            className="w-3 h-3 rounded-full shrink-0 border"
+                            style={{
+                              backgroundColor: t.dotColor || t.accent,
+                              borderColor: 'rgba(0,0,0,0.3)',
+                              boxShadow: isSelected ? `0 0 4px ${t.dotColor || t.accent}` : 'none',
+                            }}
+                          />
+                          <span className="truncate">{t.id}</span>
+                        </div>
+                        {isSelected && (
+                          <Check size={12} style={{ color: 'var(--theme-accent)' }} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="text-xs tracking-widest font-mono" style={{ color: 'var(--theme-textMuted)' }}>v2.0.9 OS</div>
         </div>
       </header>
 
@@ -2527,13 +2794,17 @@ export default function App() {
           {currentTrack ? (
             <div className="flex h-full gap-4 overflow-hidden relative">
               <div className="h-full aspect-square shrink-0 relative border shadow-inner" style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-bg)' }}>
-                {currentTrack.coverUrl ? (
-                  <img src={currentTrack.coverUrl} className="absolute inset-0 w-full h-full object-cover" alt="Album Art" />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                     <Activity size={24} style={{ color: 'var(--theme-textDim)' }} />
-                  </div>
-                )}
+                <AlbumArt3D
+                  coverUrl={currentTrack.coverUrl}
+                  title={currentTrack.title}
+                  artist={currentTrack.artist}
+                  album={currentTrack.album}
+                  duration={currentTrack.duration}
+                  fileName={currentTrack.fileName}
+                  isPlaying={isPlaying}
+                  onDropImage={handleUpdateArtwork}
+                  onResetArtwork={handleResetArtwork}
+                />
               </div>
               <div className="flex flex-col h-full justify-between pb-1 min-w-0 flex-1">
                 <div className="min-w-0">
