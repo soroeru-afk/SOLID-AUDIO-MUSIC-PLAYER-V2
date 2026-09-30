@@ -489,6 +489,19 @@ export default function App() {
 
   useEffect(() => {
     setPlayerOffset({ x: 0, y: 0 });
+    try {
+      if (typeof window !== 'undefined' && window.resizeTo) {
+        if (viewMode === 'mini') {
+          window.resizeTo(480, 680);
+        } else if (viewMode === 'slim') {
+          window.resizeTo(720, 160);
+        } else if (viewMode === 'full') {
+          window.resizeTo(1700, 1200);
+        }
+      }
+    } catch (e) {
+      console.warn("window.resizeTo is restricted by browser context", e);
+    }
   }, [viewMode]);
 
   // Load from IndexedDB
@@ -2515,7 +2528,7 @@ export default function App() {
           ) : (
              <div 
                 ref={playerRef}
-                className="w-[600px] max-w-[90vw] rounded-xl flex items-center overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.5)] border p-2 gap-4 pointer-events-auto" 
+                className="w-[660px] max-w-[95vw] rounded-xl flex items-center overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.5)] border p-2 gap-3 pointer-events-auto" 
                 style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)', transform: `translate(${playerOffset.x}px, ${playerOffset.y}px)` }}
              >
                 {/* Embedded Draggable Drag Handle */}
