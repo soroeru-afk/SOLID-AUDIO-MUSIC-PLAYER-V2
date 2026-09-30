@@ -207,6 +207,12 @@ const THEMES = [
   }
 ];
 
+const DEFAULT_WINDOW_SIZES: Record<'full' | 'mini' | 'slim', { width: number; height: number }> = {
+  full: { width: 1700, height: 1200 },
+  mini: { width: 500, height: 720 },
+  slim: { width: 720, height: 160 }
+};
+
 // --- Utils ---
 const formatTime = (seconds: number) => {
   if (isNaN(seconds)) return '0:00';
@@ -420,6 +426,62 @@ export default function App() {
     return 'full';
   });
 
+  const [windowSizes, setWindowSizes] = useState<Record<'full' | 'mini' | 'slim', { width: number; height: number }>>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solidWindowSizes');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          full: parsed.full && parsed.full.width ? parsed.full : DEFAULT_WINDOW_SIZES.full,
+          mini: parsed.mini && parsed.mini.width ? parsed.mini : DEFAULT_WINDOW_SIZES.mini,
+          slim: parsed.slim && parsed.slim.width ? parsed.slim : DEFAULT_WINDOW_SIZES.slim,
+        };
+      }
+    } catch (e) {}
+    return DEFAULT_WINDOW_SIZES;
+  });
+
+  const viewModeRef = useRef(viewMode);
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  }, [viewMode]);
+
+  useEffect(() => {
+    let timeoutId: any = null;
+    const handleResize = () => {
+      if (typeof window === 'undefined') return;
+      const w = window.outerWidth || window.innerWidth;
+      const h = window.outerHeight || window.innerHeight;
+      if (!w || !h || w < 200 || h < 100) return;
+
+      const currentMode = viewModeRef.current;
+      
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        setWindowSizes(prev => {
+          if (prev[currentMode]?.width === w && prev[currentMode]?.height === h) {
+            return prev;
+          }
+          const updated = {
+            ...prev,
+            [currentMode]: { width: w, height: h }
+          };
+          try {
+            localStorage.setItem('v2_solidWindowSizes', JSON.stringify(updated));
+            set('v2_solidWindowSizes', updated).catch(() => {});
+          } catch (e) {}
+          return updated;
+        });
+      }, 200);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const playerRef = useRef<HTMLDivElement>(null);
@@ -502,18 +564,15 @@ export default function App() {
 
     try {
       if (typeof window !== 'undefined' && window.resizeTo) {
-        if (viewMode === 'mini') {
-          window.resizeTo(500, 720);
-        } else if (viewMode === 'slim') {
-          window.resizeTo(720, 160);
-        } else if (viewMode === 'full') {
-          window.resizeTo(1700, 1200);
+        const target = windowSizes[viewMode] || DEFAULT_WINDOW_SIZES[viewMode];
+        if (target && target.width && target.height) {
+          window.resizeTo(target.width, target.height);
         }
       }
     } catch (e) {
       console.warn("window.resizeTo is restricted by browser context", e);
     }
-  }, [viewMode]);
+  }, [viewMode, windowSizes]);
 
   // Load from IndexedDB
   useEffect(() => {
@@ -536,7 +595,16 @@ export default function App() {
         const savedEqLow = await get('v2_solidEqLow');
         const savedEqMid = await get('v2_solidEqMid');
         const savedEqHigh = await get('v2_solidEqHigh');
+        const savedWindowSizes = await get('v2_solidWindowSizes');
         
+        if (savedWindowSizes && typeof savedWindowSizes === 'object') {
+          setWindowSizes(prev => ({
+            full: savedWindowSizes.full && savedWindowSizes.full.width ? savedWindowSizes.full : prev.full,
+            mini: savedWindowSizes.mini && savedWindowSizes.mini.width ? savedWindowSizes.mini : prev.mini,
+            slim: savedWindowSizes.slim && savedWindowSizes.slim.width ? savedWindowSizes.slim : prev.slim,
+          }));
+        }
+
         if (savedVolume !== undefined && !isNaN(savedVolume) && savedVolume >= 0 && savedVolume <= 1) setVolume(savedVolume);
         if (savedIsMuted !== undefined) setIsMuted(!!savedIsMuted);
         if (savedEqLow !== undefined && !isNaN(savedEqLow)) setEqLow(savedEqLow);
