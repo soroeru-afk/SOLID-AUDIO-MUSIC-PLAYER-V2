@@ -412,7 +412,13 @@ export default function App() {
   // Duplicates & Mini Mode State
   const [duplicateGroups, setDuplicateGroups] = useState<Track[][]>([]);
   const [showDuplicatesModal, setShowDuplicatesModal] = useState(false);
-  const [viewMode, setViewMode] = useState<'full' | 'mini' | 'slim'>('full');
+  const [viewMode, setViewMode] = useState<'full' | 'mini' | 'slim'>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solidViewMode');
+      if (saved === 'mini' || saved === 'slim' || saved === 'full') return saved;
+    } catch (e) {}
+    return 'full';
+  });
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
@@ -490,9 +496,14 @@ export default function App() {
   useEffect(() => {
     setPlayerOffset({ x: 0, y: 0 });
     try {
+      localStorage.setItem('v2_solidViewMode', viewMode);
+      set('v2_solidViewMode', viewMode).catch(() => {});
+    } catch (e) {}
+
+    try {
       if (typeof window !== 'undefined' && window.resizeTo) {
         if (viewMode === 'mini') {
-          window.resizeTo(480, 680);
+          window.resizeTo(500, 720);
         } else if (viewMode === 'slim') {
           window.resizeTo(720, 160);
         } else if (viewMode === 'full') {
