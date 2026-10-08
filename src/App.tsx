@@ -604,7 +604,7 @@ export default function App() {
             slim: savedWindowSizes.slim && savedWindowSizes.slim.width ? savedWindowSizes.slim : prev.slim,
           }));
         }
-
+        
         if (savedVolume !== undefined && !isNaN(savedVolume) && savedVolume >= 0 && savedVolume <= 1) setVolume(savedVolume);
         if (savedIsMuted !== undefined) setIsMuted(!!savedIsMuted);
         if (savedEqLow !== undefined && !isNaN(savedEqLow)) setEqLow(savedEqLow);
@@ -880,17 +880,6 @@ export default function App() {
   const iconColor = isLightTheme ? '#1a2530' : '#ffffff';
   const listIconColor = (theme as any).listIconColor || iconColor;
   
-  // Dynamically update browser theme-color meta tag
-  useEffect(() => {
-    let metaThemeColor = document.querySelector('meta[name="theme-color"]');
-    if (!metaThemeColor) {
-      metaThemeColor = document.createElement('meta');
-      metaThemeColor.setAttribute('name', 'theme-color');
-      document.head.appendChild(metaThemeColor);
-    }
-    metaThemeColor.setAttribute('content', theme.bg);
-  }, [theme]);
-
   // Refs for visualizer to prevent loop restarts
   const visualizerActive = useRef(isPlaying);
   visualizerActive.current = isPlaying;
@@ -2607,7 +2596,7 @@ export default function App() {
           ) : (
              <div 
                 ref={playerRef}
-                className="w-[660px] max-w-[95vw] rounded-xl flex items-center overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.5)] border p-2 gap-3 pointer-events-auto" 
+                className="w-[660px] max-w-[95vw] rounded-xl flex items-center overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.5)] border p-2 gap-4 pointer-events-auto" 
                 style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)', transform: `translate(${playerOffset.x}px, ${playerOffset.y}px)` }}
              >
                 {/* Embedded Draggable Drag Handle */}
