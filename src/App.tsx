@@ -2027,6 +2027,75 @@ export default function App() {
     setConfirmDeleteSelectedPlaylists(false);
   };
 
+  const moveSelectedTracks = (direction: 'top' | 'up' | 'down' | 'bottom') => {
+    if (selectedTrackIds.size === 0) return;
+
+    if (activeSortConfig.key !== 'none') {
+      setSortConfig({ key: 'none', direction: 'asc' });
+    }
+
+    const reorder = (list: Track[]): Track[] => {
+      const selectedIndices = list
+        .map((t, idx) => (selectedTrackIds.has(t.id) ? idx : -1))
+        .filter((idx) => idx !== -1);
+
+      if (selectedIndices.length === 0) return list;
+
+      const newList = [...list];
+
+      if (direction === 'top') {
+        const selectedItems = selectedIndices.map((i) => list[i]);
+        const unselectedItems = list.filter((t) => !selectedTrackIds.has(t.id));
+        return [...selectedItems, ...unselectedItems];
+      } else if (direction === 'bottom') {
+        const selectedItems = selectedIndices.map((i) => list[i]);
+        const unselectedItems = list.filter((t) => !selectedTrackIds.has(t.id));
+        return [...unselectedItems, ...selectedItems];
+      } else if (direction === 'up') {
+        if (selectedIndices[0] === 0) return list;
+        for (const idx of selectedIndices) {
+          if (idx > 0 && !selectedTrackIds.has(newList[idx - 1].id)) {
+            const temp = newList[idx];
+            newList[idx] = newList[idx - 1];
+            newList[idx - 1] = temp;
+          }
+        }
+        return newList;
+      } else if (direction === 'down') {
+        if (selectedIndices[selectedIndices.length - 1] === list.length - 1) return list;
+        for (let i = selectedIndices.length - 1; i >= 0; i--) {
+          const idx = selectedIndices[i];
+          if (idx < list.length - 1 && !selectedTrackIds.has(newList[idx + 1].id)) {
+            const temp = newList[idx];
+            newList[idx] = newList[idx + 1];
+            newList[idx + 1] = temp;
+          }
+        }
+        return newList;
+      }
+      return list;
+    };
+
+    if (activePlaylistId === 'all-tracks') {
+      setLibrary((prev) => {
+        const updated = reorder(prev);
+        set('v2_solidLibrary', updated).catch(() => {});
+        return updated;
+      });
+    } else {
+      setPlaylists((prev) => {
+        const updated = prev.map((pl) => {
+          if (pl.id === activePlaylistId) {
+            return { ...pl, tracks: reorder(pl.tracks) };
+          }
+          return pl;
+        });
+        set('v2_solidPlaylists', updated).catch(() => {});
+        return updated;
+      });
+    }
+  };
+
   // --- Track Ordering ---
   const moveTrack = (e: React.MouseEvent, fromIndex: number, toIndex: number) => {
     e.stopPropagation();
@@ -3524,6 +3593,46 @@ export default function App() {
                    </button>
                    {selectedTrackIds.size > 0 && (
                      <div className="flex items-center gap-3">
+                       <div className="flex items-center gap-1.5 border-l pl-3" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
+                         <span className="text-[9px] uppercase tracking-wider font-mono" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
+                           MOVE ({selectedTrackIds.size}):
+                         </span>
+                         <div className="flex items-center gap-0.5">
+                           <button 
+                             onClick={() => moveSelectedTracks('top')}
+                             className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                             style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                             title="選択した曲を一番上へ移動 (Top)"
+                           >
+                             <ChevronsUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                           </button>
+                           <button 
+                             onClick={() => moveSelectedTracks('up')}
+                             className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                             style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                             title="選択した曲を1段上へ移動 (Up)"
+                           >
+                             <ChevronUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                           </button>
+                           <button 
+                             onClick={() => moveSelectedTracks('down')}
+                             className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                             style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                             title="選択した曲を1段下へ移動 (Down)"
+                           >
+                             <ChevronDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                           </button>
+                           <button 
+                             onClick={() => moveSelectedTracks('bottom')}
+                             className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                             style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                             title="選択した曲を一番下へ移動 (Bottom)"
+                           >
+                             <ChevronsDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                           </button>
+                         </div>
+                       </div>
+
                        <div className="relative">
                          <button 
                             onClick={() => setShowAddToPlaylist(!showAddToPlaylist)}
