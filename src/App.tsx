@@ -982,9 +982,15 @@ export default function App() {
   ));
 
   // Helper to resolve track album and artist with folderPath & playlist hierarchy
+  // Ensures tracks inside the same folder (or single-folder playlist) are grouped into ONE unified album by folder name,
+  // without being split apart by inconsistent MP3 internal album tags (release dates, singles, etc.)!
   const getTrackAlbumArtist = (track: Track, currentPlaylist?: Playlist) => {
     let albumName = track.album?.trim() || '';
     let artistName = track.artist?.trim() || '';
+
+    const ownerPlaylist = (currentPlaylist && currentPlaylist.id !== 'all-tracks')
+      ? currentPlaylist
+      : playlists.find(p => p.id !== 'all-tracks' && p.tracks.some(pt => pt.id === track.id));
 
     if (track.folderPath) {
       const parts = track.folderPath.split('/').filter(Boolean);
@@ -992,39 +998,38 @@ export default function App() {
       if (parts.length >= 3) {
         const subFolderName = parts[parts.length - 2];
         const parentFolderName = parts[parts.length - 3];
-        // Always treat the subfolder name as the distinct Album name when browsing inside the parent folder or when album is missing
-        if (!albumName || albumName === 'Unknown Album' || (currentPlaylist && currentPlaylist.name === parentFolderName)) {
-          albumName = subFolderName;
-        }
+        // Always unify tracks in the same subfolder under that subfolder's name as the Album!
+        albumName = subFolderName;
         if (!artistName || artistName === 'Unknown Artist') {
           artistName = parentFolderName;
         }
       } else if (parts.length === 2) {
-        // Case 2: Direct file inside the dropped root folder (e.g. "■ - T-SQUARE ベストアルバム集 / Moon Over the Castle.mp3")
+        // Case 2: Direct file inside a single dropped folder (e.g. "■ - @ささきいさお _ Best Collection / song.mp3")
         const rootFolderName = parts[0];
-        if (!albumName || albumName === 'Unknown Album') {
-          albumName = rootFolderName;
+        // Check if this playlist has any 3+ level subfolders; if it's a single flat folder, unify all tracks under the folder name!
+        const hasNestedSubfolders = ownerPlaylist
+          ? ownerPlaylist.tracks.some(pt => (pt.folderPath?.split('/').filter(Boolean).length || 0) >= 3)
+          : false;
+        if (!hasNestedSubfolders || !albumName || albumName === 'Unknown Album') {
+          albumName = ownerPlaylist?.name || rootFolderName;
         }
         if (!artistName || artistName === 'Unknown Artist') {
           artistName = rootFolderName;
         }
       }
-    }
-
-    // Fallback: if still Unknown Album / Unknown Artist, check playlist membership
-    if ((!albumName || albumName === 'Unknown Album') || (!artistName || artistName === 'Unknown Artist')) {
-      const ownerPlaylist = (currentPlaylist && currentPlaylist.id !== 'all-tracks')
-        ? currentPlaylist
-        : playlists.find(p => p.id !== 'all-tracks' && p.tracks.some(pt => pt.id === track.id));
-      if (ownerPlaylist && ownerPlaylist.name) {
+    } else if (ownerPlaylist && ownerPlaylist.name) {
+      // Case 3: Already-imported playlist without folderPath (loaded before folderPath was added)
+      // If none of the tracks in this playlist have nested subfolders, unify them into 1 album named after the playlist/folder!
+      const hasNestedSubfolders = ownerPlaylist.tracks.some(
+        pt => (pt.folderPath?.split('/').filter(Boolean).length || 0) >= 3
+      );
+      if (!hasNestedSubfolders) {
         if (ownerPlaylist.name.includes(' / ')) {
           const [plArtist, plAlbum] = ownerPlaylist.name.split(' / ').map(s => s.trim());
+          albumName = plAlbum || ownerPlaylist.name;
           if (!artistName || artistName === 'Unknown Artist') artistName = plArtist || artistName;
-          if (!albumName || albumName === 'Unknown Album') albumName = plAlbum || albumName;
         } else {
-          if (!albumName || albumName === 'Unknown Album') {
-            albumName = ownerPlaylist.name;
-          }
+          albumName = ownerPlaylist.name;
           if (!artistName || artistName === 'Unknown Artist') {
             artistName = ownerPlaylist.name;
           }
@@ -1643,15 +1648,16 @@ export default function App() {
       if (artist === 'Unknown Artist') artist = parsed.artist;
     }
 
-    // Deduce Album and Artist from Directory Structure (e.g. "Artist/Album/Song.mp3")
+    // Deduce Album and Artist from Directory Structure (e.g. "Artist/Album/Song.mp3" or "Folder/Song.mp3")
+    // Always prioritize the immediate folder name as the Album name so tracks in the same folder aren't split by varying MP3 album tags!
     const relPath = (file as any).webkitRelativePath || '';
     if (relPath) {
       const parts = relPath.split('/').filter(Boolean);
       // Immediate parent folder = Album
-      if (parts.length >= 2 && (!album || album === 'Unknown Album')) {
+      if (parts.length >= 2) {
         album = parts[parts.length - 2];
       }
-      // Grandparent folder = Artist
+      // Grandparent folder = Artist (if not already set)
       if (parts.length >= 3 && (!artist || artist === 'Unknown Artist')) {
         artist = parts[parts.length - 3];
       }
@@ -2817,6 +2823,31 @@ export default function App() {
     localStorage.setItem('v2_solid_bank_view_mode', 'tracks');
   };
 
+  // One-click unify all tracks in the currently active playlist into a single album named after the folder/playlist
+  const handleUnifyPlaylistAlbum = () => {
+    if (activePlaylistId === 'all-tracks' || !activePlaylist) return;
+    const unifiedAlbumName = activePlaylist.name.trim();
+    const targetTrackIds = new Set(activePlaylist.tracks.map(t => t.id));
+    if (targetTrackIds.size === 0) return;
+
+    const updateTrackAlbum = (t: Track): Track => {
+      if (!targetTrackIds.has(t.id)) return t;
+      return {
+        ...t,
+        album: unifiedAlbumName,
+        folderPath: `${unifiedAlbumName}/${t.fileName}`,
+      };
+    };
+
+    setLibrary(prev => prev.map(updateTrackAlbum));
+    setPlaylists(prev => prev.map(p => ({
+      ...p,
+      tracks: p.tracks.map(updateTrackAlbum),
+    })));
+    setPlaybackQueue(prev => prev.map(updateTrackAlbum));
+    setDrillDownAlbum(null);
+  };
+
   // Sidebar resize handlers
   const handleSidebarMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -3203,7 +3234,7 @@ export default function App() {
       {/* Hidden Inputs */}
       <audio 
         ref={audioRef} 
-        src={currentTrack?.url} 
+        src={currentTrack?.url || undefined} 
         onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
         onEnded={handleNext}
@@ -4561,7 +4592,7 @@ export default function App() {
                  <span className="text-[10px] uppercase tracking-wider font-bold truncate max-w-[130px]" style={{ color: 'var(--theme-accent)' }}>{activePlaylist.name}</span>
                </div>
 
-               {/* View Mode Switcher: TRACKS (編集モード) | ALBUM CARDS (タイル表示モード) */}
+               {/* View Mode Switcher: TRACKS | ALBUM | CARDS | LIST */}
                <div className="flex items-center gap-0.5 border-l pl-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
                  <button
                    onClick={() => {
@@ -4579,21 +4610,6 @@ export default function App() {
                  </button>
                  <button
                    onClick={() => {
-                     setBankViewMode('card');
-                     setDrillDownAlbum(null);
-                     localStorage.setItem('v2_solid_bank_view_mode', 'card');
-                   }}
-                   className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors font-bold"
-                   style={bankViewMode === 'card'
-                     ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
-                     : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
-                   title="CARD モード（アルバムジャケットを横にタイル敷き詰め表示）"
-                 >
-                   <LayoutGrid size={9} />
-                   <span>CARDS</span>
-                 </button>
-                 <button
-                   onClick={() => {
                      setBankViewMode('album');
                      setDrillDownAlbum(null);
                      localStorage.setItem('v2_solid_bank_view_mode', 'album');
@@ -4606,6 +4622,21 @@ export default function App() {
                  >
                    <Disc size={9} />
                    <span>ALBUM</span>
+                 </button>
+                 <button
+                   onClick={() => {
+                     setBankViewMode('card');
+                     setDrillDownAlbum(null);
+                     localStorage.setItem('v2_solid_bank_view_mode', 'card');
+                   }}
+                   className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors font-bold"
+                   style={bankViewMode === 'card'
+                     ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                     : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
+                   title="CARD モード（アルバムジャケットを横にタイル敷き詰め表示）"
+                 >
+                   <LayoutGrid size={9} />
+                   <span>CARDS</span>
                  </button>
                  <button
                    onClick={() => {
@@ -4707,6 +4738,22 @@ export default function App() {
                      <User size={9} />
                      <span>BY ARTIST</span>
                    </button>
+
+                   {activePlaylistId !== 'all-tracks' && albumGroups.length > 1 && (
+                     <button
+                       onClick={handleUnifyPlaylistAlbum}
+                       className="flex items-center gap-1 text-[8.5px] font-mono px-1.5 py-0.5 border rounded-[1px] transition-colors hover:opacity-80 active:scale-95 ml-1"
+                       style={{
+                         backgroundColor: 'var(--theme-bg)',
+                         borderColor: 'var(--theme-accent)',
+                         color: 'var(--theme-accent)',
+                       }}
+                       title={`このリスト内の全曲を「${activePlaylist.name}」の1つのアルバムに統一してまとめる`}
+                     >
+                       <Layers size={9} />
+                       <span>1 ALBUMに統一</span>
+                     </button>
+                   )}
                  </div>
                )}
 
