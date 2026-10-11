@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, VolumeX,
-  FolderOpen, ListMusic, Plus, Search, ChevronUp, ChevronDown, 
+  Folder, FolderOpen, ListMusic, Plus, Search, ChevronUp, ChevronDown, 
   ChevronsUp, ChevronsDown, Palette, Activity, Check, X, Trash2, ListPlus, AlertCircle,
-  Minimize2, Maximize2, Layers, Minus, PanelTop, GripVertical, Type, Eye, EyeOff
+  Minimize2, Maximize2, Layers, Minus, PanelTop, GripVertical, Type, Eye, EyeOff,
+  LayoutGrid, List, Disc, User, ChevronRight, ArrowLeft, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { get, set, del } from 'idb-keyval';
 import * as mm from 'music-metadata-browser';
 import { AlbumArt3D } from './components/AlbumArt3D';
+import { AlbumCardView, AlbumGroup, ArtistGroup } from './components/AlbumCardView';
 
 // --- Types ---
 interface Track {
@@ -25,6 +27,7 @@ interface Track {
   missing?: boolean; // true when file blob is not available (e.g. different PC)
   size?: number;
   lastModified?: number;
+  folderPath?: string;
 }
 
 interface Playlist {
@@ -324,6 +327,46 @@ export default function App() {
   });
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
   const themeMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // 04 DATA BANKS View Mode ('tracks' | 'card' | 'list' | 'album'), Card Size, Grouping, Drill-down, and Sidebar Collapse
+  const [bankViewMode, setBankViewMode] = useState<'tracks' | 'card' | 'list' | 'album'>(() => {
+    try {
+      return (localStorage.getItem('v2_solid_bank_view_mode') as 'tracks' | 'card' | 'list' | 'album') || 'tracks';
+    } catch {
+      return 'tracks';
+    }
+  });
+  const [cardSize, setCardSize] = useState<'sm' | 'md' | 'lg' | 'xl'>(() => {
+    try {
+      return (localStorage.getItem('v2_solid_card_size') as 'sm' | 'md' | 'lg' | 'xl') || 'md';
+    } catch {
+      return 'md';
+    }
+  });
+  const [cardScale, setCardScale] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solid_card_scale');
+      return saved ? parseInt(saved, 10) : 190;
+    } catch {
+      return 190;
+    }
+  });
+  const [groupByArtist, setGroupByArtist] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solid_group_by_artist_v2');
+      return saved !== null ? saved === 'true' : false;
+    } catch {
+      return false;
+    }
+  });
+  const [drillDownAlbum, setDrillDownAlbum] = useState<{ artist: string; album: string } | null>(null);
+  const [expandedSidebarFolderIds, setExpandedSidebarFolderIds] = useState<Set<string>>(() => new Set());
+  const [sidebarDragAlbum, setSidebarDragAlbum] = useState<{ playlistId: string; albumId: string } | null>(null);
+  const [sidebarDragOverAlbum, setSidebarDragOverAlbum] = useState<{ playlistId: string; albumId: string } | null>(null);
+  const [catalogFilter, setCatalogFilter] = useState<string>('all');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+  const prevSidebarWidthRef = useRef<number>(240);
+
   const [listFontSize, setListFontSize] = useState<number>(11);
   const [colWidths, setColWidths] = useState({
     index: 96,
@@ -876,6 +919,17 @@ export default function App() {
   }, [eqHigh]);
 
   const theme = THEMES[themeIndex];
+
+  // Dynamically update browser theme-color meta tag
+  useEffect(() => {
+    let metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (!metaThemeColor) {
+      metaThemeColor = document.createElement('meta');
+      metaThemeColor.setAttribute('name', 'theme-color');
+      document.head.appendChild(metaThemeColor);
+    }
+    metaThemeColor.setAttribute('content', theme.bg);
+  }, [theme]);
   const isLightTheme = theme.id === 'LIGHT';
   const iconColor = isLightTheme ? '#1a2530' : '#ffffff';
   const listIconColor = (theme as any).listIconColor || iconColor;
@@ -923,8 +977,267 @@ export default function App() {
   const displayTracks = getSortedTracks(activePlaylist.tracks.filter(t => 
     t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
     t.artist.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    t.album.toLowerCase().includes(searchQuery.toLowerCase()) ||
     t.fileName.toLowerCase().includes(searchQuery.toLowerCase())
   ));
+
+  // Helper to resolve track album and artist with folderPath & playlist hierarchy
+  const getTrackAlbumArtist = (track: Track, currentPlaylist?: Playlist) => {
+    let albumName = track.album?.trim() || '';
+    let artistName = track.artist?.trim() || '';
+
+    if (track.folderPath) {
+      const parts = track.folderPath.split('/').filter(Boolean);
+      // Case 1: Inside a subfolder of a dropped parent folder (e.g. "■ - T-SQUARE ベストアルバム集 / T-SQUARE - BLUE IN RED / song.mp3")
+      if (parts.length >= 3) {
+        const subFolderName = parts[parts.length - 2];
+        const parentFolderName = parts[parts.length - 3];
+        // Always treat the subfolder name as the distinct Album name when browsing inside the parent folder or when album is missing
+        if (!albumName || albumName === 'Unknown Album' || (currentPlaylist && currentPlaylist.name === parentFolderName)) {
+          albumName = subFolderName;
+        }
+        if (!artistName || artistName === 'Unknown Artist') {
+          artistName = parentFolderName;
+        }
+      } else if (parts.length === 2) {
+        // Case 2: Direct file inside the dropped root folder (e.g. "■ - T-SQUARE ベストアルバム集 / Moon Over the Castle.mp3")
+        const rootFolderName = parts[0];
+        if (!albumName || albumName === 'Unknown Album') {
+          albumName = rootFolderName;
+        }
+        if (!artistName || artistName === 'Unknown Artist') {
+          artistName = rootFolderName;
+        }
+      }
+    }
+
+    // Fallback: if still Unknown Album / Unknown Artist, check playlist membership
+    if ((!albumName || albumName === 'Unknown Album') || (!artistName || artistName === 'Unknown Artist')) {
+      const ownerPlaylist = (currentPlaylist && currentPlaylist.id !== 'all-tracks')
+        ? currentPlaylist
+        : playlists.find(p => p.id !== 'all-tracks' && p.tracks.some(pt => pt.id === track.id));
+      if (ownerPlaylist && ownerPlaylist.name) {
+        if (ownerPlaylist.name.includes(' / ')) {
+          const [plArtist, plAlbum] = ownerPlaylist.name.split(' / ').map(s => s.trim());
+          if (!artistName || artistName === 'Unknown Artist') artistName = plArtist || artistName;
+          if (!albumName || albumName === 'Unknown Album') albumName = plAlbum || albumName;
+        } else {
+          if (!albumName || albumName === 'Unknown Album') {
+            albumName = ownerPlaylist.name;
+          }
+          if (!artistName || artistName === 'Unknown Artist') {
+            artistName = ownerPlaylist.name;
+          }
+        }
+      }
+    }
+
+    if (!albumName) albumName = 'Unknown Album';
+    if (!artistName) artistName = 'Unknown Artist';
+
+    return { album: albumName, artist: artistName };
+  };
+
+  // Compute Album Groups from displayTracks
+  // When viewing a specific parent folder playlist (e.g. "■ - T-SQUARE ベストアルバム集"), group by Album (subfolder) so all albums inside this folder appear cleanly!
+  const albumGroups = useMemo<AlbumGroup[]>(() => {
+    const map = new Map<string, AlbumGroup>();
+    const isSpecificPlaylist = activePlaylistId !== 'all-tracks';
+
+    for (const track of displayTracks) {
+      const { album: albumName, artist: artistName } = getTrackAlbumArtist(track, activePlaylist);
+      const cleanArtist = (artistName || 'Unknown Artist').trim();
+      const cleanAlbum = (albumName || 'Unknown Album').trim();
+
+      // In a specific folder playlist, group strictly by album name so tracks in the same folder/album stay in one card even if individual track artist tags vary
+      const key = isSpecificPlaylist
+        ? `album___${cleanAlbum.toLowerCase()}`
+        : `${cleanArtist.toLowerCase()}___${cleanAlbum.toLowerCase()}`;
+
+      let group = map.get(key);
+      if (!group) {
+        group = {
+          id: key,
+          album: cleanAlbum,
+          artist: cleanArtist,
+          coverUrl: track.coverUrl,
+          tracks: [],
+          totalDuration: 0,
+        };
+        map.set(key, group);
+      }
+
+      // Avoid adding duplicate track references if any
+      if (!group.tracks.some(t => t.id === track.id)) {
+        group.tracks.push(track);
+        group.totalDuration += track.duration || 0;
+      }
+      if (!group.coverUrl && track.coverUrl) {
+        group.coverUrl = track.coverUrl;
+      }
+      // Prefer a real artist name over 'Unknown Artist' for the album header
+      if (group.artist === 'Unknown Artist' && cleanArtist !== 'Unknown Artist') {
+        group.artist = cleanArtist;
+      }
+    }
+
+    return Array.from(map.values());
+  }, [displayTracks, activePlaylistId, activePlaylist, playlists]);
+
+  // Compute Artist Groups (grouping albums under their respective artists, preserving order)
+  const artistGroups = useMemo<ArtistGroup[]>(() => {
+    const map = new Map<string, ArtistGroup>();
+
+    for (const album of albumGroups) {
+      const cleanArtist = (album.artist || 'Unknown Artist').trim();
+      const key = cleanArtist.toLowerCase();
+      let artist = map.get(key);
+      if (!artist) {
+        artist = {
+          artist: cleanArtist,
+          albums: [],
+          totalTracks: 0,
+          totalDuration: 0,
+          coverUrl: album.coverUrl,
+        };
+        map.set(key, artist);
+      }
+      artist.albums.push(album);
+      artist.totalTracks += album.tracks.length;
+      artist.totalDuration += album.totalDuration;
+      if (!artist.coverUrl && album.coverUrl) {
+        artist.coverUrl = album.coverUrl;
+      }
+    }
+
+    return Array.from(map.values());
+  }, [albumGroups]);
+
+  // Catalog tracks: when catalogFilter === 'all', takes all tracks across the entire library!
+  const catalogTracks = useMemo(() => {
+    const base = catalogFilter === 'all' 
+      ? library 
+      : (playlists.find(p => p.id === catalogFilter)?.tracks || library);
+    if (!searchQuery) return base;
+    const q = searchQuery.toLowerCase();
+    return base.filter(t => 
+      t.title.toLowerCase().includes(q) || 
+      t.artist.toLowerCase().includes(q) ||
+      t.album.toLowerCase().includes(q) ||
+      t.fileName.toLowerCase().includes(q)
+    );
+  }, [library, playlists, catalogFilter, searchQuery]);
+
+  // Compute Album Groups from catalogTracks (all albums across the whole collection)
+  const catalogAlbumGroups = useMemo<AlbumGroup[]>(() => {
+    const map = new Map<string, AlbumGroup>();
+
+    for (const track of catalogTracks) {
+      const { album: albumName, artist: artistName } = getTrackAlbumArtist(track);
+      const key = `${artistName}___${albumName}`;
+
+      let group = map.get(key);
+      if (!group) {
+        group = {
+          id: key,
+          album: albumName,
+          artist: artistName,
+          coverUrl: track.coverUrl,
+          tracks: [],
+          totalDuration: 0,
+        };
+        map.set(key, group);
+      }
+
+      group.tracks.push(track);
+      group.totalDuration += track.duration || 0;
+      if (!group.coverUrl && track.coverUrl) {
+        group.coverUrl = track.coverUrl;
+      }
+    }
+
+    const list = Array.from(map.values());
+    list.sort((a, b) => a.album.localeCompare(b.album, undefined, { sensitivity: 'base' }));
+    return list;
+  }, [catalogTracks]);
+
+  // Compute Artist Groups for catalog (grouping albums under their respective artists)
+  const catalogArtistGroups = useMemo<ArtistGroup[]>(() => {
+    const map = new Map<string, ArtistGroup>();
+
+    for (const album of catalogAlbumGroups) {
+      let artist = map.get(album.artist);
+      if (!artist) {
+        artist = {
+          artist: album.artist,
+          albums: [],
+          totalTracks: 0,
+          totalDuration: 0,
+          coverUrl: album.coverUrl,
+        };
+        map.set(album.artist, artist);
+      }
+      artist.albums.push(album);
+      artist.totalTracks += album.tracks.length;
+      artist.totalDuration += album.totalDuration;
+      if (!artist.coverUrl && album.coverUrl) {
+        artist.coverUrl = album.coverUrl;
+      }
+    }
+
+    const list = Array.from(map.values());
+    list.sort((a, b) => a.artist.localeCompare(b.artist, undefined, { sensitivity: 'base' }));
+    return list;
+  }, [catalogAlbumGroups]);
+
+  // Drill-down tracks when an album is selected (e.g. from sidebar subfolder or album card)
+  const drillDownTracks = useMemo<Track[]>(() => {
+    if (!drillDownAlbum) return [];
+    return displayTracks.filter(t => {
+      const { album, artist } = getTrackAlbumArtist(t, activePlaylist);
+      if (activePlaylistId !== 'all-tracks') {
+        return album.toLowerCase() === drillDownAlbum.album.toLowerCase();
+      }
+      return album.toLowerCase() === drillDownAlbum.album.toLowerCase() && artist.toLowerCase() === drillDownAlbum.artist.toLowerCase();
+    });
+  }, [displayTracks, drillDownAlbum, activePlaylist, activePlaylistId, playlists]);
+
+  // Compute sub-albums for each sidebar playlist so parent folders (like T-SQUARE ベストアルバム集) can be expanded in the sidebar
+  const playlistAlbumsMap = useMemo<Record<string, AlbumGroup[]>>(() => {
+    const result: Record<string, AlbumGroup[]> = {};
+    for (const pl of playlists) {
+      if (pl.id === 'all-tracks') continue;
+      const map = new Map<string, AlbumGroup>();
+      for (const track of pl.tracks) {
+        const { album: albumName, artist: artistName } = getTrackAlbumArtist(track, pl);
+        const cleanAlbum = (albumName || 'Unknown Album').trim();
+        const cleanArtist = (artistName || 'Unknown Artist').trim();
+        const key = `album___${cleanAlbum.toLowerCase()}`;
+        let group = map.get(key);
+        if (!group) {
+          group = {
+            id: key,
+            album: cleanAlbum,
+            artist: cleanArtist,
+            coverUrl: track.coverUrl,
+            tracks: [],
+            totalDuration: 0,
+          };
+          map.set(key, group);
+        }
+        if (!group.tracks.some(t => t.id === track.id)) {
+          group.tracks.push(track);
+          group.totalDuration += track.duration || 0;
+        }
+        if (!group.coverUrl && track.coverUrl) {
+          group.coverUrl = track.coverUrl;
+        }
+      }
+      result[pl.id] = Array.from(map.values());
+    }
+    return result;
+  }, [playlists]);
+
   const currentTrack = playbackQueue[currentTrackIndex] || null;
 
   useEffect(() => {
@@ -1330,6 +1643,20 @@ export default function App() {
       if (artist === 'Unknown Artist') artist = parsed.artist;
     }
 
+    // Deduce Album and Artist from Directory Structure (e.g. "Artist/Album/Song.mp3")
+    const relPath = (file as any).webkitRelativePath || '';
+    if (relPath) {
+      const parts = relPath.split('/').filter(Boolean);
+      // Immediate parent folder = Album
+      if (parts.length >= 2 && (!album || album === 'Unknown Album')) {
+        album = parts[parts.length - 2];
+      }
+      // Grandparent folder = Artist
+      if (parts.length >= 3 && (!artist || artist === 'Unknown Artist')) {
+        artist = parts[parts.length - 3];
+      }
+    }
+
     try {
       let mimeType = file.type;
       if (!mimeType || mimeType === '') {
@@ -1363,7 +1690,8 @@ export default function App() {
       duration,
       coverUrl,
       size: file.size,
-      lastModified: file.lastModified
+      lastModified: file.lastModified,
+      folderPath: relPath || undefined
     };
   };
 
@@ -1400,8 +1728,44 @@ export default function App() {
       }
       
       if (exactMatch) {
+         // Even if the audio file is already in the library, if the user dropped a parent folder,
+         // ensure its folderPath is updated and it is added to the target parent folder playlist!
+         const relPath = (file as any).webkitRelativePath || '';
+         const matchedExisting = existingTracks.find(t => t.size === file.size && t.lastModified === file.lastModified) || existingTracks[0];
+         if (matchedExisting && (targetPlaylistName || relPath)) {
+           let updatedTrack = { ...matchedExisting };
+           if (relPath && !updatedTrack.folderPath) {
+             updatedTrack.folderPath = relPath;
+             const parts = relPath.split('/').filter(Boolean);
+             if (parts.length >= 2 && (!updatedTrack.album || updatedTrack.album === 'Unknown Album')) {
+               updatedTrack.album = parts[parts.length - 2];
+             }
+             if (parts.length >= 3 && (!updatedTrack.artist || updatedTrack.artist === 'Unknown Artist')) {
+               updatedTrack.artist = parts[parts.length - 3];
+             }
+             setLibrary(prev => prev.map(t => t.id === updatedTrack.id ? updatedTrack : t));
+           }
+           if (targetPlaylistName) {
+             setPlaylists(prev => {
+               let updatedPlaylists = [...prev];
+               let existingPl = updatedPlaylists.find(p => p.name === targetPlaylistName);
+               if (!existingPl) {
+                 existingPl = { id: uuidv4(), name: targetPlaylistName, tracks: [] };
+                 updatedPlaylists.push(existingPl);
+               }
+               const targetId = existingPl.id;
+               return updatedPlaylists.map(p => {
+                 const refreshedTracks = p.tracks.map(t => t.id === updatedTrack.id ? updatedTrack : t);
+                 if (p.id === targetId && !refreshedTracks.some(t => t.id === updatedTrack.id)) {
+                   return { ...p, tracks: [...refreshedTracks, updatedTrack] };
+                 }
+                 return { ...p, tracks: refreshedTracks };
+               });
+             });
+           }
+         }
          setLoadingProgress({ done: i + 1, total: fileArray.length });
-         continue; // 完全な重複はIDB保存・パースごとスキップしてリーク防止
+         continue;
       }
       
       processedKeys.add(batchKey);
@@ -1445,6 +1809,9 @@ export default function App() {
                if (idx !== -1) {
                   const newTracks = [...p.tracks];
                   newTracks[idx] = result;
+                  if (p.id === currentTargetId && !newTracks.some(t => t.id === result.id)) {
+                    newTracks.push(result);
+                  }
                   return { ...p, tracks: newTracks };
                }
             }
@@ -1467,12 +1834,27 @@ export default function App() {
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      // Convert FileList to Array immediately — the FileList reference
-      // becomes invalid once the input is reset, so we capture it first.
       const fileArray = Array.from(e.target.files) as File[];
-      // Reset input AFTER capturing files so it can accept the same folder again
       if (fileInputRef.current) fileInputRef.current.value = '';
-      await processFiles(fileArray);
+
+      // Group files by the top-level selected folder name so the entire parent folder (including all its album subfolders)
+      // becomes a single item in the sidebar and unfolds all its subfolder albums inside the right pane!
+      const folderGroups = new Map<string | undefined, File[]>();
+      for (const file of fileArray) {
+        const relPath = (file as any).webkitRelativePath || '';
+        const parts = relPath.split('/').filter(Boolean);
+        // parts[0] is the root directory selected by the user (e.g. "■ - T-SQUARE ベストアルバム集")
+        const rootFolderName = parts.length >= 2 ? parts[0] : undefined;
+        const list = folderGroups.get(rootFolderName) || [];
+        list.push(file);
+        folderGroups.set(rootFolderName, list);
+      }
+
+      for (const [playlistName, files] of Array.from(folderGroups.entries())) {
+        if (files.length > 0) {
+          await processFiles(files, playlistName);
+        }
+      }
     }
   };
 
@@ -1483,20 +1865,34 @@ export default function App() {
 
     const items = e.dataTransfer.items;
     
-    // Group files by playlist name (undefined means add to current active playlist)
+    // Group files by the dropped top-level folder name so dropping "■ - T-SQUARE ベストアルバム集"
+    // creates ONE folder entry in the sidebar containing all tracks from its subfolders,
+    // while preserving each subfolder's path so they expand as distinct albums in the right view!
     const fileGroups = new Map<string | undefined, File[]>();
 
-    // Try webkitGetAsEntry first (supports directories)
+    // Try webkitGetAsEntry first (supports nested Artist / Album directories)
     if (items && items.length > 0) {
       let hasEntries = false;
 
-      const traverseFileTree = async (item: any, playlistName?: string): Promise<void> => {
+      const traverseFileTree = async (item: any, rootFolderName?: string): Promise<void> => {
         if (item.isFile) {
           return new Promise<void>((resolve) => {
             item.file((file: File) => {
-              const group = fileGroups.get(playlistName) || [];
+              if (item.fullPath) {
+                const rel = item.fullPath.replace(/^\//, '');
+                try {
+                  Object.defineProperty(file, 'webkitRelativePath', {
+                    value: rel,
+                    writable: false,
+                    configurable: true,
+                  });
+                } catch {
+                  (file as any).webkitRelativePath = rel;
+                }
+              }
+              const group = fileGroups.get(rootFolderName) || [];
               group.push(file);
-              fileGroups.set(playlistName, group);
+              fileGroups.set(rootFolderName, group);
               resolve();
             }, () => resolve()); // error callback
           });
@@ -1509,7 +1905,8 @@ export default function App() {
                   resolve();
                 } else {
                   for (const entry of entries) {
-                    await traverseFileTree(entry, playlistName);
+                    // Always pass down the top-level dropped folder name (rootFolderName || item.name)
+                    await traverseFileTree(entry, rootFolderName || item.name);
                   }
                   readEntries(); // readEntries only returns up to 100 at a time
                 }
@@ -1646,35 +2043,56 @@ export default function App() {
       setSelectedTrackIds(new Set());
   };
 
-  const toggleTrackSelection = (e: React.MouseEvent, trackId: string) => {
+  const toggleTrackSelection = (e: React.MouseEvent, trackId: string, index?: number) => {
       e.stopPropagation();
       const isShift = e.shiftKey;
-      const lastSelected = lastSelectedTrackIdRef.current;
       
-      setSelectedTrackIds(prev => {
-          const next = new Set(prev);
-          
-          if (isShift && lastSelected) {
-              const currentIndex = displayTracks.findIndex(t => t.id === trackId);
-              const lastIndex = displayTracks.findIndex(t => t.id === lastSelected);
-              
-              if (currentIndex !== -1 && lastIndex !== -1) {
-                  const start = Math.min(currentIndex, lastIndex);
-                  const end = Math.max(currentIndex, lastIndex);
-                  
-                  // Shift+Click always selects the range to be intuitive
-                  for (let i = start; i <= end; i++) {
-                      next.add(displayTracks[i].id);
-                  }
-                  return next;
-              }
+      if (isShift) {
+        e.preventDefault();
+        window.getSelection()?.removeAllRanges();
+
+        const currentIndex = index !== undefined ? index : displayTracks.findIndex(t => t.id === trackId);
+        let anchorIndex = 0;
+        if (lastSelectedTrackIdRef.current) {
+          const found = displayTracks.findIndex(t => t.id === lastSelectedTrackIdRef.current);
+          if (found !== -1) anchorIndex = found;
+        } else if (currentTrackIndex >= 0 && currentTrackIndex < displayTracks.length) {
+          anchorIndex = currentTrackIndex;
+        }
+
+        if (currentIndex !== -1) {
+          const start = Math.min(anchorIndex, currentIndex);
+          const end = Math.max(anchorIndex, currentIndex);
+          const rangeIds = new Set<string>();
+          if (e.ctrlKey || e.metaKey) {
+            selectedTrackIds.forEach(id => rangeIds.add(id));
           }
-          
+          for (let i = start; i <= end; i++) {
+            rangeIds.add(displayTracks[i].id);
+          }
+          setSelectedTrackIds(rangeIds);
+          // Keep anchor so subsequent Shift-clicks adjust from original anchor
+          return;
+        }
+      }
+
+      if (e.ctrlKey || e.metaKey) {
+        setSelectedTrackIds(prev => {
+          const next = new Set(prev);
           if (next.has(trackId)) next.delete(trackId);
           else next.add(trackId);
           return next;
+        });
+        lastSelectedTrackIdRef.current = trackId;
+        return;
+      }
+
+      setSelectedTrackIds(prev => {
+        const next = new Set(prev);
+        if (next.has(trackId)) next.delete(trackId);
+        else next.add(trackId);
+        return next;
       });
-      
       lastSelectedTrackIdRef.current = trackId;
   };
 
@@ -1689,7 +2107,8 @@ export default function App() {
   };
 
   const playTrack = (index: number) => {
-    const trackToPlay = displayTracks[index];
+    const list = drillDownAlbum ? drillDownTracks : displayTracks;
+    const trackToPlay = list[index];
     if (!trackToPlay) return;
 
     // If already playing this track from the same view, just toggle
@@ -1699,7 +2118,7 @@ export default function App() {
     }
 
     // Snapshot the current view as the playback queue
-    setPlaybackQueue(displayTracks);
+    setPlaybackQueue(list);
     setPlayingPlaylistId(activePlaylistId);
     setCurrentTrackIndex(index);
     setIsPlaying(true);
@@ -1985,8 +2404,22 @@ export default function App() {
     lastSelectedPlaylistIdRef.current = playlistId;
   };
 
-  const moveSelectedPlaylists = (direction: 'up' | 'down') => {
+  const moveSelectedPlaylists = (direction: 'top' | 'up' | 'down' | 'bottom') => {
     setPlaylists(prev => {
+      const allTracksPl = prev[0];
+      const otherPlaylists = prev.slice(1);
+
+      if (direction === 'top') {
+        const selected = otherPlaylists.filter(p => selectedPlaylistIds.has(p.id));
+        const unselected = otherPlaylists.filter(p => !selectedPlaylistIds.has(p.id));
+        return [allTracksPl, ...selected, ...unselected];
+      }
+      if (direction === 'bottom') {
+        const selected = otherPlaylists.filter(p => selectedPlaylistIds.has(p.id));
+        const unselected = otherPlaylists.filter(p => !selectedPlaylistIds.has(p.id));
+        return [allTracksPl, ...unselected, ...selected];
+      }
+
       const copy = [...prev];
       if (direction === 'up') {
         for (let i = 1; i < copy.length; i++) {
@@ -2027,91 +2460,70 @@ export default function App() {
     setConfirmDeleteSelectedPlaylists(false);
   };
 
-  const moveSelectedTracks = (direction: 'top' | 'up' | 'down' | 'bottom') => {
-    if (selectedTrackIds.size === 0) return;
-
-    if (activeSortConfig.key !== 'none') {
-      setSortConfig({ key: 'none', direction: 'asc' });
-    }
-
-    const reorder = (list: Track[]): Track[] => {
-      const selectedIndices = list
-        .map((t, idx) => (selectedTrackIds.has(t.id) ? idx : -1))
-        .filter((idx) => idx !== -1);
-
-      if (selectedIndices.length === 0) return list;
-
-      const newList = [...list];
-
-      if (direction === 'top') {
-        const selectedItems = selectedIndices.map((i) => list[i]);
-        const unselectedItems = list.filter((t) => !selectedTrackIds.has(t.id));
-        return [...selectedItems, ...unselectedItems];
-      } else if (direction === 'bottom') {
-        const selectedItems = selectedIndices.map((i) => list[i]);
-        const unselectedItems = list.filter((t) => !selectedTrackIds.has(t.id));
-        return [...unselectedItems, ...selectedItems];
-      } else if (direction === 'up') {
-        if (selectedIndices[0] === 0) return list;
-        for (const idx of selectedIndices) {
-          if (idx > 0 && !selectedTrackIds.has(newList[idx - 1].id)) {
-            const temp = newList[idx];
-            newList[idx] = newList[idx - 1];
-            newList[idx - 1] = temp;
-          }
-        }
-        return newList;
-      } else if (direction === 'down') {
-        if (selectedIndices[selectedIndices.length - 1] === list.length - 1) return list;
-        for (let i = selectedIndices.length - 1; i >= 0; i--) {
-          const idx = selectedIndices[i];
-          if (idx < list.length - 1 && !selectedTrackIds.has(newList[idx + 1].id)) {
-            const temp = newList[idx];
-            newList[idx] = newList[idx + 1];
-            newList[idx + 1] = temp;
-          }
-        }
-        return newList;
-      }
-      return list;
-    };
-
-    if (activePlaylistId === 'all-tracks') {
-      setLibrary((prev) => {
-        const updated = reorder(prev);
-        set('v2_solidLibrary', updated).catch(() => {});
-        return updated;
-      });
-    } else {
-      setPlaylists((prev) => {
-        const updated = prev.map((pl) => {
-          if (pl.id === activePlaylistId) {
-            return { ...pl, tracks: reorder(pl.tracks) };
-          }
-          return pl;
-        });
-        set('v2_solidPlaylists', updated).catch(() => {});
-        return updated;
-      });
-    }
-  };
-
-  // --- Track Ordering ---
+  // --- Track Ordering (Supports both full playlist view and single-album drillDownAlbum view) ---
   const moveTrack = (e: React.MouseEvent, fromIndex: number, toIndex: number) => {
     e.stopPropagation();
-    
+
+    // Reset column sorting so manual ordering takes effect
+    setSortConfig({ key: 'none', direction: 'asc' });
+
+    const currentRenderList = drillDownAlbum ? drillDownTracks : displayTracks;
+    if (toIndex < 0) toIndex = 0;
+    if (toIndex >= currentRenderList.length) toIndex = currentRenderList.length - 1;
+    if (fromIndex === toIndex) return;
+
+    const playingTrackId = playbackQueue[currentTrackIndex]?.id;
+
+    if (drillDownAlbum) {
+      // Reorder within the drilled-down album while keeping the album's position in the parent playlist intact
+      const reorderedSub = [...currentRenderList];
+      const [itemMove] = reorderedSub.splice(fromIndex, 1);
+      reorderedSub.splice(toIndex, 0, itemMove);
+      const subIdSet = new Set(currentRenderList.map(t => t.id));
+
+      setPlaylists(prev => prev.map(p => {
+        if (p.id !== activePlaylistId) return p;
+        let subCursor = 0;
+        const newTracks = p.tracks.map(t => {
+          if (subIdSet.has(t.id)) {
+            return reorderedSub[subCursor++];
+          }
+          return t;
+        });
+        return { ...p, tracks: newTracks };
+      }));
+
+      if (activePlaylistId === playingPlaylistId) {
+        setPlaybackQueue(prevQueue => {
+          let subCursor = 0;
+          const newQueue = prevQueue.map(t => {
+            if (subIdSet.has(t.id) && subCursor < reorderedSub.length) {
+              return reorderedSub[subCursor++];
+            }
+            return t;
+          });
+          if (playingTrackId) {
+            const newIdx = newQueue.findIndex(t => t.id === playingTrackId);
+            if (newIdx !== -1) setCurrentTrackIndex(newIdx);
+          }
+          return newQueue;
+        });
+      }
+      return;
+    }
+
     setPlaylists(prev => {
       const next = [...prev];
       const pIndex = next.findIndex(p => p.id === activePlaylistId);
       if (pIndex !== -1) {
         const newTracks = [...next[pIndex].tracks];
-        
+
         if (toIndex < 0) toIndex = 0;
         if (toIndex >= newTracks.length) toIndex = newTracks.length - 1;
 
         const [itemMove] = newTracks.splice(fromIndex, 1);
         newTracks.splice(toIndex, 0, itemMove);
-        
+
         next[pIndex] = { ...next[pIndex], tracks: newTracks };
       }
       return next;
@@ -2135,6 +2547,274 @@ export default function App() {
           setCurrentTrackIndex(currentTrackIndex + 1);
       }
     }
+  };
+
+  // Move multiple selected tracks together: Top, Up, Down, Bottom (Supports both full playlist and drillDownAlbum)
+  const moveSelectedTracks = (direction: 'top' | 'up' | 'down' | 'bottom') => {
+    if (selectedTrackIds.size === 0) return;
+
+    // Reset column sorting so custom manual ordering takes direct effect
+    setSortConfig({ key: 'none', direction: 'asc' });
+
+    const playingTrackId = playbackQueue[currentTrackIndex]?.id;
+
+    const applyDirection = (tracks: Track[]): Track[] => {
+      if (direction === 'top') {
+        const selected = tracks.filter(t => selectedTrackIds.has(t.id));
+        const unselected = tracks.filter(t => !selectedTrackIds.has(t.id));
+        return [...selected, ...unselected];
+      } else if (direction === 'bottom') {
+        const selected = tracks.filter(t => selectedTrackIds.has(t.id));
+        const unselected = tracks.filter(t => !selectedTrackIds.has(t.id));
+        return [...unselected, ...selected];
+      } else if (direction === 'up') {
+        const newTracks = [...tracks];
+        for (let i = 1; i < newTracks.length; i++) {
+          if (selectedTrackIds.has(newTracks[i].id) && !selectedTrackIds.has(newTracks[i - 1].id)) {
+            const temp = newTracks[i];
+            newTracks[i] = newTracks[i - 1];
+            newTracks[i - 1] = temp;
+          }
+        }
+        return newTracks;
+      } else {
+        const newTracks = [...tracks];
+        for (let i = newTracks.length - 2; i >= 0; i--) {
+          if (selectedTrackIds.has(newTracks[i].id) && !selectedTrackIds.has(newTracks[i + 1].id)) {
+            const temp = newTracks[i];
+            newTracks[i] = newTracks[i + 1];
+            newTracks[i + 1] = temp;
+          }
+        }
+        return newTracks;
+      }
+    };
+
+    if (drillDownAlbum) {
+      const subIdSet = new Set(drillDownTracks.map(t => t.id));
+      const reorderedSub = applyDirection(drillDownTracks);
+
+      setPlaylists(prev => prev.map(p => {
+        if (p.id !== activePlaylistId) return p;
+        let subCursor = 0;
+        const newTracks = p.tracks.map(t => subIdSet.has(t.id) ? reorderedSub[subCursor++] : t);
+        return { ...p, tracks: newTracks };
+      }));
+
+      if (activePlaylistId === playingPlaylistId) {
+        setPlaybackQueue(prevQueue => {
+          let subCursor = 0;
+          const newQueue = prevQueue.map(t => (subIdSet.has(t.id) && subCursor < reorderedSub.length) ? reorderedSub[subCursor++] : t);
+          if (playingTrackId) {
+            const newIdx = newQueue.findIndex(t => t.id === playingTrackId);
+            if (newIdx !== -1) setCurrentTrackIndex(newIdx);
+          }
+          return newQueue;
+        });
+      }
+      return;
+    }
+
+    setPlaylists(prev => {
+      return prev.map(p => {
+        if (p.id !== activePlaylistId) return p;
+        return { ...p, tracks: applyDirection(p.tracks) };
+      });
+    });
+
+    if (activePlaylistId === playingPlaylistId) {
+      setPlaybackQueue(prevQueue => {
+        const newQueue = applyDirection(prevQueue);
+        if (playingTrackId) {
+          const newIdx = newQueue.findIndex(t => t.id === playingTrackId);
+          if (newIdx !== -1) {
+            setCurrentTrackIndex(newIdx);
+          }
+        }
+        return newQueue;
+      });
+    }
+  };
+
+  // --- Album Ordering (Top, Up, Down, Bottom & Drag-and-Drop) ---
+  const applyReorderedAlbumsToPlaylist = (targetPlaylistId: string, reorderedAlbums: AlbumGroup[]) => {
+    setSortConfig({ key: 'none', direction: 'asc' });
+    const playingTrackId = playbackQueue[currentTrackIndex]?.id;
+
+    // Flatten tracks in the new album order
+    const orderedTracks = reorderedAlbums.flatMap(a => a.tracks);
+    const orderedIds = new Set(orderedTracks.map(t => t.id));
+
+    setPlaylists(prev => prev.map(p => {
+      if (p.id !== targetPlaylistId) return p;
+      const remaining = p.tracks.filter(t => !orderedIds.has(t.id));
+      return { ...p, tracks: [...orderedTracks, ...remaining] };
+    }));
+
+    if (targetPlaylistId === playingPlaylistId) {
+      setPlaybackQueue(prevQueue => {
+        const remaining = prevQueue.filter(t => !orderedIds.has(t.id));
+        const newQueue = [...orderedTracks, ...remaining];
+        if (playingTrackId) {
+          const newIdx = newQueue.findIndex(t => t.id === playingTrackId);
+          if (newIdx !== -1) setCurrentTrackIndex(newIdx);
+        }
+        return newQueue;
+      });
+    }
+  };
+
+  const handleMoveAlbum = (albumId: string, direction: 'top' | 'up' | 'down' | 'bottom', targetPlaylistId: string = activePlaylistId) => {
+    const currentAlbums = targetPlaylistId === activePlaylistId
+      ? albumGroups
+      : (playlistAlbumsMap[targetPlaylistId] || []);
+    const idx = currentAlbums.findIndex(a => a.id === albumId);
+    if (idx === -1) return;
+
+    const copy = [...currentAlbums];
+    const [target] = copy.splice(idx, 1);
+
+    if (direction === 'top') {
+      copy.unshift(target);
+    } else if (direction === 'bottom') {
+      copy.push(target);
+    } else if (direction === 'up') {
+      const nextIdx = Math.max(0, idx - 1);
+      copy.splice(nextIdx, 0, target);
+    } else if (direction === 'down') {
+      const nextIdx = Math.min(copy.length, idx + 1);
+      copy.splice(nextIdx, 0, target);
+    }
+
+    applyReorderedAlbumsToPlaylist(targetPlaylistId, copy);
+  };
+
+  const handleReorderAlbum = (sourceAlbumId: string, targetAlbumId: string, targetPlaylistId: string = activePlaylistId) => {
+    if (sourceAlbumId === targetAlbumId) return;
+    const currentAlbums = targetPlaylistId === activePlaylistId
+      ? albumGroups
+      : (playlistAlbumsMap[targetPlaylistId] || []);
+    const fromIdx = currentAlbums.findIndex(a => a.id === sourceAlbumId);
+    const toIdx = currentAlbums.findIndex(a => a.id === targetAlbumId);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    const copy = [...currentAlbums];
+    const [moved] = copy.splice(fromIdx, 1);
+    copy.splice(toIdx, 0, moved);
+
+    applyReorderedAlbumsToPlaylist(targetPlaylistId, copy);
+  };
+
+  // --- Album Card View Handlers ---
+  const handlePlayAlbumTrack = async (track: Track, album: AlbumGroup) => {
+    if (currentTrack?.id === track.id) {
+      togglePlay();
+      return;
+    }
+    setPlayingPlaylistId(activePlaylistId);
+    setPlaybackQueue(album.tracks);
+    const trackIndex = album.tracks.findIndex(t => t.id === track.id);
+    const targetIdx = trackIndex !== -1 ? trackIndex : 0;
+    setCurrentTrackIndex(targetIdx);
+    setIsPlaying(true);
+
+    let playUrl = track.url;
+    if (!playUrl && !track.missing) {
+      try {
+        const audioData = await get(`v2_track_audio_${track.id}`);
+        if (audioData && audioData.buffer) {
+          const memoryBlob = new Blob([audioData.buffer], { type: audioData.type });
+          playUrl = URL.createObjectURL(memoryBlob);
+          const updateTrack = (t: Track) => t.id === track.id ? { ...t, url: playUrl } : t;
+          setLibrary(prev => prev.map(updateTrack));
+          setPlaylists(prev => prev.map(p => ({ ...p, tracks: p.tracks.map(updateTrack) })));
+          setPlaybackQueue(prev => prev.map(updateTrack));
+        }
+      } catch (err) {
+        console.error('Error loading audio from IDB:', err);
+      }
+    }
+
+    if (audioRef.current && playUrl) {
+      audioRef.current.src = playUrl;
+      audioRef.current.play().catch(console.error);
+    }
+  };
+
+  const handlePlayAlbum = async (album: AlbumGroup) => {
+    if (album.tracks.length === 0) return;
+    const isThisAlbumActive = currentTrack && album.tracks.some(t => t.id === currentTrack.id);
+    if (isThisAlbumActive) {
+      togglePlay();
+      return;
+    }
+    setPlayingPlaylistId(activePlaylistId);
+    setPlaybackQueue(album.tracks);
+    setCurrentTrackIndex(0);
+    setIsPlaying(true);
+    const firstTrack = album.tracks[0];
+    let playUrl = firstTrack.url;
+    if (!playUrl && !firstTrack.missing) {
+      try {
+        const audioData = await get(`v2_track_audio_${firstTrack.id}`);
+        if (audioData && audioData.buffer) {
+          const memoryBlob = new Blob([audioData.buffer], { type: audioData.type });
+          playUrl = URL.createObjectURL(memoryBlob);
+          const updateTrack = (t: Track) => t.id === firstTrack.id ? { ...t, url: playUrl } : t;
+          setLibrary(prev => prev.map(updateTrack));
+          setPlaylists(prev => prev.map(p => ({ ...p, tracks: p.tracks.map(updateTrack) })));
+          setPlaybackQueue(prev => prev.map(updateTrack));
+        }
+      } catch (err) {
+        console.error('Error loading audio from IDB:', err);
+      }
+    }
+    if (audioRef.current && playUrl) {
+      audioRef.current.src = playUrl;
+      audioRef.current.play().catch(console.error);
+    }
+  };
+
+  const handlePlayArtist = async (artist: ArtistGroup) => {
+    const allTracks = artist.albums.flatMap(a => a.tracks);
+    if (allTracks.length === 0) return;
+    const isThisArtistActive = currentTrack && allTracks.some(t => t.id === currentTrack.id);
+    if (isThisArtistActive) {
+      togglePlay();
+      return;
+    }
+    setPlayingPlaylistId(activePlaylistId);
+    setPlaybackQueue(allTracks);
+    setCurrentTrackIndex(0);
+    setIsPlaying(true);
+    const firstTrack = allTracks[0];
+    let playUrl = firstTrack.url;
+    if (!playUrl && !firstTrack.missing) {
+      try {
+        const audioData = await get(`v2_track_audio_${firstTrack.id}`);
+        if (audioData && audioData.buffer) {
+          const memoryBlob = new Blob([audioData.buffer], { type: audioData.type });
+          playUrl = URL.createObjectURL(memoryBlob);
+          const updateTrack = (t: Track) => t.id === firstTrack.id ? { ...t, url: playUrl } : t;
+          setLibrary(prev => prev.map(updateTrack));
+          setPlaylists(prev => prev.map(p => ({ ...p, tracks: p.tracks.map(updateTrack) })));
+          setPlaybackQueue(prev => prev.map(updateTrack));
+        }
+      } catch (err) {
+        console.error('Error loading audio from IDB:', err);
+      }
+    }
+    if (audioRef.current && playUrl) {
+      audioRef.current.src = playUrl;
+      audioRef.current.play().catch(console.error);
+    }
+  };
+
+  const handleOpenAlbum = (album: AlbumGroup) => {
+    setDrillDownAlbum({ artist: album.artist, album: album.album });
+    setSelectedTrackIds(new Set());
+    setBankViewMode('tracks');
+    localStorage.setItem('v2_solid_bank_view_mode', 'tracks');
   };
 
   // Sidebar resize handlers
@@ -2321,9 +3001,11 @@ export default function App() {
     '--list-font-size-xs': `${Math.max(8, listFontSize - 2)}px`,
   } as React.CSSProperties;
 
+  const tracksToRender = drillDownAlbum ? drillDownTracks : displayTracks;
+
   // --- UI Components ---
   const memoizedTrackList = React.useMemo(() => {
-    return displayTracks.map((track, idx) => {
+    return tracksToRender.map((track, idx) => {
       const isActive = (activePlaylistId === playingPlaylistId && currentTrackIndex === idx) || 
                        (currentTrack && track.id === currentTrack.id);
       const isSelected = selectedTrackIds.has(track.id);
@@ -2333,8 +3015,12 @@ export default function App() {
           key={`${track.id}-${idx}`}
           onClick={(e) => {
             if (editingTrackId === track.id) return;
-            if (e.shiftKey || e.ctrlKey || e.metaKey) {
-              toggleTrackSelection(e, track.id);
+            if (e.shiftKey) {
+              e.preventDefault();
+              window.getSelection()?.removeAllRanges();
+              toggleTrackSelection(e, track.id, idx);
+            } else if (e.ctrlKey || e.metaKey) {
+              toggleTrackSelection(e, track.id, idx);
             } else {
               if (!track.missing) playTrack(idx);
               setSelectedTrackIds(new Set([track.id]));
@@ -2355,7 +3041,11 @@ export default function App() {
           onMouseLeave={e => { if (!isActive && !isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}
         >
           <div className="flex items-center h-full flex-shrink-0" style={{ width: colWidths.index }}>
-            <div className="w-8 flex-shrink-0 flex items-center justify-center" onClick={(e) => toggleTrackSelection(e, track.id)}>
+            <div 
+              className="w-8 flex-shrink-0 flex items-center justify-center cursor-pointer" 
+              onClick={(e) => toggleTrackSelection(e, track.id, idx)}
+              title={isSelected ? "選択解除 (Shiftキーで範囲選択)" : "選択 (Shiftキーで範囲選択)"}
+            >
                 <div 
                     className="w-3 h-3 flex items-center justify-center border transition-colors"
                     style={{ 
@@ -2489,10 +3179,10 @@ export default function App() {
               <ChevronDown size={10} />
             </button>
             <button 
-              onClick={(e) => moveTrack(e, idx, displayTracks.length - 1)} 
+              onClick={(e) => moveTrack(e, idx, tracksToRender.length - 1)} 
               title={activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '末尾へ移動'} 
               className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20" 
-              disabled={idx === displayTracks.length - 1 || activeSortConfig.key !== 'none'} 
+              disabled={idx === tracksToRender.length - 1 || activeSortConfig.key !== 'none'} 
               style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: listIconColor }}
             >
               <ChevronsDown size={10} />
@@ -2502,7 +3192,7 @@ export default function App() {
         </div>
       );
     });
-  }, [displayTracks, activePlaylistId, playingPlaylistId, currentTrackIndex, currentTrack?.id, selectedTrackIds, editingTrackId, editTitle, editArtist, listIconColor, activeSortConfig.key, colWidths, colVisibility]);
+  }, [tracksToRender, drillDownAlbum, drillDownTracks, displayTracks, activePlaylistId, playingPlaylistId, currentTrackIndex, currentTrack?.id, selectedTrackIds, editingTrackId, editTitle, editArtist, listIconColor, activeSortConfig.key, colWidths, colVisibility]);
 
   // Replace old PanelBlock definition location
   return (
@@ -2932,7 +3622,7 @@ export default function App() {
               </div>
             )}
           </div>
-          <div className="text-xs tracking-widest font-mono" style={{ color: 'var(--theme-textMuted)' }}>v2.0.9 OS</div>
+          <div className="text-xs tracking-widest font-mono" style={{ color: 'var(--theme-textMuted)' }}>v2.1.0 OS</div>
         </div>
       </header>
 
@@ -3234,11 +3924,11 @@ export default function App() {
 
         {/* 04 BROWSER (Playlists) */}
         <div 
-          className="border flex flex-col shrink-0 relative transition-colors" 
+          className="border flex flex-col shrink-0 relative transition-all duration-200" 
           style={{ 
-            width: sidebarWidth, 
-            minWidth: 120, 
-            maxWidth: 800, 
+            width: isSidebarCollapsed ? 34 : sidebarWidth, 
+            minWidth: isSidebarCollapsed ? 34 : 120, 
+            maxWidth: isSidebarCollapsed ? 34 : 800, 
             backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : 'var(--theme-list-bg)', 
             borderColor: isDragOver ? 'var(--theme-accent)' : 'var(--theme-border)',
             boxShadow: isDragOver ? 'inset 0 0 0 2px var(--theme-accent)' : 'none'
@@ -3247,18 +3937,51 @@ export default function App() {
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          <div className="border-b px-2 py-1 flex items-center justify-between h-8 shrink-0 gap-1 overflow-hidden" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-listHeader-border)' }}>
-            <div className="flex items-center gap-1 min-w-0">
-              <span className="uppercase tracking-wider text-[11px] truncate font-medium" style={{ color: 'var(--theme-listHeader-textMuted)' }}>INDEX MAP</span>
-              {selectedPlaylistIds.size > 0 && (
-                <span className="text-[9px] font-mono px-1 border rounded-[2px] shrink-0" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
-                  {selectedPlaylistIds.size}
-                </span>
-              )}
+          {isSidebarCollapsed ? (
+            <div className="flex flex-col items-center py-2 h-full justify-between" style={{ backgroundColor: 'var(--theme-listHeader-bg)' }}>
+              <button
+                onClick={() => {
+                  setIsSidebarCollapsed(false);
+                  setSidebarWidth(prevSidebarWidthRef.current || 240);
+                }}
+                className="p-1 border rounded-[2px] hover:opacity-80 transition-colors"
+                style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)', color: 'var(--theme-accent)' }}
+                title="サイドバーを展開"
+              >
+                <PanelLeftOpen size={12} />
+              </button>
+              <span className="text-[9px] font-mono tracking-widest uppercase [writing-mode:vertical-rl] rotate-180 select-none py-2" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
+                INDEX MAP ({playlists.length})
+              </span>
+              <div className="h-4" />
             </div>
-            
-            <div className="flex items-center gap-1 shrink-0">
-              {/* SELECT button to toggle selection mode */}
+          ) : (
+            <>
+              <div className="border-b px-2 py-1 flex items-center justify-between h-8 shrink-0 gap-1 overflow-hidden" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-listHeader-border)' }}>
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="uppercase tracking-wider text-[11px] truncate font-medium" style={{ color: 'var(--theme-listHeader-textMuted)' }}>INDEX MAP</span>
+                  {selectedPlaylistIds.size > 0 && (
+                    <span className="text-[9px] font-mono px-1 border rounded-[2px] shrink-0" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
+                      {selectedPlaylistIds.size}
+                    </span>
+                  )}
+                </div>
+                
+                <div className="flex items-center gap-1 shrink-0">
+                  {/* Collapse sidebar button */}
+                  <button 
+                    onClick={() => {
+                      prevSidebarWidthRef.current = sidebarWidth || 240;
+                      setIsSidebarCollapsed(true);
+                    }}
+                    className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
+                    title="サイドバーを折りたたむ（全画面カード表示）"
+                  >
+                    <PanelLeftClose size={11} />
+                  </button>
+
+                  {/* SELECT button to toggle selection mode */}
               <button 
                 onClick={() => {
                   const nextMode = !isPlaylistSelectionMode;
@@ -3280,6 +4003,15 @@ export default function App() {
               {selectedPlaylistIds.size > 0 && (
                 <>
                   <button 
+                    onClick={() => moveSelectedPlaylists('top')}
+                    className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                    title="選択したリストを一番上へ移動"
+                  >
+                    <ChevronsUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                  </button>
+
+                  <button 
                     onClick={() => moveSelectedPlaylists('up')}
                     className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
                     style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
@@ -3295,6 +4027,15 @@ export default function App() {
                     title="選択したリストを下に移動"
                   >
                     <ChevronDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                  </button>
+
+                  <button 
+                    onClick={() => moveSelectedPlaylists('bottom')}
+                    className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                    title="選択したリストを一番下へ移動"
+                  >
+                    <ChevronsDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
                   </button>
 
                   {confirmDeleteSelectedPlaylists ? (
@@ -3353,6 +4094,9 @@ export default function App() {
             {playlists.map((pl, plIdx) => {
               const isSelected = pl.id !== 'all-tracks' && selectedPlaylistIds.has(pl.id);
               const isActive = activePlaylistId === pl.id;
+              const subAlbums = pl.id !== 'all-tracks' ? (playlistAlbumsMap[pl.id] || []) : [];
+              const hasSubAlbums = subAlbums.length > 1;
+              const isFolderExpanded = expandedSidebarFolderIds.has(pl.id);
 
               return (
               <React.Fragment key={pl.id}>
@@ -3365,6 +4109,7 @@ export default function App() {
                 onClick={(e) => {
                   if (pl.id === 'all-tracks') {
                     setActivePlaylistId('all-tracks');
+                    setDrillDownAlbum(null);
                     setSelectedPlaylistIds(new Set());
                     lastSelectedPlaylistIdRef.current = null;
                     return;
@@ -3372,12 +4117,16 @@ export default function App() {
                   if (isPlaylistSelectionMode) {
                     togglePlaylistSelection(e, pl.id);
                     setActivePlaylistId(pl.id);
+                    setDrillDownAlbum(null);
                     return;
                   }
                   if (e.shiftKey || e.ctrlKey || e.metaKey) {
                     togglePlaylistSelection(e, pl.id);
                   } else {
+                    // Clicking the title/row ONLY selects this folder for the main view (showing all albums in main view)
+                    // without expanding or collapsing the sidebar tree!
                     setActivePlaylistId(pl.id);
+                    setDrillDownAlbum(null);
                     setSelectedPlaylistIds(new Set([pl.id]));
                     lastSelectedPlaylistIdRef.current = pl.id;
                   }
@@ -3392,7 +4141,7 @@ export default function App() {
                 style={{
                   backgroundColor: isSelected 
                     ? 'var(--theme-list-accentMuted)' 
-                    : (isActive ? 'var(--theme-list-accentMuted)' : (dragOverPlaylistId === pl.id ? 'var(--theme-list-surfaceLighter)' : 'transparent')),
+                    : (isActive && !drillDownAlbum ? 'var(--theme-list-accentMuted)' : (dragOverPlaylistId === pl.id ? 'var(--theme-list-surfaceLighter)' : 'transparent')),
                   borderBottomColor: dragOverPlaylistId === pl.id ? 'var(--theme-list-accent)' : 'var(--theme-list-border)',
                   borderLeft: `2px solid ${isSelected || isActive ? 'var(--theme-list-accent)' : 'transparent'}`,
                   color: isSelected || isActive ? 'var(--theme-list-textMain)' : 'var(--theme-list-textMuted)',
@@ -3400,12 +4149,12 @@ export default function App() {
                   fontSize: 'var(--list-font-size)'
                 }}
                 onMouseEnter={e => {
-                  if (!isSelected && !isActive && dragOverPlaylistId !== pl.id) {
+                  if (!isSelected && !(isActive && !drillDownAlbum) && dragOverPlaylistId !== pl.id) {
                     e.currentTarget.style.backgroundColor = 'var(--theme-list-surfaceLighter)';
                   }
                 }}
                 onMouseLeave={e => {
-                  if (!isSelected && !isActive && dragOverPlaylistId !== pl.id) {
+                  if (!isSelected && !(isActive && !drillDownAlbum) && dragOverPlaylistId !== pl.id) {
                     e.currentTarget.style.backgroundColor = 'transparent';
                   }
                 }}
@@ -3438,7 +4187,7 @@ export default function App() {
                     />
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 truncate">
+                  <div className="flex items-center gap-2 truncate min-w-0 flex-1 pr-1">
                     {isPlaylistSelectionMode && pl.id !== 'all-tracks' ? (
                       <button
                         type="button"
@@ -3455,19 +4204,53 @@ export default function App() {
                       >
                         {isSelected && <Check size={10} style={{ color: '#fff' }} strokeWidth={3} />}
                       </button>
+                    ) : hasSubAlbums ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedSidebarFolderIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(pl.id)) next.delete(pl.id);
+                            else next.add(pl.id);
+                            return next;
+                          });
+                        }}
+                        className="flex items-center justify-center shrink-0 transition-transform hover:opacity-80 active:scale-95"
+                        title={isFolderExpanded ? "フォルダを閉じる" : `フォルダを開く (${subAlbums.length} ALBUMS)`}
+                      >
+                        {isFolderExpanded ? (
+                          <FolderOpen size={12} className="shrink-0" style={{ color: 'var(--theme-list-accent)' }} />
+                        ) : (
+                          <Folder size={12} className="shrink-0" style={{ color: isSelected || isActive ? 'var(--theme-list-accent)' : 'var(--theme-list-textDim)' }} />
+                        )}
+                      </button>
                     ) : (
                       <>
                         {isSelected ? (
-                          <Check size={12} style={{ color: 'var(--theme-list-accent)' }} />
+                          <Check size={12} className="shrink-0" style={{ color: 'var(--theme-list-accent)' }} />
                         ) : (
-                          <ListMusic size={12} style={{ color: isActive ? 'var(--theme-list-accent)' : 'var(--theme-list-textDim)' }} />
+                          <ListMusic size={12} className="shrink-0" style={{ color: isActive ? 'var(--theme-list-accent)' : 'var(--theme-list-textDim)' }} />
                         )}
                       </>
                     )}
                     <span className="truncate">{pl.name}</span>
                   </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {hasSubAlbums && (
+                    <span
+                      className="text-[8px] font-mono px-1 py-0.2 border rounded-[1px] tracking-normal"
+                      style={{
+                        borderColor: isFolderExpanded ? 'var(--theme-list-accent)' : 'var(--theme-list-border)',
+                        color: isFolderExpanded || isSelected || isActive ? 'var(--theme-list-accent)' : 'var(--theme-list-textMuted)',
+                        backgroundColor: 'var(--theme-list-surface)'
+                      }}
+                      title={`${subAlbums.length}個のアルバムフォルダが含まれています（左端のフォルダアイコンをクリックで開閉）`}
+                    >
+                      {subAlbums.length} ALB
+                    </span>
+                  )}
                   <span className="text-[9px] font-mono font-medium" style={{ color: isSelected || isActive ? 'var(--theme-list-textMain)' : 'var(--theme-list-textDim)' }}>
                     {pl.tracks.length.toString().padStart(3, '0')}
                   </span>
@@ -3523,6 +4306,186 @@ export default function App() {
                   )}
                 </div>
               </div>
+
+              {/* Collapsible Sub-Albums List inside this Folder Playlist */}
+              {hasSubAlbums && isFolderExpanded && (
+                <div
+                  className="flex flex-col border-b"
+                  style={{
+                    backgroundColor: 'var(--theme-list-surface)',
+                    borderColor: 'var(--theme-list-border)'
+                  }}
+                >
+                  {/* Header row inside expanded folder */}
+                  <div
+                    onClick={() => {
+                      setActivePlaylistId(pl.id);
+                      setDrillDownAlbum(null);
+                    }}
+                    className="flex items-center justify-between pl-6 pr-2.5 py-1 border-b cursor-pointer transition-colors hover:opacity-90"
+                    style={{
+                      backgroundColor: isActive && !drillDownAlbum ? 'var(--theme-list-accentMuted)' : 'transparent',
+                      borderColor: 'var(--theme-list-border)',
+                      color: isActive && !drillDownAlbum ? 'var(--theme-list-accent)' : 'var(--theme-list-textDim)',
+                      fontSize: 'var(--list-font-size-xs)'
+                    }}
+                    title="フォルダ内の全アルバムを表示"
+                  >
+                    <div className="flex items-center gap-1.5 truncate font-mono font-bold tracking-wider">
+                      <LayoutGrid size={9} />
+                      <span>ALL ALBUMS IN FOLDER ({subAlbums.length})</span>
+                    </div>
+                  </div>
+
+                  {subAlbums.map((subAlb, subIdx) => {
+                    const isSubActive = isActive && drillDownAlbum?.album.toLowerCase() === subAlb.album.toLowerCase();
+                    const isSubPlaying = isPlaying && currentTrack && subAlb.tracks.some(t => t.id === currentTrack.id);
+                    const isSubDragging = sidebarDragAlbum?.playlistId === pl.id && sidebarDragAlbum?.albumId === subAlb.id;
+                    const isSubDragOver = sidebarDragOverAlbum?.playlistId === pl.id && sidebarDragOverAlbum?.albumId === subAlb.id;
+
+                    return (
+                      <div
+                        key={subAlb.id}
+                        draggable
+                        onDragStart={(e) => {
+                          e.stopPropagation();
+                          setSidebarDragAlbum({ playlistId: pl.id, albumId: subAlb.id });
+                          e.dataTransfer.effectAllowed = 'move';
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (sidebarDragAlbum && sidebarDragAlbum.playlistId === pl.id && sidebarDragAlbum.albumId !== subAlb.id) {
+                            setSidebarDragOverAlbum({ playlistId: pl.id, albumId: subAlb.id });
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (sidebarDragAlbum && sidebarDragAlbum.playlistId === pl.id && sidebarDragAlbum.albumId !== subAlb.id) {
+                            handleReorderAlbum(sidebarDragAlbum.albumId, subAlb.id, pl.id);
+                          }
+                          setSidebarDragAlbum(null);
+                          setSidebarDragOverAlbum(null);
+                        }}
+                        onDragEnd={(e) => {
+                          e.stopPropagation();
+                          setSidebarDragAlbum(null);
+                          setSidebarDragOverAlbum(null);
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActivePlaylistId(pl.id);
+                          setDrillDownAlbum({ artist: subAlb.artist, album: subAlb.album });
+                          setSelectedTrackIds(new Set());
+                          // Switch to TRACKS view so the user can immediately edit/reorder or play tracks of this album
+                          setBankViewMode('tracks');
+                          localStorage.setItem('v2_solid_bank_view_mode', 'tracks');
+                        }}
+                        className="group/sub flex items-center justify-between pl-6 pr-2 py-1.5 border-b last:border-b-0 cursor-pointer select-none transition-colors"
+                        style={{
+                          backgroundColor: isSubActive
+                            ? 'var(--theme-list-accentMuted)'
+                            : isSubDragOver
+                            ? 'var(--theme-list-surfaceLighter)'
+                            : 'transparent',
+                          borderColor: isSubDragOver ? 'var(--theme-list-accent)' : 'var(--theme-list-border)',
+                          borderLeft: `3px solid ${isSubActive ? 'var(--theme-list-accent)' : 'transparent'}`,
+                          color: isSubActive ? 'var(--theme-list-textMain)' : 'var(--theme-list-textMuted)',
+                          opacity: isSubDragging ? 0.45 : 1,
+                          fontSize: 'var(--list-font-size-sm)'
+                        }}
+                        onMouseEnter={e => {
+                          if (!isSubActive && !isSubDragOver) {
+                            e.currentTarget.style.backgroundColor = 'var(--theme-list-surfaceLighter)';
+                          }
+                        }}
+                        onMouseLeave={e => {
+                          if (!isSubActive && !isSubDragOver) {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }
+                        }}
+                        title={`${subAlb.album} (${subAlb.tracks.length}曲) - クリックでTRACKS編集・再生 / ドラッグでアルバム順変更`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActivePlaylistId(pl.id);
+                              handlePlayAlbum(subAlb);
+                            }}
+                            className="w-4 h-4 rounded-[1px] border flex items-center justify-center shrink-0 transition-colors hover:opacity-80"
+                            style={{
+                              backgroundColor: isSubPlaying ? 'var(--theme-list-accent)' : 'var(--theme-list-bg)',
+                              borderColor: isSubPlaying || isSubActive ? 'var(--theme-list-accent)' : 'var(--theme-list-border)',
+                              color: isSubPlaying ? '#ffffff' : 'var(--theme-list-accent)'
+                            }}
+                            title="このアルバムを今すぐ再生"
+                          >
+                            {isSubPlaying ? <Pause size={8} /> : <Play size={8} className="translate-x-[0.5px]" />}
+                          </button>
+                          {subAlb.coverUrl ? (
+                            <img src={subAlb.coverUrl} alt="" className="w-4 h-4 object-cover border rounded-[1px] shrink-0" style={{ borderColor: 'var(--theme-list-border)' }} />
+                          ) : (
+                            <Disc size={10} className="shrink-0" style={{ color: isSubActive ? 'var(--theme-list-accent)' : 'var(--theme-list-textDim)' }} />
+                          )}
+                          <span className="truncate font-mono">{subAlb.album}</span>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          {/* Reorder Album Buttons inside Sidebar (Top, Up, Down, Bottom) on hover */}
+                          <div className="hidden group-hover/sub:flex items-center gap-0.5 mr-0.5" onClick={e => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              disabled={subIdx === 0}
+                              onClick={() => handleMoveAlbum(subAlb.id, 'top', pl.id)}
+                              className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center disabled:opacity-20 hover:opacity-80"
+                              style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                              title="一番上へ移動 (Top)"
+                            >
+                              <ChevronsUp size={8} />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={subIdx === 0}
+                              onClick={() => handleMoveAlbum(subAlb.id, 'up', pl.id)}
+                              className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center disabled:opacity-20 hover:opacity-80"
+                              style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                              title="一つ上へ移動 (Up)"
+                            >
+                              <ChevronUp size={8} />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={subIdx === subAlbums.length - 1}
+                              onClick={() => handleMoveAlbum(subAlb.id, 'down', pl.id)}
+                              className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center disabled:opacity-20 hover:opacity-80"
+                              style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                              title="一つ下へ移動 (Down)"
+                            >
+                              <ChevronDown size={8} />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={subIdx === subAlbums.length - 1}
+                              onClick={() => handleMoveAlbum(subAlb.id, 'bottom', pl.id)}
+                              className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center disabled:opacity-20 hover:opacity-80"
+                              style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                              title="一番下へ移動 (Bottom)"
+                            >
+                              <ChevronsDown size={8} />
+                            </button>
+                          </div>
+                          <span className="text-[8.5px] font-mono" style={{ color: isSubActive ? 'var(--theme-list-textMain)' : 'var(--theme-list-textDim)' }}>
+                            {subAlb.tracks.length.toString().padStart(2, '0')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               
               {/* Inline Create Playlist Input right after ALL TRACKS */}
               {plIdx === 0 && isCreatingPlaylist && (
@@ -3554,6 +4517,8 @@ export default function App() {
             onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-list-accent)'}
             onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
           />
+          </>
+          )}
         </div>
 
         {/* 05 PLAYLIST (Tracks) */}
@@ -3569,153 +4534,345 @@ export default function App() {
            onDrop={handleDrop}
         >
           <div className="border-b px-3 py-1 flex items-center h-8 justify-between shrink-0" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-listHeader-border)' }}>
-             <div className="flex items-center gap-4">
-               <div className="flex items-center gap-2">
-                 <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--theme-listHeader-textMuted)' }}>VIEW:</span>
-                 <span className="text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--theme-accent)' }}>{activePlaylist.name}</span>
+             <div className="flex items-center gap-3 min-w-0 overflow-x-auto">
+               <div className="flex items-center gap-1.5 shrink-0">
+                 <button
+                   onClick={() => {
+                     if (isSidebarCollapsed) {
+                       setIsSidebarCollapsed(false);
+                       setSidebarWidth(prevSidebarWidthRef.current || 240);
+                     } else {
+                       prevSidebarWidthRef.current = sidebarWidth || 240;
+                       setIsSidebarCollapsed(true);
+                     }
+                   }}
+                   className="flex items-center gap-1 text-[8.5px] font-mono px-1.5 py-0.5 border rounded-[1px] transition-colors shrink-0 hover:opacity-80 active:scale-95"
+                   style={{
+                     backgroundColor: isSidebarCollapsed ? 'var(--theme-accentMuted)' : 'transparent',
+                     borderColor: isSidebarCollapsed ? 'var(--theme-accent)' : 'var(--theme-listHeader-border)',
+                     color: isSidebarCollapsed ? 'var(--theme-accent)' : 'var(--theme-listHeader-textMuted)'
+                   }}
+                   title={isSidebarCollapsed ? "サイドバーを展開" : "サイドバーを折りたたむ（全画面アルバム表示）"}
+                 >
+                   {isSidebarCollapsed ? <PanelLeftOpen size={9} /> : <PanelLeftClose size={9} />}
+                   <span>{isSidebarCollapsed ? 'SHOW' : 'SIDEBAR'}</span>
+                 </button>
+                 <span className="text-[10px] uppercase tracking-wider pl-1" style={{ color: 'var(--theme-listHeader-textMuted)' }}>VIEW:</span>
+                 <span className="text-[10px] uppercase tracking-wider font-bold truncate max-w-[130px]" style={{ color: 'var(--theme-accent)' }}>{activePlaylist.name}</span>
                </div>
-               
-               {displayTracks.length > 0 && (
-                 <div className="flex items-center gap-3 border-l pl-3" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
-                   <button 
-                     onClick={() => {
-                        if (selectedTrackIds.size > 0) {
-                            setSelectedTrackIds(new Set());
-                        } else {
-                            setSelectedTrackIds(new Set(displayTracks.map(t => t.id)));
-                        }
-                     }}
-                     className="flex items-center gap-1 text-[9px] uppercase tracking-wider transition-colors hover:opacity-80 active:scale-95"
-                     style={{ color: selectedTrackIds.size > 0 ? 'var(--theme-accent)' : 'var(--theme-listHeader-textMuted)' }}
-                   >
-                     {selectedTrackIds.size === displayTracks.length ? <Check size={10} /> : selectedTrackIds.size > 0 ? <Minus size={10} /> : <div className="w-[10px] h-[10px] border rounded-[1px]" style={{ borderColor: 'currentcolor' }}></div>}
-                     {selectedTrackIds.size > 0 ? 'SELECT CANCEL' : 'SELECT ALL'}
-                   </button>
-                   {selectedTrackIds.size > 0 && (
-                     <div className="flex items-center gap-3">
-                       <div className="flex items-center gap-1.5 border-l pl-3" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
-                         <span className="text-[9px] uppercase tracking-wider font-mono" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
-                           MOVE ({selectedTrackIds.size}):
-                         </span>
-                         <div className="flex items-center gap-0.5">
-                           <button 
-                             onClick={() => moveSelectedTracks('top')}
-                             className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                             style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                             title="選択した曲を一番上へ移動 (Top)"
-                           >
-                             <ChevronsUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
-                           </button>
-                           <button 
-                             onClick={() => moveSelectedTracks('up')}
-                             className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                             style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                             title="選択した曲を1段上へ移動 (Up)"
-                           >
-                             <ChevronUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
-                           </button>
-                           <button 
-                             onClick={() => moveSelectedTracks('down')}
-                             className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                             style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                             title="選択した曲を1段下へ移動 (Down)"
-                           >
-                             <ChevronDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
-                           </button>
-                           <button 
-                             onClick={() => moveSelectedTracks('bottom')}
-                             className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                             style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                             title="選択した曲を一番下へ移動 (Bottom)"
-                           >
-                             <ChevronsDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
-                           </button>
-                         </div>
-                       </div>
 
-                       <div className="relative">
-                         <button 
-                            onClick={() => setShowAddToPlaylist(!showAddToPlaylist)}
-                            className="flex items-center gap-1 text-[9px] uppercase tracking-wider transition-colors hover:opacity-80 active:scale-95"
-                            style={{ color: 'var(--theme-listHeader-text)' }}
-                            title="選択した曲を別のリストへ移動/追加"
-                          >
-                            <ListPlus size={10} style={{ color: 'var(--theme-accent)' }} />
-                            {activePlaylistId === 'all-tracks' ? 'ADD TO VIEW' : 'MOVE TO VIEW'}
-                          </button>
-                          {showAddToPlaylist && (
-                             <div className="absolute top-full left-0 mt-2 w-48 max-h-60 overflow-y-auto border z-50 flex flex-col p-1 shadow-lg" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }}>
-                                {playlists.filter(p => p.id !== 'all-tracks' && p.id !== activePlaylistId).map(p => (
-                                   <button 
-                                      key={p.id}
-                                      onClick={() => handleAddSelectedToPlaylist(p.id)}
-                                      className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider hover:opacity-80 transition-colors truncate flex-shrink-0"
-                                      style={{ color: 'var(--theme-textMain)' }}
-                                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'}
-                                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                                      title={activePlaylistId === 'all-tracks' ? `ADD TO ${p.name}` : `MOVE TO ${p.name}`}
-                                   >
-                                     {p.name}
-                                   </button>
-                                ))}
-                                {playlists.filter(p => p.id !== 'all-tracks' && p.id !== activePlaylistId).length === 0 && (
-                                   <div className="px-2 py-1 text-[9px] uppercase tracking-wider opacity-50 text-center" style={{ color: 'var(--theme-textMuted)' }}>NO OTHER VIEWS</div>
-                                )}
-                             </div>
-                          )}
-                       </div>
+               {/* View Mode Switcher: TRACKS (編集モード) | ALBUM CARDS (タイル表示モード) */}
+               <div className="flex items-center gap-0.5 border-l pl-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
+                 <button
+                   onClick={() => {
+                     setBankViewMode('tracks');
+                     localStorage.setItem('v2_solid_bank_view_mode', 'tracks');
+                   }}
+                   className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors font-bold"
+                   style={bankViewMode === 'tracks'
+                     ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                     : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
+                   title="TRACKS モード（曲リスト・並び替え・編集）"
+                 >
+                   <ListMusic size={9} />
+                   <span>TRACKS</span>
+                 </button>
+                 <button
+                   onClick={() => {
+                     setBankViewMode('card');
+                     setDrillDownAlbum(null);
+                     localStorage.setItem('v2_solid_bank_view_mode', 'card');
+                   }}
+                   className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors font-bold"
+                   style={bankViewMode === 'card'
+                     ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                     : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
+                   title="CARD モード（アルバムジャケットを横にタイル敷き詰め表示）"
+                 >
+                   <LayoutGrid size={9} />
+                   <span>CARDS</span>
+                 </button>
+                 <button
+                   onClick={() => {
+                     setBankViewMode('album');
+                     setDrillDownAlbum(null);
+                     localStorage.setItem('v2_solid_bank_view_mode', 'album');
+                   }}
+                   className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors font-bold"
+                   style={bankViewMode === 'album'
+                     ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                     : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
+                   title="ALBUM モード（ジャケット＋曲目リスト見開きカードを横にタイル敷き詰め表示）"
+                 >
+                   <Disc size={9} />
+                   <span>ALBUM</span>
+                 </button>
+                 <button
+                   onClick={() => {
+                     setBankViewMode('list');
+                     setDrillDownAlbum(null);
+                     localStorage.setItem('v2_solid_bank_view_mode', 'list');
+                   }}
+                   className="flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 border rounded-[1px] transition-colors"
+                   style={bankViewMode === 'list'
+                     ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                     : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
+                   title="LIST モード（コンパクト行表示）"
+                 >
+                   <List size={9} />
+                   <span>LIST</span>
+                 </button>
+               </div>
+
+               {/* Album Mode Extra Controls: Global Tile Size Zoom & Artist Grouping */}
+               {bankViewMode !== 'tracks' && (
+                 <div className="flex items-center gap-1.5 border-l pl-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
+                   {/* Size Zoom Controls for CARD & ALBUM modes (changes all tiles at once like an image viewer) */}
+                   {(bankViewMode === 'card' || bankViewMode === 'album') && (
+                     <div className="flex items-center gap-1.5">
+                       <span className="text-[8.5px] font-mono font-bold tracking-wider" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
+                         SIZE:
+                       </span>
                        
-                       <button 
-                         onClick={deleteSelectedTracks}
-                         className="flex items-center gap-1 text-[9px] uppercase tracking-wider transition-colors hover:opacity-80 active:scale-95"
-                         style={{ color: 'var(--theme-listHeader-text)' }}
+                       {/* Zoom Out Button */}
+                       <button
+                         onClick={() => {
+                           const next = Math.max(90, cardScale - 20);
+                           setCardScale(next);
+                           localStorage.setItem('v2_solid_card_scale', String(next));
+                         }}
+                         className="w-4 h-4 flex items-center justify-center text-[10px] font-mono border rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
+                         style={{
+                           backgroundColor: 'var(--theme-bg)',
+                           borderColor: 'var(--theme-listHeader-border)',
+                           color: 'var(--theme-listHeader-text)',
+                         }}
+                         title="全体のタイルサイズを一括縮小（横の列数を増やす）"
                        >
-                         <Trash2 size={10} style={{ color: 'var(--theme-accent)' }} />
-                         DELETE SELECTED ({selectedTrackIds.size})
+                         -
                        </button>
+
+                       {/* Interactive Scale Range Slider */}
+                       <input
+                         type="range"
+                         min="90"
+                         max="360"
+                         step="10"
+                         value={cardScale}
+                         onChange={(e) => {
+                           const val = parseInt(e.target.value, 10);
+                           setCardScale(val);
+                           localStorage.setItem('v2_solid_card_scale', String(val));
+                         }}
+                         className="w-20 sq-slider cursor-pointer"
+                         title={`全体のタイル表示サイズ: ${cardScale}px`}
+                       />
+
+                       {/* Zoom In Button */}
+                       <button
+                         onClick={() => {
+                           const next = Math.min(360, cardScale + 20);
+                           setCardScale(next);
+                           localStorage.setItem('v2_solid_card_scale', String(next));
+                         }}
+                         className="w-4 h-4 flex items-center justify-center text-[10px] font-mono border rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
+                         style={{
+                           backgroundColor: 'var(--theme-bg)',
+                           borderColor: 'var(--theme-listHeader-border)',
+                           color: 'var(--theme-listHeader-text)',
+                         }}
+                         title="全体のタイルサイズを一括拡大"
+                       >
+                         +
+                       </button>
+
+                       <span className="text-[8.5px] font-mono w-8 text-right font-bold" style={{ color: 'var(--theme-accent)' }}>
+                         {cardScale}px
+                       </span>
                      </div>
                    )}
+
+                   <button
+                     onClick={() => {
+                       const next = !groupByArtist;
+                       setGroupByArtist(next);
+                       localStorage.setItem('v2_solid_group_by_artist_v2', String(next));
+                     }}
+                     className="flex items-center gap-1 text-[8.5px] font-mono px-1.5 py-0.5 border rounded-[1px] transition-colors ml-1"
+                     style={groupByArtist
+                       ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                       : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
+                     title={groupByArtist ? "現在：アーティスト別カードで横並びタイル表示（クリックでアルバム単体タイル表示へ切替）" : "現在：全アルバムを横並びタイル敷き詰め表示（クリックでアーティスト別タイル表示へ切替）"}
+                   >
+                     <User size={9} />
+                     <span>BY ARTIST</span>
+                   </button>
                  </div>
                )}
-             </div>
-            <div className="flex items-center gap-3 shrink-0">
-               <div className="relative">
-                 <button
-                   onClick={() => setShowColMenu(!showColMenu)}
-                   className="flex items-center gap-1 text-[9px] uppercase tracking-wider border px-2 py-0.5 transition-colors hover:opacity-80 active:scale-95"
-                   style={{ borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)', backgroundColor: showColMenu ? 'var(--theme-bg)' : 'transparent' }}
-                   title="表示項目の設定"
-                 >
-                   <Eye size={9} />
-                   COLUMNS
-                 </button>
-                 {showColMenu && (
-                   <div className="absolute top-full right-0 mt-2 w-36 border z-50 flex flex-col p-1 shadow-lg" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }}>
-                     {(Object.keys(colVisibility) as (keyof typeof colVisibility)[]).map(key => {
-                       const labelMap = { art: 'アルバムアート', fileName: '名前', trackNumber: '#No', title: 'タイトル', artist: 'アーティスト', album: 'アルバム', actions: '操作' };
-                       return (
-                         <label key={key} className="flex items-center gap-2 px-2 py-1.5 cursor-pointer hover:opacity-80 transition-colors" style={{ color: 'var(--theme-textMain)' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
-                           <input type="checkbox" className="accent-[var(--theme-accent)] w-3 h-3" checked={colVisibility[key]} onChange={(e) => setColVisibility(prev => ({ ...prev, [key]: e.target.checked }))} />
-                           <span className="text-[9px] uppercase tracking-wider mt-[1px]">{labelMap[key]}</span>
-                         </label>
-                       );
-                     })}
-                   </div>
-                 )}
-               </div>
-               {activeSortConfig.key !== 'none' && (
-                 <button
-                   onClick={() => handleSort(activeSortConfig.key as any)}
-                   className="flex items-center gap-1 text-[9px] uppercase tracking-wider border px-2 py-0.5 transition-colors hover:opacity-80 active:scale-95"
-                   style={{ borderColor: 'var(--theme-list-borderActive)', color: 'var(--theme-list-accent)', backgroundColor: 'var(--theme-list-accentMuted)' }}
-                   title="ソートを解除して手動並べ替えを有効にする"
-                 >
-                   <X size={9} />
-                   SORT: {activeSortConfig.key.toUpperCase()}
-                 </button>
+
+               {/* Drill-down Breadcrumb */}
+               {drillDownAlbum && (
+                 <div className="flex items-center gap-2 border-l pl-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
+                   <button
+                     onClick={() => setDrillDownAlbum(null)}
+                     className="flex items-center gap-1 text-[8.5px] font-mono px-1.5 py-0.5 border rounded-[1px] transition-colors hover:opacity-80 active:scale-95"
+                     style={{ backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }}
+                     title="フォルダ全体の全曲/全アルバム表示へ戻る"
+                   >
+                     <ArrowLeft size={9} />
+                     <span>ALL IN FOLDER</span>
+                   </button>
+                   <span className="text-[9px] font-mono font-bold truncate max-w-[160px]" style={{ color: 'var(--theme-listHeader-text)' }}>
+                     {drillDownAlbum.album}
+                   </span>
+                 </div>
                )}
-               <span className="text-[9px] font-mono tracking-widest" style={{ color: 'var(--theme-listHeader-textMuted)' }}>{displayTracks.length} ITEMS</span>
-            </div>
+               
+               {/* Track Action Controls (When in TRACKS view or inside drill-down) */}
+               {(bankViewMode === 'tracks' || drillDownAlbum) && tracksToRender.length > 0 && (
+                  <div className="flex items-center gap-3 border-l pl-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
+                    <button 
+                      onClick={() => {
+                         if (selectedTrackIds.size > 0) {
+                             setSelectedTrackIds(new Set());
+                         } else {
+                             setSelectedTrackIds(new Set(tracksToRender.map(t => t.id)));
+                         }
+                      }}
+                      className="flex items-center gap-1 text-[9px] uppercase tracking-wider transition-colors hover:opacity-80 active:scale-95"
+                      style={{ color: selectedTrackIds.size > 0 ? 'var(--theme-accent)' : 'var(--theme-listHeader-textMuted)' }}
+                    >
+                      {selectedTrackIds.size === tracksToRender.length ? <Check size={10} /> : selectedTrackIds.size > 0 ? <Minus size={10} /> : <div className="w-[10px] h-[10px] border rounded-[1px]" style={{ borderColor: 'currentcolor' }}></div>}
+                      {selectedTrackIds.size > 0 ? 'SELECT CANCEL' : 'SELECT ALL'}
+                    </button>
+                    {selectedTrackIds.size > 0 && (
+                      <div className="flex items-center gap-3">
+                        {/* Batch Track Move Buttons: Top, Up, Down, Bottom */}
+                        <div className="flex items-center gap-0.5 border-r pr-2" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
+                          <span className="text-[9px] font-mono tracking-wider mr-1" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
+                            MOVE ({selectedTrackIds.size}):
+                          </span>
+                          <button 
+                            onClick={() => moveSelectedTracks('top')}
+                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                            style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                            title="選択した曲を一番上へ移動 (Top)"
+                          >
+                            <ChevronsUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                          </button>
+                          <button 
+                            onClick={() => moveSelectedTracks('up')}
+                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                            style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                            title="選択した曲を上に移動 (Up)"
+                          >
+                            <ChevronUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                          </button>
+                          <button 
+                            onClick={() => moveSelectedTracks('down')}
+                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                            style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                            title="選択した曲を下に移動 (Down)"
+                          >
+                            <ChevronDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                          </button>
+                          <button 
+                            onClick={() => moveSelectedTracks('bottom')}
+                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                            style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                            title="選択した曲を一番下へ移動 (Bottom)"
+                          >
+                            <ChevronsDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                          </button>
+                        </div>
+
+                        <div className="relative">
+                          <button 
+                             onClick={() => setShowAddToPlaylist(!showAddToPlaylist)}
+                             className="flex items-center gap-1 text-[9px] uppercase tracking-wider transition-colors hover:opacity-80 active:scale-95"
+                             style={{ color: 'var(--theme-listHeader-text)' }}
+                             title="選択した曲を別のリストへ移動/追加"
+                           >
+                             <ListPlus size={10} style={{ color: 'var(--theme-accent)' }} />
+                             {activePlaylistId === 'all-tracks' ? 'ADD TO VIEW' : 'MOVE TO VIEW'}
+                           </button>
+                           {showAddToPlaylist && (
+                              <div className="absolute top-full left-0 mt-2 w-48 max-h-60 overflow-y-auto border z-50 flex flex-col p-1 shadow-lg" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }}>
+                                 {playlists.filter(p => p.id !== 'all-tracks' && p.id !== activePlaylistId).map(p => (
+                                    <button 
+                                       key={p.id}
+                                       onClick={() => handleAddSelectedToPlaylist(p.id)}
+                                       className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider hover:opacity-80 transition-colors truncate flex-shrink-0"
+                                       style={{ color: 'var(--theme-textMain)' }}
+                                       onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'}
+                                       onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                       title={activePlaylistId === 'all-tracks' ? `ADD TO ${p.name}` : `MOVE TO ${p.name}`}
+                                    >
+                                      {p.name}
+                                    </button>
+                                 ))}
+                                 {playlists.filter(p => p.id !== 'all-tracks' && p.id !== activePlaylistId).length === 0 && (
+                                    <div className="px-2 py-1 text-[9px] uppercase tracking-wider opacity-50 text-center" style={{ color: 'var(--theme-textMuted)' }}>NO OTHER VIEWS</div>
+                                 )}
+                              </div>
+                           )}
+                        </div>
+                        
+                        <button 
+                          onClick={deleteSelectedTracks}
+                          className="flex items-center gap-1 text-[9px] uppercase tracking-wider transition-colors hover:opacity-80 active:scale-95"
+                          style={{ color: 'var(--theme-listHeader-text)' }}
+                        >
+                          <Trash2 size={10} style={{ color: 'var(--theme-accent)' }} />
+                          DELETE SELECTED ({selectedTrackIds.size})
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+             <div className="flex items-center gap-3 shrink-0">
+               {(bankViewMode === 'tracks' || drillDownAlbum) && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowColMenu(!showColMenu)}
+                    className="flex items-center gap-1 text-[9px] uppercase tracking-wider border px-2 py-0.5 transition-colors hover:opacity-80 active:scale-95"
+                    style={{ borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)', backgroundColor: showColMenu ? 'var(--theme-bg)' : 'transparent' }}
+                    title="表示項目の設定"
+                  >
+                    <Eye size={9} />
+                    COLUMNS
+                  </button>
+                  {showColMenu && (
+                    <div className="absolute top-full right-0 mt-2 w-36 border z-50 flex flex-col p-1 shadow-lg" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }}>
+                      {(Object.keys(colVisibility) as (keyof typeof colVisibility)[]).map(key => {
+                        const labelMap = { art: 'アルバムアート', fileName: '名前', trackNumber: '#No', title: 'タイトル', artist: 'アーティスト', album: 'アルバム', actions: '操作' };
+                        return (
+                          <label key={key} className="flex items-center gap-2 px-2 py-1.5 cursor-pointer hover:opacity-80 transition-colors" style={{ color: 'var(--theme-textMain)' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                            <input type="checkbox" className="accent-[var(--theme-accent)] w-3 h-3" checked={colVisibility[key]} onChange={(e) => setColVisibility(prev => ({ ...prev, [key]: e.target.checked }))} />
+                            <span className="text-[9px] uppercase tracking-wider mt-[1px]">{labelMap[key]}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+               )}
+                {activeSortConfig.key !== 'none' && (bankViewMode === 'tracks' || drillDownAlbum) && (
+                  <button
+                    onClick={() => handleSort(activeSortConfig.key as any)}
+                    className="flex items-center gap-1 text-[9px] uppercase tracking-wider border px-2 py-0.5 transition-colors hover:opacity-80 active:scale-95"
+                    style={{ borderColor: 'var(--theme-list-borderActive)', color: 'var(--theme-list-accent)', backgroundColor: 'var(--theme-list-accentMuted)' }}
+                    title="ソートを解除して手動並べ替えを有効にする"
+                  >
+                    <X size={9} />
+                    SORT: {activeSortConfig.key.toUpperCase()}
+                  </button>
+                )}
+                <span className="text-[9px] font-mono tracking-widest" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
+                  {drillDownAlbum ? `${drillDownTracks.length} TRACKS` : bankViewMode !== 'tracks' ? `${albumGroups.length} ALBUMS • ${displayTracks.length} TRACKS` : `${displayTracks.length} ITEMS`}
+                </span>
+             </div>
           </div>
 
           {/* Missing files banner */}
@@ -3757,8 +4914,81 @@ export default function App() {
                 </button>
               )}
             </div>
+          ) : bankViewMode !== 'tracks' ? (
+            <AlbumCardView
+              activePlaylistId={activePlaylistId}
+              albums={albumGroups}
+              artists={artistGroups}
+              cardSize={cardSize}
+              cardScale={cardScale}
+              displayMode={bankViewMode}
+              groupByArtist={groupByArtist}
+              onPlayAlbum={handlePlayAlbum}
+              onPlayTrack={handlePlayAlbumTrack}
+              onPlayArtist={handlePlayArtist}
+              onOpenAlbum={handleOpenAlbum}
+              onMoveAlbum={(albumId, direction) => handleMoveAlbum(albumId, direction, activePlaylistId)}
+              onReorderAlbum={(sourceId, targetId) => handleReorderAlbum(sourceId, targetId, activePlaylistId)}
+              currentTrackId={currentTrack?.id}
+              isPlaying={isPlaying}
+            />
           ) : (
             <div className="flex flex-col h-full overflow-y-auto overflow-x-hidden relative w-full" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
+              {drillDownAlbum && (
+                <div className="flex items-center justify-between px-3 py-2 border-b shrink-0" style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)' }}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <button
+                      onClick={() => setDrillDownAlbum(null)}
+                      className="flex items-center gap-1 px-2 py-1 border text-[9px] font-mono font-bold tracking-wider rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
+                      style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }}
+                      title="フォルダ全体の全曲表示へ戻る"
+                    >
+                      <ArrowLeft size={10} />
+                      <span>フォルダ全体 ({activePlaylist.name}) に戻る</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDrillDownAlbum(null);
+                        setBankViewMode('album');
+                        localStorage.setItem('v2_solid_bank_view_mode', 'album');
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 border text-[9px] font-mono font-bold tracking-wider rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
+                      style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                      title="ALBUM カード一覧へ戻る"
+                    >
+                      <Disc size={10} />
+                      <span>ALBUM一覧へ</span>
+                    </button>
+                    {albumGroups.find(a => a.album.toLowerCase() === drillDownAlbum.album.toLowerCase())?.coverUrl && (
+                      <img 
+                        src={albumGroups.find(a => a.album.toLowerCase() === drillDownAlbum.album.toLowerCase())?.coverUrl} 
+                        alt="" 
+                        className="w-7 h-7 object-cover border rounded-[1px]" 
+                        style={{ borderColor: 'var(--theme-list-border)' }} 
+                      />
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-bold font-mono truncate" style={{ color: 'var(--theme-list-textMain)' }}>
+                        {drillDownAlbum.album}
+                      </div>
+                      <div className="text-[9px] font-mono truncate" style={{ color: 'var(--theme-list-textMuted)' }}>
+                        {drillDownAlbum.artist} • {drillDownTracks.length} TRACKS (曲順編集・再生モード)
+                      </div>
+                    </div>
+                  </div>
+                  {albumGroups.find(a => a.album.toLowerCase() === drillDownAlbum.album.toLowerCase()) && (
+                    <button
+                      onClick={() => handlePlayAlbum(albumGroups.find(a => a.album.toLowerCase() === drillDownAlbum.album.toLowerCase())!)}
+                      className="flex items-center gap-1.5 px-3 py-1 border text-[9px] font-mono font-bold tracking-wider rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
+                      style={{ backgroundColor: 'var(--theme-list-surface)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }}
+                      title="このアルバムを再生"
+                    >
+                      <Play size={10} />
+                      <span>PLAY ALBUM</span>
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="w-full flex flex-col min-h-full">
                 {/* List Header */}
                 <div className="flex items-center uppercase tracking-normal px-2 h-8 border-b shrink-0 sticky top-0 z-20 text-[10px] w-full" style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMuted)' }}>
