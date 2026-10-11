@@ -434,6 +434,7 @@ export default function App() {
   const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
+  const [showMoveToAlbum, setShowMoveToAlbum] = useState(false);
   const [showColMenu, setShowColMenu] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
@@ -2823,6 +2824,52 @@ export default function App() {
     localStorage.setItem('v2_solid_bank_view_mode', 'tracks');
   };
 
+  // Move one or more tracks into a specific target AlbumGroup within the current playlist/library
+  const handleMoveTracksToAlbum = (trackIds: string[], targetAlbum: AlbumGroup) => {
+    if (trackIds.length === 0 || !targetAlbum) return;
+    const targetSet = new Set(trackIds);
+    const newAlbumName = targetAlbum.album.trim();
+    const newArtistName = targetAlbum.artist?.trim();
+
+    // Derive target folderPath prefix from an existing track in the target album so getTrackAlbumArtist groups it seamlessly
+    const refTrack = targetAlbum.tracks.find(t => !targetSet.has(t.id)) || targetAlbum.tracks[0];
+    let refFolderPrefix: string | null = null;
+    if (refTrack && refTrack.folderPath) {
+      const parts = refTrack.folderPath.split('/').filter(Boolean);
+      if (parts.length >= 2) {
+        refFolderPrefix = parts.slice(0, parts.length - 1).join('/');
+      }
+    }
+
+    const updateTrackToTargetAlbum = (t: Track): Track => {
+      if (!targetSet.has(t.id)) return t;
+      let nextFolderPath = t.folderPath;
+      if (refFolderPrefix) {
+        nextFolderPath = `${refFolderPrefix}/${t.fileName}`;
+      } else if (activePlaylist && activePlaylistId !== 'all-tracks') {
+        nextFolderPath = `${activePlaylist.name.trim()}/${newAlbumName}/${t.fileName}`;
+      } else {
+        nextFolderPath = `${newArtistName || t.artist || 'Artist'}/${newAlbumName}/${t.fileName}`;
+      }
+      return {
+        ...t,
+        album: newAlbumName,
+        artist: (!t.artist || t.artist === 'Unknown Artist') && newArtistName ? newArtistName : t.artist,
+        folderPath: nextFolderPath,
+        coverUrl: t.coverUrl || targetAlbum.coverUrl,
+      };
+    };
+
+    setLibrary(prev => prev.map(updateTrackToTargetAlbum));
+    setPlaylists(prev => prev.map(p => ({
+      ...p,
+      tracks: p.tracks.map(updateTrackToTargetAlbum),
+    })));
+    setPlaybackQueue(prev => prev.map(updateTrackToTargetAlbum));
+    setShowMoveToAlbum(false);
+    setSelectedTrackIds(new Set());
+  };
+
   // One-click unify all tracks in the currently active playlist into a single album named after the folder/playlist
   const handleUnifyPlaylistAlbum = () => {
     if (activePlaylistId === 'all-tracks' || !activePlaylist) return;
@@ -3999,6 +4046,43 @@ export default function App() {
                 </div>
                 
                 <div className="flex items-center gap-1 shrink-0">
+                  {/* OPEN / CLOSE all folder playlists toggle button */}
+                  {(() => {
+                    const expandableFolderIds = playlists
+                      .filter(p => p.id !== 'all-tracks' && (playlistAlbumsMap[p.id]?.length || 0) > 1)
+                      .map(p => p.id);
+                    const isAllFoldersOpen = expandableFolderIds.length > 0 && expandableFolderIds.every(id => expandedSidebarFolderIds.has(id));
+                    return (
+                      <button
+                        type="button"
+                        disabled={expandableFolderIds.length === 0}
+                        onClick={() => {
+                          if (isAllFoldersOpen) {
+                            setExpandedSidebarFolderIds(new Set());
+                          } else {
+                            setExpandedSidebarFolderIds(new Set(expandableFolderIds));
+                          }
+                        }}
+                        className="flex items-center gap-1 justify-center border rounded-[2px] px-1.5 h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95 disabled:opacity-35"
+                        style={
+                          isAllFoldersOpen
+                            ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                            : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }
+                        }
+                        title={
+                          expandableFolderIds.length === 0
+                            ? '複数アルバムを含むフォルダがありません'
+                            : isAllFoldersOpen
+                            ? 'すべてのフォルダを一括で閉じる (CLOSE ALL)'
+                            : `すべてのフォルダ (${expandableFolderIds.length}件) を一括で開く (OPEN ALL)`
+                        }
+                      >
+                        {isAllFoldersOpen ? <FolderOpen size={10} /> : <Folder size={10} />}
+                        <span>{isAllFoldersOpen ? 'CLOSE' : 'OPEN'}</span>
+                      </button>
+                    );
+                  })()}
+
                   {/* Collapse sidebar button */}
                   <button 
                     onClick={() => {
@@ -4564,8 +4648,8 @@ export default function App() {
            onDragLeave={handleDragLeave}
            onDrop={handleDrop}
         >
-          <div className="border-b px-3 py-1 flex items-center h-8 justify-between shrink-0" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-listHeader-border)' }}>
-             <div className="flex items-center gap-3 min-w-0 overflow-x-auto">
+          <div className="border-b px-3 py-1 flex items-center min-h-[32px] justify-between shrink-0 relative z-30 flex-wrap gap-y-1" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-listHeader-border)' }}>
+             <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
                <div className="flex items-center gap-1.5 shrink-0">
                  <button
                    onClick={() => {
@@ -4835,7 +4919,10 @@ export default function App() {
 
                         <div className="relative">
                           <button 
-                             onClick={() => setShowAddToPlaylist(!showAddToPlaylist)}
+                             onClick={() => {
+                               setShowAddToPlaylist(!showAddToPlaylist);
+                               setShowMoveToAlbum(false);
+                             }}
                              className="flex items-center gap-1 text-[9px] uppercase tracking-wider transition-colors hover:opacity-80 active:scale-95"
                              style={{ color: 'var(--theme-listHeader-text)' }}
                              title="選択した曲を別のリストへ移動/追加"
@@ -4844,7 +4931,7 @@ export default function App() {
                              {activePlaylistId === 'all-tracks' ? 'ADD TO VIEW' : 'MOVE TO VIEW'}
                            </button>
                            {showAddToPlaylist && (
-                              <div className="absolute top-full left-0 mt-2 w-48 max-h-60 overflow-y-auto border z-50 flex flex-col p-1 shadow-lg" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }}>
+                              <div className="absolute top-full left-0 mt-2 w-56 max-h-60 overflow-y-auto border z-50 flex flex-col p-1 shadow-xl" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }}>
                                  {playlists.filter(p => p.id !== 'all-tracks' && p.id !== activePlaylistId).map(p => (
                                     <button 
                                        key={p.id}
@@ -4864,6 +4951,53 @@ export default function App() {
                               </div>
                            )}
                         </div>
+
+                        {albumGroups.length > 1 && (
+                          <div className="relative">
+                            <button
+                              onClick={() => {
+                                setShowMoveToAlbum(!showMoveToAlbum);
+                                setShowAddToPlaylist(false);
+                              }}
+                              className="flex items-center gap-1 text-[9px] uppercase tracking-wider border px-1.5 py-0.5 rounded-[1px] transition-colors hover:opacity-80 active:scale-95"
+                              style={{
+                                backgroundColor: showMoveToAlbum ? 'var(--theme-accentMuted)' : 'var(--theme-bg)',
+                                borderColor: 'var(--theme-accent)',
+                                color: 'var(--theme-accent)',
+                              }}
+                              title="選択した曲を別のアルバムへ移動してまとめる"
+                            >
+                              <Disc size={10} />
+                              <span>別のアルバムへ移動</span>
+                            </button>
+                            {showMoveToAlbum && (
+                              <div
+                                className="absolute top-full left-0 mt-2 w-64 max-h-64 overflow-y-auto border z-50 flex flex-col p-1 shadow-xl"
+                                style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }}
+                              >
+                                <div className="px-2 py-1 text-[8px] font-mono uppercase tracking-wider border-b mb-1" style={{ color: 'var(--theme-textMuted)', borderColor: 'var(--theme-border)' }}>
+                                  移動先のアルバムを選択 ({selectedTrackIds.size}曲)
+                                </div>
+                                {albumGroups
+                                  .filter(a => !drillDownAlbum || a.album.toLowerCase() !== drillDownAlbum.album.toLowerCase())
+                                  .map(alb => (
+                                    <button
+                                      key={alb.id}
+                                      onClick={() => handleMoveTracksToAlbum(Array.from(selectedTrackIds), alb)}
+                                      className="text-left px-2 py-1.5 text-[9.5px] font-mono hover:opacity-80 transition-colors flex items-center justify-between gap-2"
+                                      style={{ color: 'var(--theme-textMain)' }}
+                                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'}
+                                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                      title={`「${alb.album}」へ移動`}
+                                    >
+                                      <span className="truncate font-bold">{alb.album}</span>
+                                      <span className="text-[8px] shrink-0 opacity-70">{alb.tracks.length}曲</span>
+                                    </button>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         
                         <button 
                           onClick={deleteSelectedTracks}
@@ -4976,6 +5110,7 @@ export default function App() {
               onOpenAlbum={handleOpenAlbum}
               onMoveAlbum={(albumId, direction) => handleMoveAlbum(albumId, direction, activePlaylistId)}
               onReorderAlbum={(sourceId, targetId) => handleReorderAlbum(sourceId, targetId, activePlaylistId)}
+              onMoveTracksToAlbum={handleMoveTracksToAlbum}
               currentTrackId={currentTrack?.id}
               isPlaying={isPlaying}
             />

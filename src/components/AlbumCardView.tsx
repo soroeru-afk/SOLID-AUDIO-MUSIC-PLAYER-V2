@@ -33,6 +33,7 @@ interface AlbumCardViewProps {
   onMoveAlbum?: (albumId: string, direction: 'top' | 'up' | 'down' | 'bottom') => void;
   onReorderAlbums?: (draggedAlbumId: string, targetAlbumId: string) => void;
   onReorderAlbum?: (draggedAlbumId: string, targetAlbumId: string) => void;
+  onMoveTracksToAlbum?: (trackIds: string[], targetAlbum: AlbumGroup) => void;
   currentTrackId?: string;
   isPlaying?: boolean;
 }
@@ -63,6 +64,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   onMoveAlbum,
   onReorderAlbums,
   onReorderAlbum,
+  onMoveTracksToAlbum,
   currentTrackId,
   isPlaying,
 }) => {
@@ -74,6 +76,12 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   const [zoomedAlbumId, setZoomedAlbumId] = useState<string | null>(null);
   const [draggedAlbumId, setDraggedAlbumId] = useState<string | null>(null);
   const [dragOverAlbumId, setDragOverAlbumId] = useState<string | null>(null);
+  // Modal state for moving 1 track or an entire separated album into another album (no clipping!)
+  const [moveTargetModal, setMoveTargetModal] = useState<{
+    trackIds: string[];
+    sourceAlbumId: string;
+    label: string;
+  } | null>(null);
 
   // Reset manual zoom override when switching sidebar playlists or display modes so that:
   // - In ALBUM mode on a sidebar artist/folder list (not ALL TRACKS), the top album is automatically enlarged at the top
@@ -248,7 +256,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     }
   };
 
-  // Helper to render album ordering controls (Top, Up, Down, Bottom) + Edit Tracks button
+  // Helper to render album ordering controls (Top, Up, Down, Bottom) + Edit Tracks + Move/Merge into another album button
   const renderAlbumOrderButtons = (album: AlbumGroup, compactMode: boolean = false, isZoomed: boolean = false) => {
     const idx = albums.findIndex((a) => a.id === album.id);
     const isFirst = idx <= 0;
@@ -258,6 +266,28 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
 
     return (
       <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+        {onMoveTracksToAlbum && albums.length > 1 && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setMoveTargetModal({
+                trackIds: album.tracks.map((t: any) => t.id),
+                sourceAlbumId: album.id,
+                label: `「${album.album}」(${album.tracks.length}曲)`,
+              });
+            }}
+            className={`${isZoomed ? 'px-2.5 h-6 text-[10px]' : 'px-1.5 h-4 text-[7.5px]'} border rounded-[1px] font-mono font-bold tracking-wider flex items-center gap-1 transition-colors hover:opacity-80 active:scale-95`}
+            style={{
+              backgroundColor: 'var(--theme-accentMuted)',
+              borderColor: 'var(--theme-accent)',
+              color: 'var(--theme-accent)',
+            }}
+            title="このアルバムの曲を別のアルバムへ移動（結合）する"
+          >
+            <Folder size={isZoomed ? 11 : 8} />
+            {(!compactMode || isZoomed) && <span>他アルバムへ移動</span>}
+          </button>
+        )}
         {onOpenAlbum && (
           <button
             onClick={(e) => {
@@ -574,6 +604,28 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                     {track.title || track.fileName}
                   </span>
                   <div className="shrink-0 flex items-center gap-1.5">
+                    {onMoveTracksToAlbum && albums.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMoveTargetModal({
+                            trackIds: [track.id],
+                            sourceAlbumId: album.id,
+                            label: `「${track.title || track.fileName}」`,
+                          });
+                        }}
+                        className="px-1 py-0.5 border rounded-[1px] text-[7.5px] font-mono font-bold transition-colors hover:opacity-80"
+                        style={{
+                          backgroundColor: 'var(--theme-list-surfaceLighter)',
+                          borderColor: 'var(--theme-accent)',
+                          color: 'var(--theme-accent)',
+                        }}
+                        title="この曲を別のアルバムへ移動"
+                      >
+                        移動
+                      </button>
+                    )}
                     <span className="text-[8px]" style={{ color: 'var(--theme-list-textDim)' }}>
                       {formatDuration(track.duration || 0)}
                     </span>
@@ -771,6 +823,28 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                   <span className="flex-1 min-w-0 truncate font-medium">
                     {track.title || track.fileName}
                   </span>
+                  {onMoveTracksToAlbum && albums.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMoveTargetModal({
+                          trackIds: [track.id],
+                          sourceAlbumId: album.id,
+                          label: `「${track.title || track.fileName}」`,
+                        });
+                      }}
+                      className="px-1.5 py-0.5 border rounded-[1px] text-[8px] font-mono font-bold transition-colors hover:opacity-80"
+                      style={{
+                        backgroundColor: 'var(--theme-list-surfaceLighter)',
+                        borderColor: 'var(--theme-accent)',
+                        color: 'var(--theme-accent)',
+                      }}
+                      title="この曲を別のアルバムへ移動"
+                    >
+                      別のアルバムへ移動
+                    </button>
+                  )}
                   <span className="text-[8.5px]" style={{ color: 'var(--theme-list-textDim)' }}>
                     {formatDuration(track.duration || 0)}
                   </span>
@@ -1017,6 +1091,29 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                   </span>
 
                   <div className="shrink-0 flex items-center gap-2">
+                    {onMoveTracksToAlbum && albums.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMoveTargetModal({
+                            trackIds: [track.id],
+                            sourceAlbumId: album.id,
+                            label: `「${track.title || track.fileName}」`,
+                          });
+                        }}
+                        className={`${isZoomed ? 'px-2 py-0.5 text-[10px]' : 'px-1 py-0.5 text-[7.5px]'} opacity-0 group-hover/row:opacity-100 border rounded-[1px] font-mono font-bold transition-all hover:opacity-100`}
+                        style={{
+                          backgroundColor: 'var(--theme-list-surfaceLighter)',
+                          borderColor: 'var(--theme-accent)',
+                          color: 'var(--theme-accent)',
+                        }}
+                        title="この曲を別のアルバムへ移動する"
+                      >
+                        移動
+                      </button>
+                    )}
+
                     <span
                       className={isZoomed ? 'text-[12px]' : 'text-[8px]'}
                       style={{ color: 'var(--theme-list-textDim)' }}
@@ -1055,6 +1152,112 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     );
   };
 
+  // Fixed Centered Modal for selecting target album when moving 1 track or merging a split album (Never clipped by scroll!)
+  const renderMoveTargetModal = () => {
+    if (!moveTargetModal || !onMoveTracksToAlbum) return null;
+    const candidateAlbums = albums.filter((a) => a.id !== moveTargetModal.sourceAlbumId);
+
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+        onClick={() => setMoveTargetModal(null)}
+      >
+        <div
+          className="w-full max-w-md border rounded-[2px] shadow-2xl flex flex-col overflow-hidden font-mono"
+          style={{
+            backgroundColor: 'var(--theme-surface)',
+            borderColor: 'var(--theme-accent)',
+            color: 'var(--theme-textMain)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className="px-4 py-2.5 border-b flex items-center justify-between"
+            style={{
+              backgroundColor: 'var(--theme-surfaceLighter)',
+              borderColor: 'var(--theme-border)',
+            }}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Disc size={14} style={{ color: 'var(--theme-accent)' }} className="shrink-0" />
+              <span className="text-[11px] font-bold tracking-wider truncate">
+                移動先のアルバムを選択
+              </span>
+            </div>
+            <button
+              onClick={() => setMoveTargetModal(null)}
+              className="px-2 py-0.5 text-[10px] border rounded-[1px] hover:opacity-80"
+              style={{
+                borderColor: 'var(--theme-border)',
+                color: 'var(--theme-textMuted)',
+              }}
+            >
+              閉じる
+            </button>
+          </div>
+
+          <div
+            className="px-4 py-2 border-b text-[10px]"
+            style={{
+              backgroundColor: 'var(--theme-bg)',
+              borderColor: 'var(--theme-border)',
+              color: 'var(--theme-textMuted)',
+            }}
+          >
+            移動対象: <span className="font-bold" style={{ color: 'var(--theme-accent)' }}>{moveTargetModal.label}</span>
+          </div>
+
+          <div className="max-h-80 overflow-y-auto divide-y" style={{ borderColor: 'var(--theme-border)' }}>
+            {candidateAlbums.map((targetAlb) => (
+              <button
+                key={targetAlb.id}
+                onClick={() => {
+                  onMoveTracksToAlbum(moveTargetModal.trackIds, targetAlb);
+                  setMoveTargetModal(null);
+                }}
+                className="w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors hover:opacity-90"
+                style={{ color: 'var(--theme-textMain)' }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                <div
+                  className="w-9 h-9 shrink-0 border rounded-[1px] overflow-hidden flex items-center justify-center bg-black/40"
+                  style={{ borderColor: 'var(--theme-border)' }}
+                >
+                  {targetAlb.coverUrl ? (
+                    <img src={targetAlb.coverUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <Disc size={14} style={{ color: 'var(--theme-textDim)' }} />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-bold truncate">{targetAlb.album}</div>
+                  <div className="text-[9px] truncate" style={{ color: 'var(--theme-textMuted)' }}>
+                    {targetAlb.artist} • {targetAlb.tracks.length} TRACKS
+                  </div>
+                </div>
+                <span
+                  className="px-2 py-1 text-[9px] font-bold border rounded-[1px] shrink-0"
+                  style={{
+                    backgroundColor: 'var(--theme-accentMuted)',
+                    borderColor: 'var(--theme-accent)',
+                    color: 'var(--theme-accent)',
+                  }}
+                >
+                  ここへ移動
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (albums.length === 0) {
     return (
       <div
@@ -1081,6 +1284,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   if (groupByArtist) {
     return (
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
+        {renderMoveTargetModal()}
         <div
           className="flex items-center justify-between pb-2 mb-3 border-b text-[9px] font-mono shrink-0"
           style={{
@@ -1245,6 +1449,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   if (displayMode === 'list') {
     return (
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
+        {renderMoveTargetModal()}
         <div
           className="flex items-center justify-between pb-2 border-b text-[9px] font-mono shrink-0 mb-3"
           style={{
@@ -1290,6 +1495,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   if (displayMode === 'album') {
     return (
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
+        {renderMoveTargetModal()}
         <div
           className="flex items-center justify-between pb-2 border-b text-[9px] font-mono shrink-0 mb-3"
           style={{
@@ -1326,6 +1532,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
 
   return (
     <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
+      {renderMoveTargetModal()}
       <div
         className="flex items-center justify-between pb-2 border-b text-[9px] font-mono shrink-0 mb-3"
         style={{
