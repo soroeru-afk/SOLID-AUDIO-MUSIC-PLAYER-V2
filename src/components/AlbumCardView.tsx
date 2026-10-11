@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, Disc, User, ChevronRight, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, GripVertical, ListMusic, Music, ArrowLeft, Folder, List, Maximize2, Minimize2 } from 'lucide-react';
+import { Play, Pause, Disc, User, ChevronRight, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, GripVertical, ListMusic, Music, ArrowLeft, Folder, List, Maximize2, Minimize2, Trash2, X } from 'lucide-react';
 
 export interface AlbumGroup {
   id: string;
@@ -34,6 +34,7 @@ interface AlbumCardViewProps {
   onReorderAlbums?: (draggedAlbumId: string, targetAlbumId: string) => void;
   onReorderAlbum?: (draggedAlbumId: string, targetAlbumId: string) => void;
   onMoveTracksToAlbum?: (trackIds: string[], targetAlbum: AlbumGroup) => void;
+  onDeleteAlbum?: (album: AlbumGroup) => void;
   currentTrackId?: string;
   isPlaying?: boolean;
 }
@@ -65,6 +66,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   onReorderAlbums,
   onReorderAlbum,
   onMoveTracksToAlbum,
+  onDeleteAlbum,
   currentTrackId,
   isPlaying,
 }) => {
@@ -76,6 +78,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   const [zoomedAlbumId, setZoomedAlbumId] = useState<string | null>(null);
   const [draggedAlbumId, setDraggedAlbumId] = useState<string | null>(null);
   const [dragOverAlbumId, setDragOverAlbumId] = useState<string | null>(null);
+  const [confirmDeleteAlbumId, setConfirmDeleteAlbumId] = useState<string | null>(null);
   // Modal state for moving 1 track or an entire separated album into another album (no clipping!)
   const [moveTargetModal, setMoveTargetModal] = useState<{
     trackIds: string[];
@@ -89,6 +92,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   const firstAlbumId = albums[0]?.id || null;
   useEffect(() => {
     setZoomedAlbumId(null);
+    setConfirmDeleteAlbumId(null);
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({ top: 0 });
     }
@@ -256,122 +260,183 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     }
   };
 
-  // Helper to render album ordering controls (Top, Up, Down, Bottom) + Edit Tracks + Move/Merge into another album button
+  // Helper to render album ordering controls (Top, Up, Down, Bottom) + Edit Tracks + Move/Merge + Delete Album button
   const renderAlbumOrderButtons = (album: AlbumGroup, compactMode: boolean = false, isZoomed: boolean = false) => {
     const idx = albums.findIndex((a) => a.id === album.id);
     const isFirst = idx <= 0;
     const isLast = idx === -1 || idx >= albums.length - 1;
     const btnSizeClass = isZoomed ? 'w-6 h-6' : 'w-4 h-4';
     const iconSize = isZoomed ? 12 : 8;
+    const isConfirmingDelete = confirmDeleteAlbumId === album.id;
 
     return (
       <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-        {onMoveTracksToAlbum && albums.length > 1 && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setMoveTargetModal({
-                trackIds: album.tracks.map((t: any) => t.id),
-                sourceAlbumId: album.id,
-                label: `「${album.album}」(${album.tracks.length}曲)`,
-              });
-            }}
-            className={`${isZoomed ? 'px-2.5 h-6 text-[10px]' : 'px-1.5 h-4 text-[7.5px]'} border rounded-[1px] font-mono font-bold tracking-wider flex items-center gap-1 transition-colors hover:opacity-80 active:scale-95`}
-            style={{
-              backgroundColor: 'var(--theme-accentMuted)',
-              borderColor: 'var(--theme-accent)',
-              color: 'var(--theme-accent)',
-            }}
-            title="このアルバムの曲を別のアルバムへ移動（結合）する"
-          >
-            <Folder size={isZoomed ? 11 : 8} />
-            {(!compactMode || isZoomed) && <span>他アルバムへ移動</span>}
-          </button>
-        )}
-        {onOpenAlbum && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenAlbum(album);
-            }}
-            className={`${isZoomed ? 'px-2.5 h-6 text-[10px]' : 'px-1 h-4 text-[7.5px]'} border rounded-[1px] font-mono font-bold tracking-wider flex items-center gap-1 transition-colors hover:opacity-80 active:scale-95 mr-0.5`}
+        {isConfirmingDelete && onDeleteAlbum ? (
+          <div
+            className="flex items-center gap-1 px-1.5 py-0.5 border rounded-[2px]"
             style={{
               backgroundColor: 'var(--theme-list-bg)',
-              borderColor: 'var(--theme-list-border)',
-              color: 'var(--theme-list-textMain)',
+              borderColor: 'var(--theme-list-borderActive)',
             }}
-            title="このアルバムの曲順を TRACKS モードで編集"
           >
-            <ListMusic size={isZoomed ? 11 : 8} />
-            {(!compactMode || isZoomed) && <span>EDIT</span>}
-          </button>
-        )}
-        {onMoveAlbum && albums.length > 1 && (
+            <span className="text-[8px] font-mono font-bold uppercase tracking-tighter" style={{ color: 'var(--theme-accent)' }}>
+              DEL?
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeleteAlbum(album);
+                setConfirmDeleteAlbumId(null);
+              }}
+              className="hover:opacity-80 p-0.5 flex items-center gap-0.5 text-[8px] font-mono font-bold"
+              title="このアルバムを削除する"
+              style={{ color: 'var(--theme-accent)' }}
+            >
+              <Trash2 size={isZoomed ? 11 : 9} />
+              <span>削除</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirmDeleteAlbumId(null);
+              }}
+              className="hover:opacity-80 p-0.5"
+              title="キャンセル"
+              style={{ color: 'var(--theme-list-textDim)' }}
+            >
+              <X size={isZoomed ? 11 : 9} />
+            </button>
+          </div>
+        ) : (
           <>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onMoveAlbum(album.id, 'top');
-              }}
-              disabled={isFirst}
-              className={`${btnSizeClass} border rounded-[1px] flex items-center justify-center transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25`}
-              style={{
-                backgroundColor: 'var(--theme-list-bg)',
-                borderColor: 'var(--theme-list-border)',
-                color: 'var(--theme-list-textMain)',
-              }}
-              title="このアルバムを一番上（先頭）へ移動"
-            >
-              <ChevronsUp size={iconSize} />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onMoveAlbum(album.id, 'up');
-              }}
-              disabled={isFirst}
-              className={`${btnSizeClass} border rounded-[1px] flex items-center justify-center transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25`}
-              style={{
-                backgroundColor: 'var(--theme-list-bg)',
-                borderColor: 'var(--theme-list-border)',
-                color: 'var(--theme-list-textMain)',
-              }}
-              title="このアルバムを1つ前（左/上）へ移動"
-            >
-              <ChevronUp size={iconSize} />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onMoveAlbum(album.id, 'down');
-              }}
-              disabled={isLast}
-              className={`${btnSizeClass} border rounded-[1px] flex items-center justify-center transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25`}
-              style={{
-                backgroundColor: 'var(--theme-list-bg)',
-                borderColor: 'var(--theme-list-border)',
-                color: 'var(--theme-list-textMain)',
-              }}
-              title="このアルバムを1つ次（右/下）へ移動"
-            >
-              <ChevronDown size={iconSize} />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onMoveAlbum(album.id, 'bottom');
-              }}
-              disabled={isLast}
-              className={`${btnSizeClass} border rounded-[1px] flex items-center justify-center transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25`}
-              style={{
-                backgroundColor: 'var(--theme-list-bg)',
-                borderColor: 'var(--theme-list-border)',
-                color: 'var(--theme-list-textMain)',
-              }}
-              title="このアルバムを一番下（末尾）へ移動"
-            >
-              <ChevronsDown size={iconSize} />
-            </button>
+            {onMoveTracksToAlbum && albums.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMoveTargetModal({
+                    trackIds: album.tracks.map((t: any) => t.id),
+                    sourceAlbumId: album.id,
+                    label: `「${album.album}」(${album.tracks.length}曲)`,
+                  });
+                }}
+                className={`${isZoomed ? 'px-2.5 h-6 text-[10px]' : 'px-1.5 h-4 text-[7.5px]'} border rounded-[1px] font-mono font-bold tracking-wider flex items-center gap-1 transition-colors hover:opacity-80 active:scale-95`}
+                style={{
+                  backgroundColor: 'var(--theme-accentMuted)',
+                  borderColor: 'var(--theme-accent)',
+                  color: 'var(--theme-accent)',
+                }}
+                title="このアルバムの曲を別のアルバムへ移動（結合）する"
+              >
+                <Folder size={isZoomed ? 11 : 8} />
+                {(!compactMode || isZoomed) && <span>他アルバムへ移動</span>}
+              </button>
+            )}
+            {onOpenAlbum && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenAlbum(album);
+                }}
+                className={`${isZoomed ? 'px-2.5 h-6 text-[10px]' : 'px-1 h-4 text-[7.5px]'} border rounded-[1px] font-mono font-bold tracking-wider flex items-center gap-1 transition-colors hover:opacity-80 active:scale-95 mr-0.5`}
+                style={{
+                  backgroundColor: 'var(--theme-list-bg)',
+                  borderColor: 'var(--theme-list-border)',
+                  color: 'var(--theme-list-textMain)',
+                }}
+                title="このアルバムの曲順を TRACKS モードで編集"
+              >
+                <ListMusic size={isZoomed ? 11 : 8} />
+                {(!compactMode || isZoomed) && <span>EDIT</span>}
+              </button>
+            )}
+            {onMoveAlbum && albums.length > 1 && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveAlbum(album.id, 'top');
+                  }}
+                  disabled={isFirst}
+                  className={`${btnSizeClass} border rounded-[1px] flex items-center justify-center transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25`}
+                  style={{
+                    backgroundColor: 'var(--theme-list-bg)',
+                    borderColor: 'var(--theme-list-border)',
+                    color: 'var(--theme-list-textMain)',
+                  }}
+                  title="このアルバムを一番上（先頭）へ移動"
+                >
+                  <ChevronsUp size={iconSize} />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveAlbum(album.id, 'up');
+                  }}
+                  disabled={isFirst}
+                  className={`${btnSizeClass} border rounded-[1px] flex items-center justify-center transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25`}
+                  style={{
+                    backgroundColor: 'var(--theme-list-bg)',
+                    borderColor: 'var(--theme-list-border)',
+                    color: 'var(--theme-list-textMain)',
+                  }}
+                  title="このアルバムを1つ前（左/上）へ移動"
+                >
+                  <ChevronUp size={iconSize} />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveAlbum(album.id, 'down');
+                  }}
+                  disabled={isLast}
+                  className={`${btnSizeClass} border rounded-[1px] flex items-center justify-center transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25`}
+                  style={{
+                    backgroundColor: 'var(--theme-list-bg)',
+                    borderColor: 'var(--theme-list-border)',
+                    color: 'var(--theme-list-textMain)',
+                  }}
+                  title="このアルバムを1つ次（右/下）へ移動"
+                >
+                  <ChevronDown size={iconSize} />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveAlbum(album.id, 'bottom');
+                  }}
+                  disabled={isLast}
+                  className={`${btnSizeClass} border rounded-[1px] flex items-center justify-center transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25`}
+                  style={{
+                    backgroundColor: 'var(--theme-list-bg)',
+                    borderColor: 'var(--theme-list-border)',
+                    color: 'var(--theme-list-textMain)',
+                  }}
+                  title="このアルバムを一番下（末尾）へ移動"
+                >
+                  <ChevronsDown size={iconSize} />
+                </button>
+              </>
+            )}
+            {onDeleteAlbum && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmDeleteAlbumId(album.id);
+                }}
+                className={`${btnSizeClass} border rounded-[1px] flex items-center justify-center transition-colors hover:opacity-80 active:scale-95 ml-0.5`}
+                style={{
+                  backgroundColor: 'var(--theme-list-bg)',
+                  borderColor: 'var(--theme-list-border)',
+                  color: 'var(--theme-list-textDim)',
+                }}
+                title="このアルバム自体を削除（クリックで確認）"
+              >
+                <Trash2 size={iconSize} />
+              </button>
+            )}
           </>
         )}
       </div>
