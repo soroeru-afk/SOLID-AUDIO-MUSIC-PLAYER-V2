@@ -4,7 +4,7 @@ import {
   Folder, FolderOpen, ListMusic, Plus, Search, ChevronUp, ChevronDown, 
   ChevronsUp, ChevronsDown, Palette, Activity, Check, X, Trash2, ListPlus, AlertCircle,
   Minimize2, Maximize2, Layers, Minus, PanelTop, GripVertical, Type, Eye, EyeOff,
-  LayoutGrid, List, Disc, User, ChevronRight, ArrowLeft, PanelLeftClose, PanelLeftOpen
+  LayoutGrid, List, Disc, User, ChevronRight, ArrowLeft, PanelLeftClose, PanelLeftOpen, Edit2
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { get, set, del } from 'idb-keyval';
@@ -451,6 +451,10 @@ export default function App() {
   // Playlist Rename & Delete State
   const [renamingPlaylistId, setRenamingPlaylistId] = useState<string | null>(null);
   const [renamingPlaylistName, setRenamingPlaylistName] = useState('');
+  const [renamingSubAlbumKey, setRenamingSubAlbumKey] = useState<string | null>(null);
+  const [renamingSubAlbumName, setRenamingSubAlbumName] = useState('');
+  const [editingDrillDownAlbum, setEditingDrillDownAlbum] = useState(false);
+  const [drillDownAlbumNameInput, setDrillDownAlbumNameInput] = useState('');
   const [draggedPlaylistId, setDraggedPlaylistId] = useState<string | null>(null);
   const [dragOverPlaylistId, setDragOverPlaylistId] = useState<string | null>(null);
   const [confirmDeletePlaylistId, setConfirmDeletePlaylistId] = useState<string | null>(null);
@@ -2940,6 +2944,123 @@ export default function App() {
     setConfirmDeleteSubAlbumKey(null);
   };
 
+  // Rename a sidebar folder/playlist AND update single-folder album name if all tracks share one album
+  const handleRenamePlaylist = (playlistId: string, rawNewName: string) => {
+    const cleanNewName = rawNewName.trim();
+    setRenamingPlaylistId(null);
+    if (!cleanNewName || playlistId === 'all-tracks') return;
+
+    const targetPl = playlists.find(p => p.id === playlistId);
+    if (!targetPl || targetPl.name === cleanNewName) return;
+
+    const subAlbums = playlistAlbumsMap[playlistId] || [];
+    const isSingleAlbumFolder = subAlbums.length <= 1;
+    const trackIdSet = new Set(targetPl.tracks.map(t => t.id));
+
+    const updateTrackForPlaylistRename = (t: Track): Track => {
+      if (!trackIdSet.has(t.id)) return t;
+      let nextFolderPath = t.folderPath;
+      if (t.folderPath) {
+        const parts = t.folderPath.split('/').filter(Boolean);
+        if (parts.length >= 3) {
+          parts[0] = cleanNewName;
+          nextFolderPath = parts.join('/');
+        } else if (parts.length === 2) {
+          parts[0] = cleanNewName;
+          nextFolderPath = parts.join('/');
+        }
+      }
+      return {
+        ...t,
+        album: isSingleAlbumFolder ? cleanNewName : t.album,
+        folderPath: nextFolderPath,
+      };
+    };
+
+    if (trackIdSet.size > 0) {
+      setLibrary(prev => prev.map(updateTrackForPlaylistRename));
+      setPlaybackQueue(prev => prev.map(updateTrackForPlaylistRename));
+    }
+
+    setPlaylists(prev => prev.map(p => {
+      if (p.id === playlistId) {
+        return {
+          ...p,
+          name: cleanNewName,
+          tracks: p.tracks.map(updateTrackForPlaylistRename),
+        };
+      }
+      return {
+        ...p,
+        tracks: p.tracks.map(updateTrackForPlaylistRename),
+      };
+    }));
+  };
+
+  // Rename an AlbumGroup (updates track.album, track.folderPath, and syncs single-album playlist name if applicable)
+  const handleRenameAlbum = (album: AlbumGroup, rawNewName: string, targetPlaylistId: string = activePlaylistId) => {
+    const cleanNewName = rawNewName.trim();
+    setRenamingSubAlbumKey(null);
+    setEditingDrillDownAlbum(false);
+    if (!cleanNewName || cleanNewName === album.album) return;
+
+    const albumTrackIds = new Set(album.tracks.map(t => t.id));
+    if (albumTrackIds.size === 0) return;
+
+    const targetPl = playlists.find(p => p.id === targetPlaylistId);
+    const subAlbumsInPlaylist = targetPlaylistId !== 'all-tracks' ? (playlistAlbumsMap[targetPlaylistId] || []) : [];
+    const shouldSyncPlaylistName =
+      targetPl &&
+      targetPlaylistId !== 'all-tracks' &&
+      subAlbumsInPlaylist.length === 1;
+
+    const updateTrackAlbumName = (t: Track): Track => {
+      if (!albumTrackIds.has(t.id)) return t;
+      let nextFolderPath = t.folderPath;
+      if (t.folderPath) {
+        const parts = t.folderPath.split('/').filter(Boolean);
+        if (parts.length >= 3) {
+          parts[parts.length - 2] = cleanNewName;
+          nextFolderPath = parts.join('/');
+        } else if (parts.length === 2) {
+          if (shouldSyncPlaylistName) {
+            parts[0] = cleanNewName;
+            nextFolderPath = parts.join('/');
+          } else {
+            nextFolderPath = `${parts[0]}/${cleanNewName}/${parts[1]}`;
+          }
+        } else {
+          nextFolderPath = `${cleanNewName}/${t.fileName}`;
+        }
+      } else {
+        const parentPrefix = targetPl && targetPlaylistId !== 'all-tracks' && !shouldSyncPlaylistName
+          ? `${targetPl.name.trim()}/${cleanNewName}`
+          : cleanNewName;
+        nextFolderPath = `${parentPrefix}/${t.fileName}`;
+      }
+
+      return {
+        ...t,
+        album: cleanNewName,
+        folderPath: nextFolderPath,
+      };
+    };
+
+    setLibrary(prev => prev.map(updateTrackAlbumName));
+    setPlaylists(prev => prev.map(p => {
+      const updatedTracks = p.tracks.map(updateTrackAlbumName);
+      if (shouldSyncPlaylistName && p.id === targetPlaylistId) {
+        return { ...p, name: cleanNewName, tracks: updatedTracks };
+      }
+      return { ...p, tracks: updatedTracks };
+    }));
+    setPlaybackQueue(prev => prev.map(updateTrackAlbumName));
+
+    if (drillDownAlbum && drillDownAlbum.album.toLowerCase() === album.album.toLowerCase()) {
+      setDrillDownAlbum({ ...drillDownAlbum, album: cleanNewName });
+    }
+  };
+
   // Sidebar resize handlers
   const handleSidebarMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -4320,31 +4441,49 @@ export default function App() {
                 }}
               >
                 {renamingPlaylistId === pl.id ? (
-                  <div className="flex-1 flex gap-2 mr-2" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                  <div className="flex-1 flex items-center gap-1 mr-1" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
                     <input
                       autoFocus
                       type="text"
-                      className="w-full bg-transparent border-b outline-none font-mono"
+                      className="w-full bg-transparent border-b outline-none font-mono px-1"
                       style={{ borderColor: 'var(--theme-list-accent)', color: 'var(--theme-list-textMain)' }}
                       value={renamingPlaylistName}
                       onChange={(e) => setRenamingPlaylistName(e.target.value)}
-                      onBlur={() => {
-                        if (renamingPlaylistName.trim()) {
-                          setPlaylists(prev => prev.map(p => p.id === pl.id ? { ...p, name: renamingPlaylistName.trim() } : p));
-                        }
-                        setRenamingPlaylistId(null);
-                      }}
+                      onBlur={() => handleRenamePlaylist(pl.id, renamingPlaylistName)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                          if (renamingPlaylistName.trim()) {
-                            setPlaylists(prev => prev.map(p => p.id === pl.id ? { ...p, name: renamingPlaylistName.trim() } : p));
-                          }
-                          setRenamingPlaylistId(null);
+                          handleRenamePlaylist(pl.id, renamingPlaylistName);
                         } else if (e.key === 'Escape') {
                           setRenamingPlaylistId(null);
                         }
                       }}
                     />
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleRenamePlaylist(pl.id, renamingPlaylistName);
+                      }}
+                      className="p-0.5 hover:opacity-80 shrink-0"
+                      style={{ color: 'var(--theme-list-accent)' }}
+                      title="名前変更を確定"
+                    >
+                      <Check size={10} />
+                    </button>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setRenamingPlaylistId(null);
+                      }}
+                      className="p-0.5 hover:opacity-80 shrink-0"
+                      style={{ color: 'var(--theme-list-textDim)' }}
+                      title="キャンセル"
+                    >
+                      <X size={10} />
+                    </button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 truncate min-w-0 flex-1 pr-1">
@@ -4394,7 +4533,7 @@ export default function App() {
                         )}
                       </>
                     )}
-                    <span className="truncate">{pl.name}</span>
+                    <span className="truncate" title={`${pl.name}（ダブルクリックまたは右のペンアイコンで名前変更）`}>{pl.name}</span>
                   </div>
                 )}
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -4414,8 +4553,8 @@ export default function App() {
                   <span className="text-[9px] font-mono font-medium" style={{ color: isSelected || isActive ? 'var(--theme-list-textMain)' : 'var(--theme-list-textDim)' }}>
                     {pl.tracks.length.toString().padStart(3, '0')}
                   </span>
-                  {pl.id !== 'all-tracks' && (
-                    <div className={`flex items-center space-x-1 transition-opacity ${confirmDeletePlaylistId === pl.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                  {pl.id !== 'all-tracks' && renamingPlaylistId !== pl.id && (
+                    <div className={`flex items-center space-x-0.5 transition-opacity ${confirmDeletePlaylistId === pl.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                       {confirmDeletePlaylistId === pl.id ? (
                         <div className="flex items-center gap-1 px-1 py-0.5 border rounded-[2px]" style={{ backgroundColor: 'var(--theme-list-surface)', borderColor: 'var(--theme-list-borderActive)' }} onClick={e => e.stopPropagation()}>
                           <span className="text-[8px] uppercase tracking-tighter" style={{ color: 'var(--theme-list-accent)' }}>DEL?</span>
@@ -4451,16 +4590,30 @@ export default function App() {
                           </button>
                         </div>
                       ) : (
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmDeletePlaylistId(pl.id);
-                          }}
-                          className="hover:opacity-80 transition-opacity ml-1 p-0.5"
-                          title="リストを削除（クリックで確認）"
-                        >
-                          <X size={10} style={{ color: isSelected || isActive ? 'var(--theme-list-textMain)' : 'var(--theme-list-textDim)' }} />
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRenamingPlaylistId(pl.id);
+                              setRenamingPlaylistName(pl.name);
+                            }}
+                            className="hover:opacity-80 transition-opacity p-0.5"
+                            title="フォルダ/リスト名を編集"
+                          >
+                            <Edit2 size={9.5} style={{ color: isSelected || isActive ? 'var(--theme-list-textMain)' : 'var(--theme-list-textDim)' }} />
+                          </button>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeletePlaylistId(pl.id);
+                            }}
+                            className="hover:opacity-80 transition-opacity p-0.5"
+                            title="リストを削除（クリックで確認）"
+                          >
+                            <X size={10} style={{ color: isSelected || isActive ? 'var(--theme-list-textMain)' : 'var(--theme-list-textDim)' }} />
+                          </button>
+                        </>
                       )}
                     </div>
                   )}
@@ -4502,12 +4655,18 @@ export default function App() {
                     const isSubPlaying = isPlaying && currentTrack && subAlb.tracks.some(t => t.id === currentTrack.id);
                     const isSubDragging = sidebarDragAlbum?.playlistId === pl.id && sidebarDragAlbum?.albumId === subAlb.id;
                     const isSubDragOver = sidebarDragOverAlbum?.playlistId === pl.id && sidebarDragOverAlbum?.albumId === subAlb.id;
+                    const subKey = `${pl.id}::${subAlb.id}`;
+                    const isRenamingThisSub = renamingSubAlbumKey === subKey;
 
                     return (
                       <div
                         key={subAlb.id}
-                        draggable
+                        draggable={!isRenamingThisSub}
                         onDragStart={(e) => {
+                          if (isRenamingThisSub) {
+                            e.preventDefault();
+                            return;
+                          }
                           e.stopPropagation();
                           setSidebarDragAlbum({ playlistId: pl.id, albumId: subAlb.id });
                           e.dataTransfer.effectAllowed = 'move';
@@ -4535,12 +4694,18 @@ export default function App() {
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (isRenamingThisSub) return;
                           setActivePlaylistId(pl.id);
                           setDrillDownAlbum({ artist: subAlb.artist, album: subAlb.album });
                           setSelectedTrackIds(new Set());
                           // Switch to TRACKS view so the user can immediately edit/reorder or play tracks of this album
                           setBankViewMode('tracks');
                           localStorage.setItem('v2_solid_bank_view_mode', 'tracks');
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setRenamingSubAlbumKey(subKey);
+                          setRenamingSubAlbumName(subAlb.album);
                         }}
                         className="group/sub flex items-center justify-between pl-6 pr-2 py-1.5 border-b last:border-b-0 cursor-pointer select-none transition-colors"
                         style={{
@@ -4565,143 +4730,210 @@ export default function App() {
                             e.currentTarget.style.backgroundColor = 'transparent';
                           }
                         }}
-                        title={`${subAlb.album} (${subAlb.tracks.length}曲) - クリックでTRACKS編集・再生 / ドラッグでアルバム順変更`}
+                        title={`${subAlb.album} (${subAlb.tracks.length}曲) - クリックでTRACKS編集 / ダブルクリックまたはペンアイコンでタイトル変更`}
                       >
-                        <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-1">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActivePlaylistId(pl.id);
-                              handlePlayAlbum(subAlb);
-                            }}
-                            className="w-4 h-4 rounded-[1px] border flex items-center justify-center shrink-0 transition-colors hover:opacity-80"
-                            style={{
-                              backgroundColor: isSubPlaying ? 'var(--theme-list-accent)' : 'var(--theme-list-bg)',
-                              borderColor: isSubPlaying || isSubActive ? 'var(--theme-list-accent)' : 'var(--theme-list-border)',
-                              color: isSubPlaying ? '#ffffff' : 'var(--theme-list-accent)'
-                            }}
-                            title="このアルバムを今すぐ再生"
-                          >
-                            {isSubPlaying ? <Pause size={8} /> : <Play size={8} className="translate-x-[0.5px]" />}
-                          </button>
-                          {subAlb.coverUrl ? (
-                            <img src={subAlb.coverUrl} alt="" className="w-4 h-4 object-cover border rounded-[1px] shrink-0" style={{ borderColor: 'var(--theme-list-border)' }} />
-                          ) : (
-                            <Disc size={10} className="shrink-0" style={{ color: isSubActive ? 'var(--theme-list-accent)' : 'var(--theme-list-textDim)' }} />
-                          )}
-                          <span className="truncate font-mono">{subAlb.album}</span>
-                        </div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          {/* Reorder Album Buttons inside Sidebar (Top, Up, Down, Bottom) on hover */}
-                          {confirmDeleteSubAlbumKey !== `${pl.id}::${subAlb.id}` && (
-                            <div className="hidden group-hover/sub:flex items-center gap-0.5 mr-0.5" onClick={e => e.stopPropagation()}>
-                              <button
-                                type="button"
-                                disabled={subIdx === 0}
-                                onClick={() => handleMoveAlbum(subAlb.id, 'top', pl.id)}
-                                className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center disabled:opacity-20 hover:opacity-80"
-                                style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
-                                title="一番上へ移動 (Top)"
-                              >
-                                <ChevronsUp size={8} />
-                              </button>
-                              <button
-                                type="button"
-                                disabled={subIdx === 0}
-                                onClick={() => handleMoveAlbum(subAlb.id, 'up', pl.id)}
-                                className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center disabled:opacity-20 hover:opacity-80"
-                                style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
-                                title="一つ上へ移動 (Up)"
-                              >
-                                <ChevronUp size={8} />
-                              </button>
-                              <button
-                                type="button"
-                                disabled={subIdx === subAlbums.length - 1}
-                                onClick={() => handleMoveAlbum(subAlb.id, 'down', pl.id)}
-                                className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center disabled:opacity-20 hover:opacity-80"
-                                style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
-                                title="一つ下へ移動 (Down)"
-                              >
-                                <ChevronDown size={8} />
-                              </button>
-                              <button
-                                type="button"
-                                disabled={subIdx === subAlbums.length - 1}
-                                onClick={() => handleMoveAlbum(subAlb.id, 'bottom', pl.id)}
-                                className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center disabled:opacity-20 hover:opacity-80"
-                                style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
-                                title="一番下へ移動 (Bottom)"
-                              >
-                                <ChevronsDown size={8} />
-                              </button>
-                            </div>
-                          )}
-                          <span className="text-[8.5px] font-mono" style={{ color: isSubActive ? 'var(--theme-list-textMain)' : 'var(--theme-list-textDim)' }}>
-                            {subAlb.tracks.length.toString().padStart(2, '0')}
-                          </span>
-                          {/* Delete Sub-Album Button inside Sidebar */}
+                        {isRenamingThisSub ? (
                           <div
-                            className={`flex items-center transition-opacity ${
-                              confirmDeleteSubAlbumKey === `${pl.id}::${subAlb.id}`
-                                ? 'opacity-100'
-                                : 'opacity-0 group-hover/sub:opacity-100'
-                            }`}
-                            onClick={e => e.stopPropagation()}
+                            className="flex-1 flex items-center gap-1 mr-1"
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onDoubleClick={(e) => e.stopPropagation()}
                           >
-                            {confirmDeleteSubAlbumKey === `${pl.id}::${subAlb.id}` ? (
-                              <div
-                                className="flex items-center gap-0.5 px-1 py-0.5 border rounded-[2px] ml-0.5"
-                                style={{
-                                  backgroundColor: 'var(--theme-list-bg)',
-                                  borderColor: 'var(--theme-list-borderActive)',
-                                }}
-                              >
-                                <span className="text-[7.5px] uppercase tracking-tighter" style={{ color: 'var(--theme-list-accent)' }}>
-                                  DEL?
-                                </span>
+                            <input
+                              autoFocus
+                              type="text"
+                              className="w-full bg-transparent border-b outline-none font-mono px-1"
+                              style={{ borderColor: 'var(--theme-list-accent)', color: 'var(--theme-list-textMain)' }}
+                              value={renamingSubAlbumName}
+                              onChange={(e) => setRenamingSubAlbumName(e.target.value)}
+                              onBlur={() => handleRenameAlbum(subAlb, renamingSubAlbumName, pl.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleRenameAlbum(subAlb, renamingSubAlbumName, pl.id);
+                                } else if (e.key === 'Escape') {
+                                  setRenamingSubAlbumKey(null);
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleRenameAlbum(subAlb, renamingSubAlbumName, pl.id);
+                              }}
+                              className="p-0.5 hover:opacity-80 shrink-0"
+                              style={{ color: 'var(--theme-list-accent)' }}
+                              title="アルバム名変更を確定"
+                            >
+                              <Check size={9} />
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setRenamingSubAlbumKey(null);
+                              }}
+                              className="p-0.5 hover:opacity-80 shrink-0"
+                              style={{ color: 'var(--theme-list-textDim)' }}
+                              title="キャンセル"
+                            >
+                              <X size={9} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-1">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActivePlaylistId(pl.id);
+                                handlePlayAlbum(subAlb);
+                              }}
+                              className="w-4 h-4 rounded-[1px] border flex items-center justify-center shrink-0 transition-colors hover:opacity-80"
+                              style={{
+                                backgroundColor: isSubPlaying ? 'var(--theme-list-accent)' : 'var(--theme-list-bg)',
+                                borderColor: isSubPlaying || isSubActive ? 'var(--theme-list-accent)' : 'var(--theme-list-border)',
+                                color: isSubPlaying ? '#ffffff' : 'var(--theme-list-accent)'
+                              }}
+                              title="このアルバムを今すぐ再生"
+                            >
+                              {isSubPlaying ? <Pause size={8} /> : <Play size={8} className="translate-x-[0.5px]" />}
+                            </button>
+                            {subAlb.coverUrl ? (
+                              <img src={subAlb.coverUrl} alt="" className="w-4 h-4 object-cover border rounded-[1px] shrink-0" style={{ borderColor: 'var(--theme-list-border)' }} />
+                            ) : (
+                              <Disc size={10} className="shrink-0" style={{ color: isSubActive ? 'var(--theme-list-accent)' : 'var(--theme-list-textDim)' }} />
+                            )}
+                            <span className="truncate font-mono">{subAlb.album}</span>
+                          </div>
+                        )}
+
+                        {!isRenamingThisSub && (
+                          <div className="flex items-center gap-1 shrink-0">
+                            {/* Reorder Album Buttons + Edit Title Button inside Sidebar on hover */}
+                            {confirmDeleteSubAlbumKey !== subKey && (
+                              <div className="hidden group-hover/sub:flex items-center gap-0.5 mr-0.5" onClick={e => e.stopPropagation()}>
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleDeleteAlbum(subAlb, pl.id);
+                                    setRenamingSubAlbumKey(subKey);
+                                    setRenamingSubAlbumName(subAlb.album);
                                   }}
-                                  className="hover:opacity-80 p-0.5"
-                                  title="このアルバムを削除"
-                                  style={{ color: 'var(--theme-list-accent)' }}
+                                  className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center hover:opacity-80"
+                                  style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                                  title="このアルバム名を編集"
                                 >
-                                  <Trash2 size={9} />
+                                  <Edit2 size={7.5} />
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setConfirmDeleteSubAlbumKey(null);
-                                  }}
-                                  className="hover:opacity-80 p-0.5"
-                                  title="キャンセル"
-                                  style={{ color: 'var(--theme-list-textDim)' }}
+                                  disabled={subIdx === 0}
+                                  onClick={() => handleMoveAlbum(subAlb.id, 'top', pl.id)}
+                                  className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center disabled:opacity-20 hover:opacity-80"
+                                  style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                                  title="一番上へ移動 (Top)"
                                 >
-                                  <X size={9} />
+                                  <ChevronsUp size={8} />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={subIdx === 0}
+                                  onClick={() => handleMoveAlbum(subAlb.id, 'up', pl.id)}
+                                  className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center disabled:opacity-20 hover:opacity-80"
+                                  style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                                  title="一つ上へ移動 (Up)"
+                                >
+                                  <ChevronUp size={8} />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={subIdx === subAlbums.length - 1}
+                                  onClick={() => handleMoveAlbum(subAlb.id, 'down', pl.id)}
+                                  className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center disabled:opacity-20 hover:opacity-80"
+                                  style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                                  title="一つ下へ移動 (Down)"
+                                >
+                                  <ChevronDown size={8} />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={subIdx === subAlbums.length - 1}
+                                  onClick={() => handleMoveAlbum(subAlb.id, 'bottom', pl.id)}
+                                  className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center disabled:opacity-20 hover:opacity-80"
+                                  style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                                  title="一番下へ移動 (Bottom)"
+                                >
+                                  <ChevronsDown size={8} />
                                 </button>
                               </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setConfirmDeleteSubAlbumKey(`${pl.id}::${subAlb.id}`);
-                                }}
-                                className="hover:opacity-80 ml-0.5 p-0.5"
-                                title="このアルバムを削除（クリックで確認）"
-                              >
-                                <X size={9} style={{ color: isSubActive ? 'var(--theme-list-textMain)' : 'var(--theme-list-textDim)' }} />
-                              </button>
                             )}
+                            <span className="text-[8.5px] font-mono" style={{ color: isSubActive ? 'var(--theme-list-textMain)' : 'var(--theme-list-textDim)' }}>
+                              {subAlb.tracks.length.toString().padStart(2, '0')}
+                            </span>
+                            {/* Delete Sub-Album Button inside Sidebar */}
+                            <div
+                              className={`flex items-center transition-opacity ${
+                                confirmDeleteSubAlbumKey === subKey
+                                  ? 'opacity-100'
+                                  : 'opacity-0 group-hover/sub:opacity-100'
+                              }`}
+                              onClick={e => e.stopPropagation()}
+                            >
+                              {confirmDeleteSubAlbumKey === subKey ? (
+                                <div
+                                  className="flex items-center gap-0.5 px-1 py-0.5 border rounded-[2px] ml-0.5"
+                                  style={{
+                                    backgroundColor: 'var(--theme-list-bg)',
+                                    borderColor: 'var(--theme-list-borderActive)',
+                                  }}
+                                >
+                                  <span className="text-[7.5px] uppercase tracking-tighter" style={{ color: 'var(--theme-list-accent)' }}>
+                                    DEL?
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteAlbum(subAlb, pl.id);
+                                    }}
+                                    className="hover:opacity-80 p-0.5"
+                                    title="このアルバムを削除"
+                                    style={{ color: 'var(--theme-list-accent)' }}
+                                  >
+                                    <Trash2 size={9} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setConfirmDeleteSubAlbumKey(null);
+                                    }}
+                                    className="hover:opacity-80 p-0.5"
+                                    title="キャンセル"
+                                    style={{ color: 'var(--theme-list-textDim)' }}
+                                  >
+                                    <X size={9} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setConfirmDeleteSubAlbumKey(subKey);
+                                  }}
+                                  className="hover:opacity-80 ml-0.5 p-0.5"
+                                  title="このアルバムを削除（クリックで確認）"
+                                >
+                                  <X size={9} style={{ color: isSubActive ? 'var(--theme-list-textMain)' : 'var(--theme-list-textDim)' }} />
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     );
                   })}
@@ -5218,6 +5450,7 @@ export default function App() {
               onReorderAlbum={(sourceId, targetId) => handleReorderAlbum(sourceId, targetId, activePlaylistId)}
               onMoveTracksToAlbum={handleMoveTracksToAlbum}
               onDeleteAlbum={(album) => handleDeleteAlbum(album, activePlaylistId)}
+              onRenameAlbum={(album, newName) => handleRenameAlbum(album, newName, activePlaylistId)}
               currentTrackId={currentTrack?.id}
               isPlaying={isPlaying}
             />
@@ -5225,10 +5458,10 @@ export default function App() {
             <div className="flex flex-col h-full overflow-y-auto overflow-x-hidden relative w-full" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
               {drillDownAlbum && (
                 <div className="flex items-center justify-between px-3 py-2 border-b shrink-0" style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)' }}>
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
                     <button
                       onClick={() => setDrillDownAlbum(null)}
-                      className="flex items-center gap-1 px-2 py-1 border text-[9px] font-mono font-bold tracking-wider rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
+                      className="flex items-center gap-1 px-2 py-1 border text-[9px] font-mono font-bold tracking-wider rounded-[1px] hover:opacity-80 active:scale-95 transition-colors shrink-0"
                       style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }}
                       title="フォルダ全体の全曲表示へ戻る"
                     >
@@ -5241,7 +5474,7 @@ export default function App() {
                         setBankViewMode('album');
                         localStorage.setItem('v2_solid_bank_view_mode', 'album');
                       }}
-                      className="flex items-center gap-1 px-2 py-1 border text-[9px] font-mono font-bold tracking-wider rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
+                      className="flex items-center gap-1 px-2 py-1 border text-[9px] font-mono font-bold tracking-wider rounded-[1px] hover:opacity-80 active:scale-95 transition-colors shrink-0"
                       style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
                       title="ALBUM カード一覧へ戻る"
                     >
@@ -5252,15 +5485,93 @@ export default function App() {
                       <img 
                         src={albumGroups.find(a => a.album.toLowerCase() === drillDownAlbum.album.toLowerCase())?.coverUrl} 
                         alt="" 
-                        className="w-7 h-7 object-cover border rounded-[1px]" 
+                        className="w-7 h-7 object-cover border rounded-[1px] shrink-0" 
                         style={{ borderColor: 'var(--theme-list-border)' }} 
                       />
                     )}
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-bold font-mono truncate" style={{ color: 'var(--theme-list-textMain)' }}>
-                        {drillDownAlbum.album}
-                      </div>
-                      <div className="text-[9px] font-mono truncate" style={{ color: 'var(--theme-list-textMuted)' }}>
+                    <div className="min-w-0 flex-1">
+                      {editingDrillDownAlbum ? (
+                        <div className="flex items-center gap-1.5 max-w-md" onClick={e => e.stopPropagation()}>
+                          <input
+                            autoFocus
+                            type="text"
+                            value={drillDownAlbumNameInput}
+                            onChange={e => setDrillDownAlbumNameInput(e.target.value)}
+                            onBlur={() => {
+                              const targetAlb = albumGroups.find(a => a.album.toLowerCase() === drillDownAlbum.album.toLowerCase());
+                              if (targetAlb) handleRenameAlbum(targetAlb, drillDownAlbumNameInput, activePlaylistId);
+                              else setEditingDrillDownAlbum(false);
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                const targetAlb = albumGroups.find(a => a.album.toLowerCase() === drillDownAlbum.album.toLowerCase());
+                                if (targetAlb) handleRenameAlbum(targetAlb, drillDownAlbumNameInput, activePlaylistId);
+                                else setEditingDrillDownAlbum(false);
+                              } else if (e.key === 'Escape') {
+                                setEditingDrillDownAlbum(false);
+                              }
+                            }}
+                            className="w-full px-2 py-0.5 text-[11px] font-bold font-mono border outline-none rounded-[1px]"
+                            style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-accent)', color: 'var(--theme-list-textMain)' }}
+                          />
+                          <button
+                            type="button"
+                            onMouseDown={e => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const targetAlb = albumGroups.find(a => a.album.toLowerCase() === drillDownAlbum.album.toLowerCase());
+                              if (targetAlb) handleRenameAlbum(targetAlb, drillDownAlbumNameInput, activePlaylistId);
+                              else setEditingDrillDownAlbum(false);
+                            }}
+                            className="p-1 border rounded-[1px] hover:opacity-80"
+                            style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }}
+                            title="アルバム名変更を確定"
+                          >
+                            <Check size={10} />
+                          </button>
+                          <button
+                            type="button"
+                            onMouseDown={e => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setEditingDrillDownAlbum(false);
+                            }}
+                            className="p-1 border rounded-[1px] hover:opacity-80"
+                            style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textDim)' }}
+                            title="キャンセル"
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <div
+                            className="text-[11px] font-bold font-mono truncate cursor-pointer hover:opacity-80"
+                            style={{ color: 'var(--theme-list-textMain)' }}
+                            onDoubleClick={() => {
+                              setEditingDrillDownAlbum(true);
+                              setDrillDownAlbumNameInput(drillDownAlbum.album);
+                            }}
+                            title="ダブルクリックまたは右のボタンでアルバム名を編集"
+                          >
+                            {drillDownAlbum.album}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingDrillDownAlbum(true);
+                              setDrillDownAlbumNameInput(drillDownAlbum.album);
+                            }}
+                            className="px-1.5 py-0.5 border rounded-[1px] text-[8.5px] font-mono font-bold flex items-center gap-1 hover:opacity-80 shrink-0"
+                            style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                            title="このアルバムのタイトルを変更"
+                          >
+                            <Edit2 size={9} />
+                            <span>名前変更</span>
+                          </button>
+                        </div>
+                      )}
+                      <div className="text-[9px] font-mono truncate mt-0.5" style={{ color: 'var(--theme-list-textMuted)' }}>
                         {drillDownAlbum.artist} • {drillDownTracks.length} TRACKS (曲順編集・再生モード)
                       </div>
                     </div>

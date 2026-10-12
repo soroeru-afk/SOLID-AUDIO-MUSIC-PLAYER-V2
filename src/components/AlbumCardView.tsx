@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, Disc, User, ChevronRight, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, GripVertical, ListMusic, Music, ArrowLeft, Folder, List, Maximize2, Minimize2, Trash2, X } from 'lucide-react';
+import { Play, Pause, Disc, User, ChevronRight, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, GripVertical, ListMusic, Music, ArrowLeft, Folder, List, Maximize2, Minimize2, Trash2, X, Edit2, Check } from 'lucide-react';
 
 export interface AlbumGroup {
   id: string;
@@ -35,6 +35,7 @@ interface AlbumCardViewProps {
   onReorderAlbum?: (draggedAlbumId: string, targetAlbumId: string) => void;
   onMoveTracksToAlbum?: (trackIds: string[], targetAlbum: AlbumGroup) => void;
   onDeleteAlbum?: (album: AlbumGroup) => void;
+  onRenameAlbum?: (album: AlbumGroup, newName: string) => void;
   currentTrackId?: string;
   isPlaying?: boolean;
 }
@@ -67,6 +68,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   onReorderAlbum,
   onMoveTracksToAlbum,
   onDeleteAlbum,
+  onRenameAlbum,
   currentTrackId,
   isPlaying,
 }) => {
@@ -79,6 +81,8 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   const [draggedAlbumId, setDraggedAlbumId] = useState<string | null>(null);
   const [dragOverAlbumId, setDragOverAlbumId] = useState<string | null>(null);
   const [confirmDeleteAlbumId, setConfirmDeleteAlbumId] = useState<string | null>(null);
+  const [renamingAlbumId, setRenamingAlbumId] = useState<string | null>(null);
+  const [renamingAlbumValue, setRenamingAlbumValue] = useState<string>('');
   // Modal state for moving 1 track or an entire separated album into another album (no clipping!)
   const [moveTargetModal, setMoveTargetModal] = useState<{
     trackIds: string[];
@@ -93,10 +97,92 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   useEffect(() => {
     setZoomedAlbumId(null);
     setConfirmDeleteAlbumId(null);
+    setRenamingAlbumId(null);
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({ top: 0 });
     }
   }, [activePlaylistId, displayMode, firstAlbumId]);
+
+  const startRenameAlbum = (e: React.MouseEvent, album: AlbumGroup) => {
+    e.stopPropagation();
+    if (!onRenameAlbum) return;
+    setRenamingAlbumId(album.id);
+    setRenamingAlbumValue(album.album);
+  };
+
+  const commitRenameAlbum = (album: AlbumGroup) => {
+    const trimmed = renamingAlbumValue.trim();
+    setRenamingAlbumId(null);
+    if (trimmed && trimmed !== album.album && onRenameAlbum) {
+      onRenameAlbum(album, trimmed);
+    }
+  };
+
+  const renderInlineAlbumTitleInput = (album: AlbumGroup, isLarge: boolean = false) => (
+    <div
+      className="flex items-center gap-1 w-full min-w-0"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      <input
+        autoFocus
+        type="text"
+        value={renamingAlbumValue}
+        onChange={(e) => setRenamingAlbumValue(e.target.value)}
+        onBlur={() => commitRenameAlbum(album)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            commitRenameAlbum(album);
+          } else if (e.key === 'Escape') {
+            setRenamingAlbumId(null);
+          }
+        }}
+        className={`w-full px-1.5 py-0.5 border outline-none font-mono font-bold rounded-[1px] ${
+          isLarge ? 'text-[14px]' : 'text-[10.5px]'
+        }`}
+        style={{
+          backgroundColor: 'var(--theme-list-bg)',
+          borderColor: 'var(--theme-accent)',
+          color: 'var(--theme-list-textMain)',
+        }}
+      />
+      <button
+        type="button"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          commitRenameAlbum(album);
+        }}
+        className="p-0.5 border rounded-[1px] hover:opacity-80 shrink-0"
+        style={{
+          backgroundColor: 'var(--theme-list-bg)',
+          borderColor: 'var(--theme-accent)',
+          color: 'var(--theme-accent)',
+        }}
+        title="タイトル変更を確定"
+      >
+        <Check size={isLarge ? 12 : 9} />
+      </button>
+      <button
+        type="button"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setRenamingAlbumId(null);
+        }}
+        className="p-0.5 border rounded-[1px] hover:opacity-80 shrink-0"
+        style={{
+          backgroundColor: 'var(--theme-list-bg)',
+          borderColor: 'var(--theme-list-border)',
+          color: 'var(--theme-list-textDim)',
+        }}
+        title="キャンセル"
+      >
+        <X size={isLarge ? 12 : 9} />
+      </button>
+    </div>
+  );
 
   const effectiveZoomedAlbumId =
     zoomedAlbumId === '__NONE__'
@@ -119,6 +205,10 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   const zoomedAlbum = effectiveZoomedAlbumId ? albums.find((a) => a.id === effectiveZoomedAlbumId) || null : null;
 
   const handleAlbumDragStart = (e: React.DragEvent, albumId: string) => {
+    if (renamingAlbumId === albumId) {
+      e.preventDefault();
+      return;
+    }
     setDraggedAlbumId(albumId);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', albumId);
@@ -260,7 +350,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     }
   };
 
-  // Helper to render album ordering controls (Top, Up, Down, Bottom) + Edit Tracks + Move/Merge + Delete Album button
+  // Helper to render album ordering controls (Top, Up, Down, Bottom) + Rename + Edit Tracks + Move/Merge + Delete Album button
   const renderAlbumOrderButtons = (album: AlbumGroup, compactMode: boolean = false, isZoomed: boolean = false) => {
     const idx = albums.findIndex((a) => a.id === album.id);
     const isFirst = idx <= 0;
@@ -311,6 +401,22 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
           </div>
         ) : (
           <>
+            {onRenameAlbum && (
+              <button
+                type="button"
+                onClick={(e) => startRenameAlbum(e, album)}
+                className={`${isZoomed ? 'px-2.5 h-6 text-[10px]' : 'px-1 h-4 text-[7.5px]'} border rounded-[1px] font-mono font-bold tracking-wider flex items-center gap-1 transition-colors hover:opacity-80 active:scale-95`}
+                style={{
+                  backgroundColor: 'var(--theme-list-bg)',
+                  borderColor: 'var(--theme-list-border)',
+                  color: 'var(--theme-list-textMain)',
+                }}
+                title="アルバム名（フォルダ名）を編集"
+              >
+                <Edit2 size={isZoomed ? 11 : 8} />
+                {(!compactMode || isZoomed) && <span>名前変更</span>}
+              </button>
+            )}
             {onMoveTracksToAlbum && albums.length > 1 && (
               <button
                 onClick={(e) => {
@@ -460,7 +566,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     return (
       <div
         key={album.id}
-        draggable={!!reorderHandler}
+        draggable={!!reorderHandler && renamingAlbumId !== album.id}
         onDragStart={(e) => handleAlbumDragStart(e, album.id)}
         onDragOver={(e) => handleAlbumDragOver(e, album.id)}
         onDrop={(e) => handleAlbumDrop(e, album.id)}
@@ -543,20 +649,27 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
           <div className="min-w-0">
             {/* Album Title + Drag Handle */}
             <div className="flex items-center justify-between gap-1.5">
-              <div
-                className={`${isCompact ? 'text-[9.5px]' : 'text-[11px]'} font-bold truncate leading-snug tracking-tight cursor-pointer hover:opacity-80 flex-1`}
-                style={{ color: 'var(--theme-list-textMain)' }}
-                title={album.album}
-                onClick={(e) => toggleZoomAlbum(e, album.id)}
-              >
-                {album.album}
-              </div>
-              {reorderHandler && (
-                <GripVertical
-                  size={10}
-                  className="shrink-0 opacity-40 group-hover:opacity-90 cursor-grab active:cursor-grabbing"
-                  style={{ color: 'var(--theme-list-textDim)' }}
-                />
+              {renamingAlbumId === album.id ? (
+                renderInlineAlbumTitleInput(album, false)
+              ) : (
+                <>
+                  <div
+                    className={`${isCompact ? 'text-[9.5px]' : 'text-[11px]'} font-bold truncate leading-snug tracking-tight cursor-pointer hover:opacity-80 flex-1`}
+                    style={{ color: 'var(--theme-list-textMain)' }}
+                    title={`${album.album}（ダブルクリックまたは「名前変更」で編集）`}
+                    onClick={(e) => toggleZoomAlbum(e, album.id)}
+                    onDoubleClick={(e) => startRenameAlbum(e, album)}
+                  >
+                    {album.album}
+                  </div>
+                  {reorderHandler && (
+                    <GripVertical
+                      size={10}
+                      className="shrink-0 opacity-40 group-hover:opacity-90 cursor-grab active:cursor-grabbing"
+                      style={{ color: 'var(--theme-list-textDim)' }}
+                    />
+                  )}
+                </>
               )}
             </div>
 
@@ -572,7 +685,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
 
           {/* Album Reorder Bar (Top / Up / Down / Bottom + Edit Tracks) */}
           <div
-            className="flex items-center justify-between mt-1.5 pt-1 border-t"
+            className="flex items-center justify-between mt-1.5 pt-1 border-t flex-wrap gap-1"
             style={{ borderColor: 'var(--theme-list-border)' }}
           >
             <span className="text-[7.5px] font-mono font-bold" style={{ color: 'var(--theme-list-textDim)' }}>
@@ -721,7 +834,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     return (
       <div
         key={album.id}
-        draggable={!!reorderHandler}
+        draggable={!!reorderHandler && renamingAlbumId !== album.id}
         onDragStart={(e) => handleAlbumDragStart(e, album.id)}
         onDragOver={(e) => handleAlbumDragOver(e, album.id)}
         onDrop={(e) => handleAlbumDrop(e, album.id)}
@@ -735,7 +848,9 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
         }}
       >
         <div
-          onClick={() => toggleExpandList(album.id)}
+          onClick={() => {
+            if (renamingAlbumId !== album.id) toggleExpandList(album.id);
+          }}
           className="group flex items-center h-12 px-3 transition-all cursor-pointer select-none"
           style={{
             backgroundColor: isThisAlbumActive
@@ -804,12 +919,18 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
 
           {/* Album & Artist Info */}
           <div className="flex-1 min-w-0 pr-4">
-            <div
-              className="text-[11px] font-bold font-mono truncate leading-tight"
-              style={{ color: 'var(--theme-list-textMain)' }}
-            >
-              {album.album}
-            </div>
+            {renamingAlbumId === album.id ? (
+              renderInlineAlbumTitleInput(album, false)
+            ) : (
+              <div
+                className="text-[11px] font-bold font-mono truncate leading-tight hover:opacity-80"
+                style={{ color: 'var(--theme-list-textMain)' }}
+                onDoubleClick={(e) => startRenameAlbum(e, album)}
+                title={`${album.album}（ダブルクリックまたは「名前変更」で編集）`}
+              >
+                {album.album}
+              </div>
+            )}
             <div
               className="text-[9.5px] mt-0.5 font-mono truncate"
               style={{ color: 'var(--theme-list-textMuted)' }}
@@ -955,7 +1076,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     return (
       <div
         key={forceZoomed ? `zoomed-top-${album.id}` : album.id}
-        draggable={!isZoomed && !!reorderHandler}
+        draggable={!isZoomed && !!reorderHandler && renamingAlbumId !== album.id}
         onDragStart={(e) => handleAlbumDragStart(e, album.id)}
         onDragOver={(e) => handleAlbumDragOver(e, album.id)}
         onDrop={(e) => handleAlbumDrop(e, album.id)}
@@ -1066,14 +1187,19 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                 />
               )}
               <div className="min-w-0 flex-1">
-                <div
-                  className={`${isZoomed ? 'text-[17px]' : 'text-[11px]'} font-bold font-mono truncate leading-tight cursor-pointer hover:opacity-80`}
-                  style={{ color: 'var(--theme-list-textMain)' }}
-                  title={`${album.album} (クリックで拡大/元に戻す)`}
-                  onClick={(e) => toggleZoomAlbum(e, album.id)}
-                >
-                  {album.album}
-                </div>
+                {renamingAlbumId === album.id ? (
+                  renderInlineAlbumTitleInput(album, isZoomed)
+                ) : (
+                  <div
+                    className={`${isZoomed ? 'text-[17px]' : 'text-[11px]'} font-bold font-mono truncate leading-tight cursor-pointer hover:opacity-80`}
+                    style={{ color: 'var(--theme-list-textMain)' }}
+                    title={`${album.album} (ダブルクリックまたは「名前変更」ボタンでタイトル編集 / クリックで拡大)`}
+                    onClick={(e) => toggleZoomAlbum(e, album.id)}
+                    onDoubleClick={(e) => startRenameAlbum(e, album)}
+                  >
+                    {album.album}
+                  </div>
+                )}
                 <div
                   className={`${isZoomed ? 'text-[12.5px] mt-1.5' : 'text-[9px] mt-0.5'} font-mono truncate flex items-center gap-1.5`}
                   style={{ color: 'var(--theme-list-textMuted)' }}
