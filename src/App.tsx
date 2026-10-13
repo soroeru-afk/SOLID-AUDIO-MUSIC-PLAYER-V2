@@ -657,6 +657,18 @@ export default function App() {
     return { cat: 192, pl: 280, album: 280 };
   });
 
+  // Cascading Category Menu height with vertical resizing support
+  const [cascadeHeight, setCascadeHeight] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solidCascadeHeight');
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val >= 240) return val;
+      }
+    } catch {}
+    return 520; // デフォルト高さを従来の320pxから520pxへ大幅拡張
+  });
+
   const handleCascadeGripMouseDown = (e: React.MouseEvent, target: 'cat' | 'pl' | 'album' | 'all') => {
     e.preventDefault();
     e.stopPropagation();
@@ -693,6 +705,76 @@ export default function App() {
       setCascadeColWidths(latest => {
         try { localStorage.setItem('v2_solidCascadeColWidths', JSON.stringify(latest)); } catch {}
         return latest;
+      });
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleCascadeHeightMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const initialH = cascadeHeight;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const deltaY = ev.clientY - startY;
+      const maxHeightAllowed = typeof window !== 'undefined' ? Math.max(300, window.innerHeight - 120) : 900;
+      setCascadeHeight(Math.max(240, Math.min(maxHeightAllowed, initialH + deltaY)));
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      setCascadeHeight(latest => {
+        try { localStorage.setItem('v2_solidCascadeHeight', latest.toString()); } catch {}
+        return latest;
+      });
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleCascadeCornerMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const initialWidths = { ...cascadeColWidths };
+    const initialH = cascadeHeight;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const deltaX = ev.clientX - startX;
+      const deltaY = ev.clientY - startY;
+      const maxHeightAllowed = typeof window !== 'undefined' ? Math.max(300, window.innerHeight - 120) : 900;
+      
+      setCascadeHeight(Math.max(240, Math.min(maxHeightAllowed, initialH + deltaY)));
+      setCascadeColWidths(prev => {
+        let updated = { ...prev };
+        const hoveredTargetPl = hoveredPlaylistInMenu ? playlists.find(p => p.id === hoveredPlaylistInMenu) : null;
+        const hasMultiple = hoveredTargetPl && hoveredTargetPl.id !== 'all-tracks' && (playlistAlbumsMap[hoveredTargetPl.id]?.length || 0) > 1;
+        if (hasMultiple) {
+          updated.pl = Math.max(180, Math.min(800, initialWidths.pl + Math.round(deltaX * 0.5)));
+          updated.album = Math.max(180, Math.min(800, initialWidths.album + Math.round(deltaX * 0.5)));
+        } else {
+          updated.pl = Math.max(180, Math.min(800, initialWidths.pl + deltaX));
+        }
+        return updated;
+      });
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      setCascadeHeight(latestH => {
+        try { localStorage.setItem('v2_solidCascadeHeight', latestH.toString()); } catch {}
+        return latestH;
+      });
+      setCascadeColWidths(latestW => {
+        try { localStorage.setItem('v2_solidCascadeColWidths', JSON.stringify(latestW)); } catch {}
+        return latestW;
       });
     };
 
@@ -860,6 +942,26 @@ export default function App() {
   // Fullscreen state and handler
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Guard window.resizeTo during fullscreen to prevent OS window borders from reappearing
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const originalResizeTo = typeof window.resizeTo === 'function' ? window.resizeTo.bind(window) : null;
+    (window as any).resizeTo = (width: number, height: number) => {
+      if (document.fullscreenElement) {
+        // Skip window resize when in fullscreen mode to prevent OS borders from reappearing
+        return;
+      }
+      if (originalResizeTo) {
+        originalResizeTo(width, height);
+      }
+    };
+    return () => {
+      if (originalResizeTo) {
+        window.resizeTo = originalResizeTo;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     const onFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
@@ -875,11 +977,11 @@ export default function App() {
   const toggleFullscreen = async () => {
     try {
       if (!document.fullscreenElement) {
-        const el = document.documentElement;
-        if (el.requestFullscreen) {
-          await el.requestFullscreen({ navigationUI: 'hide' });
-        } else if ((el as any).webkitRequestFullscreen) {
-          await (el as any).webkitRequestFullscreen();
+        const docEl = document.documentElement;
+        if (docEl.requestFullscreen) {
+          await docEl.requestFullscreen({ navigationUI: 'hide' } as FullscreenOptions);
+        } else if ((docEl as any).webkitRequestFullscreen) {
+          await (docEl as any).webkitRequestFullscreen();
         }
       } else {
         if (document.exitFullscreen) {
@@ -889,7 +991,14 @@ export default function App() {
         }
       }
     } catch (err) {
-      console.warn('Fullscreen toggle request:', err);
+      // Fallback if navigationUI: 'hide' is not supported by older engines
+      try {
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch (fallbackErr) {
+        console.warn('Fullscreen toggle request:', fallbackErr);
+      }
     }
   };
 
@@ -5156,7 +5265,7 @@ export default function App() {
                     <span>+CAT</span>
                   </button>
 
-                  {/* OPEN / CLOSE all folder playlists toggle button */}
+                  {/* OPEN / CLOSE all folder playlists toggle button with 3-stage cycling */}
                   {(() => {
                     const expandableFolderIds = playlists
                       .filter(p => p.id !== 'all-tracks' && (playlistAlbumsMap[p.id]?.length || 0) > 1)
@@ -5169,9 +5278,13 @@ export default function App() {
 
                     const isAllTreeCatsOpen = allTreeCatKeys.length > 0 && allTreeCatKeys.every(cat => expandedCategoryNames.has(cat));
                     const isAllFoldersOpen = expandableFolderIds.length > 0 && expandableFolderIds.every(id => expandedSidebarFolderIds.has(id));
+                    const isAllCatsCollapsed = allTreeCatKeys.length > 0 && allTreeCatKeys.every(cat => !expandedCategoryNames.has(cat));
 
-                    // In tree mode, all is considered open if categories (and any folders) are expanded
-                    const isAllOpen = isTreeMode
+                    // In Tree Mode, there are 3 distinct states:
+                    // Stage 1 (ALL COLLAPSED): categories are closed -> next: open categories only (folders closed)
+                    // Stage 2 (CATS OPEN): categories open, but folders closed -> next: open folders too (full open)
+                    // Stage 3 (FULL OPEN): both categories and folders are open -> next: collapse everything
+                    const isFullOpen = isTreeMode
                       ? (allTreeCatKeys.length > 0 && expandableFolderIds.length > 0
                           ? (isAllTreeCatsOpen && isAllFoldersOpen)
                           : allTreeCatKeys.length > 0
@@ -5179,49 +5292,72 @@ export default function App() {
                           : isAllFoldersOpen)
                       : isAllFoldersOpen;
 
+                    const isCatsOnlyOpen = isTreeMode && isAllTreeCatsOpen && !isAllFoldersOpen && expandableFolderIds.length > 0;
+                    const isFullyCollapsed = isTreeMode ? isAllCatsCollapsed : (expandedSidebarFolderIds.size === 0);
+
                     const isDisabled = isTreeMode
                       ? (allTreeCatKeys.length === 0 && expandableFolderIds.length === 0)
                       : (expandableFolderIds.length === 0);
+
+                    let btnLabel = 'OPEN';
+                    let btnTitle = '';
+                    let btnIcon = <Folder size={10} className="shrink-0" />;
+
+                    if (isFullOpen) {
+                      btnLabel = 'CLOSE';
+                      btnIcon = <FolderOpen size={10} className="shrink-0" />;
+                      btnTitle = isTreeMode ? 'すべて閉じる (カテゴリーのみ表示)' : 'すべてのアルバムフォルダを閉じる';
+                    } else if (isCatsOnlyOpen) {
+                      btnLabel = 'OPEN+';
+                      btnIcon = <FolderTree size={10} className="shrink-0" />;
+                      btnTitle = 'サブカテゴリー（アルバムフォルダ）もすべて開く (全開)';
+                    } else {
+                      btnLabel = 'OPEN';
+                      btnIcon = <Folder size={10} className="shrink-0" />;
+                      btnTitle = isTreeMode ? 'カテゴリーを開く (サブカテゴリーは閉じた状態)' : 'すべてのアルバムフォルダを開く';
+                    }
+
+                    const handleToggleCycle = () => {
+                      if (isTreeMode) {
+                        if (isFullOpen) {
+                          // Stage 3 -> Stage 1: Collapse everything
+                          setExpandedCategoryNames(new Set());
+                          setExpandedSidebarFolderIds(new Set());
+                        } else if (isFullyCollapsed) {
+                          // Stage 1 -> Stage 2: Open categories only (sub-albums remain closed)
+                          setExpandedCategoryNames(new Set(allTreeCatKeys));
+                          setExpandedSidebarFolderIds(new Set());
+                        } else {
+                          // Stage 2 -> Stage 3: Full open (both categories and all folders)
+                          setExpandedCategoryNames(new Set(allTreeCatKeys));
+                          setExpandedSidebarFolderIds(new Set(expandableFolderIds));
+                        }
+                      } else {
+                        if (isFullOpen) {
+                          setExpandedSidebarFolderIds(new Set());
+                        } else {
+                          setExpandedSidebarFolderIds(new Set(expandableFolderIds));
+                        }
+                      }
+                    };
 
                     return (
                       <button
                         type="button"
                         disabled={isDisabled}
-                        onClick={() => {
-                          if (isTreeMode) {
-                            if (isAllOpen) {
-                              // Collapse everything: all categories and all folders
-                              setExpandedCategoryNames(new Set());
-                              setExpandedSidebarFolderIds(new Set());
-                            } else {
-                              // Expand everything: all categories and all folders
-                              setExpandedCategoryNames(new Set(allTreeCatKeys));
-                              setExpandedSidebarFolderIds(new Set(expandableFolderIds));
-                            }
-                          } else {
-                            if (isAllOpen) {
-                              setExpandedSidebarFolderIds(new Set());
-                            } else {
-                              setExpandedSidebarFolderIds(new Set(expandableFolderIds));
-                            }
-                          }
-                        }}
-                        className="flex items-center gap-1 justify-center border rounded-[2px] w-[54px] h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95 disabled:opacity-35 shrink-0"
+                        onClick={handleToggleCycle}
+                        className="flex items-center gap-1 justify-center border rounded-[2px] w-[56px] h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95 disabled:opacity-35 shrink-0"
                         style={
-                          isAllOpen
+                          isFullOpen
                             ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
-                            : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }
+                            : isCatsOnlyOpen
+                            ? { backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }
+                            : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }
                         }
-                        title={
-                          isDisabled
-                            ? '展開可能な項目がありません'
-                            : isAllOpen
-                            ? (isTreeMode ? 'すべてのカテゴリーとフォルダーを一括で閉じる (CLOSE ALL)' : 'すべてのアルバムフォルダを一括で閉じる (CLOSE ALL)')
-                            : (isTreeMode ? 'すべてのカテゴリーとフォルダーを一括で開く (OPEN ALL)' : `すべてのアルバムフォルダ (${expandableFolderIds.length}件) を一括で開く (OPEN ALL)`)
-                        }
+                        title={isDisabled ? '展開可能な項目がありません' : btnTitle}
                       >
-                        {isAllOpen ? <FolderOpen size={10} className="shrink-0" /> : <Folder size={10} className="shrink-0" />}
-                        <span>{isAllOpen ? 'CLOSE' : 'OPEN'}</span>
+                        {btnIcon}
+                        <span>{btnLabel}</span>
                       </button>
                     );
                   })()}
@@ -5488,16 +5624,18 @@ export default function App() {
                             borderColor: 'var(--theme-border)',
                             color: 'var(--theme-textMain)',
                             fontSize: `${listFontSize}px`,
-                            maxHeight: '440px'
+                            maxHeight: `${cascadeHeight + 65}px`
                           }}
                         >
                           <div className="flex overflow-hidden">
                             {/* Primary Column: Categories */}
                             <div 
-                              className="border-r py-1 flex flex-col max-h-80 overflow-y-auto shrink-0" 
+                              className="border-r py-1 flex flex-col overflow-y-auto shrink-0" 
                               style={{ 
                                 width: `${cascadeColWidths.cat}px`, 
                                 minWidth: '140px',
+                                height: `${cascadeHeight}px`,
+                                maxHeight: `${cascadeHeight}px`,
                                 borderColor: 'var(--theme-border)' 
                               }}
                             >
@@ -5631,10 +5769,12 @@ export default function App() {
                               return (
                                 <>
                                   <div 
-                                    className="py-1 flex flex-col max-h-80 overflow-y-auto shrink-0" 
+                                    className="py-1 flex flex-col overflow-y-auto shrink-0" 
                                     style={{ 
                                       width: `${cascadeColWidths.pl}px`, 
                                       minWidth: '180px',
+                                      height: `${cascadeHeight}px`,
+                                      maxHeight: `${cascadeHeight}px`,
                                       backgroundColor: 'var(--theme-bg)' 
                                     }}
                                   >
@@ -5751,10 +5891,12 @@ export default function App() {
 
                               return (
                                 <div 
-                                  className="border-l py-1 flex flex-col max-h-80 overflow-y-auto shrink-0 shadow-xl" 
+                                  className="border-l py-1 flex flex-col overflow-y-auto shrink-0 shadow-xl" 
                                   style={{ 
                                     width: `${cascadeColWidths.album}px`, 
                                     minWidth: '180px',
+                                    height: `${cascadeHeight}px`,
+                                    maxHeight: `${cascadeHeight}px`,
                                     borderColor: 'var(--theme-border)', 
                                     backgroundColor: 'var(--theme-surface)' 
                                   }}
@@ -5814,7 +5956,7 @@ export default function App() {
                             <div
                               onMouseDown={(e) => handleCascadeGripMouseDown(e, 'all')}
                               className="w-4 hover:w-5 active:w-5 transition-all cursor-ew-resize shrink-0 flex flex-col items-center justify-center gap-1.5 select-none group border-l hover:bg-[var(--theme-accentMuted)]"
-                              style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)' }}
+                              style={{ height: `${cascadeHeight}px`, backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)' }}
                               title="プルダウン全体の横幅をドラッグして自由に拡大・調整 (DRAG TO RESIZE WIDTH)"
                             >
                               <div className="flex flex-col items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
@@ -5826,9 +5968,9 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* Industrial Footer with width controls & tactile grip indicator */}
+                          {/* Industrial Footer with width & height controls & tactile grip indicator */}
                           <div 
-                            className="border-t px-2 py-1 flex items-center justify-between text-[8px] font-mono shrink-0" 
+                            className="border-t px-2 py-1 flex items-center justify-between text-[8px] font-mono shrink-0 select-none" 
                             style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-listHeader-textMuted)' }}
                           >
                             <div className="flex items-center gap-1.5">
@@ -5837,11 +5979,12 @@ export default function App() {
                                 const hoveredTargetPl = hoveredPlaylistInMenu ? playlists.find(p => p.id === hoveredPlaylistInMenu) : null;
                                 const showTertiary = hoveredTargetPl && hoveredTargetPl.id !== 'all-tracks' && (playlistAlbumsMap[hoveredTargetPl.id]?.length || 0) > 1;
                                 return (
-                                  <span>WIDTH: CAT {cascadeColWidths.cat}px • LIST {cascadeColWidths.pl}px{showTertiary ? ` • ALBUM ${cascadeColWidths.album}px` : ''}</span>
+                                  <span>WIDTH: CAT {cascadeColWidths.cat}px • LIST {cascadeColWidths.pl}px{showTertiary ? ` • ALBUM ${cascadeColWidths.album}px` : ''} • H: {cascadeHeight}px</span>
                                 );
                               })()}
                             </div>
                             <div className="flex items-center gap-1">
+                              {/* Width controls */}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -5872,19 +6015,78 @@ export default function App() {
                               >
                                 + W
                               </button>
+
+                              <span className="opacity-30 mx-0.5">|</span>
+
+                              {/* Height controls */}
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const next = { cat: 192, pl: 280, album: 280 };
-                                  setCascadeColWidths(next);
-                                  try { localStorage.setItem('v2_solidCascadeColWidths', JSON.stringify(next)); } catch {}
+                                  setCascadeHeight(prev => {
+                                    const next = Math.max(240, prev - 60);
+                                    try { localStorage.setItem('v2_solidCascadeHeight', next.toString()); } catch {}
+                                    return next;
+                                  });
+                                }}
+                                className="px-1.5 py-0.5 border rounded-[1px] hover:opacity-80 active:scale-95"
+                                style={{ borderColor: 'var(--theme-listHeader-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-textMain)' }}
+                                title="プルダウンの高さを縮小 (短くする)"
+                              >
+                                - H
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCascadeHeight(prev => {
+                                    const maxHeightAllowed = typeof window !== 'undefined' ? Math.max(300, window.innerHeight - 120) : 900;
+                                    const next = Math.min(maxHeightAllowed, prev + 80);
+                                    try { localStorage.setItem('v2_solidCascadeHeight', next.toString()); } catch {}
+                                    return next;
+                                  });
+                                }}
+                                className="px-1.5 py-0.5 border rounded-[1px] hover:opacity-80 active:scale-95"
+                                style={{ borderColor: 'var(--theme-listHeader-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-accent)' }}
+                                title="プルダウンの高さを拡大 (下に伸ばす)"
+                              >
+                                + H
+                              </button>
+
+                              {/* Reset */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextW = { cat: 192, pl: 280, album: 280 };
+                                  setCascadeColWidths(nextW);
+                                  try { localStorage.setItem('v2_solidCascadeColWidths', JSON.stringify(nextW)); } catch {}
+                                  setCascadeHeight(520);
+                                  try { localStorage.setItem('v2_solidCascadeHeight', '520'); } catch {}
                                 }}
                                 className="px-1 py-0.5 border rounded-[1px] hover:opacity-80 active:scale-95 ml-0.5"
                                 style={{ borderColor: 'var(--theme-listHeader-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-listHeader-textMuted)' }}
-                                title="標準幅にリセット (RESET)"
+                                title="標準サイズ（幅・高さ）にリセット (RESET)"
                               >
                                 RESET
                               </button>
+                            </div>
+                          </div>
+
+                          {/* Bottom Height Resize Strip: ドラッグで下方向に自由に拡大・縮小 */}
+                          <div
+                            onMouseDown={handleCascadeHeightMouseDown}
+                            className="h-2 w-full hover:h-2.5 bg-[var(--theme-surfaceLighter)] hover:bg-[var(--theme-accentMuted)] border-t transition-all cursor-ns-resize flex items-center justify-between px-2 select-none group shrink-0"
+                            style={{ borderColor: 'var(--theme-border)' }}
+                            title="ここを上下にドラッグしてプルダウンの高さを自由に調整 (DRAG TO RESIZE HEIGHT)"
+                          >
+                            <div className="flex-1 flex justify-center items-center">
+                              <div className="w-12 h-[2px] rounded-full bg-[var(--theme-textDim)] group-hover:bg-[var(--theme-accent)] transition-colors" />
+                            </div>
+                            {/* Bottom-right Corner Diagonal Grip for simultaneous Width & Height resize */}
+                            <div
+                              onMouseDown={handleCascadeCornerMouseDown}
+                              className="w-3 h-3 -mr-1 cursor-se-resize flex items-end justify-end p-0.5 opacity-60 hover:opacity-100 transition-opacity"
+                              title="右下の角を斜めにドラッグして横幅と高さを同時に調整 (DRAG CORNER TO RESIZE)"
+                            >
+                              <div className="w-1.5 h-1.5 border-r border-b" style={{ borderColor: 'var(--theme-accent)' }} />
                             </div>
                           </div>
                         </div>
