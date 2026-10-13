@@ -653,6 +653,9 @@ export default function App() {
   const [editCategoryNameInput, setEditCategoryNameInput] = useState('');
   const [confirmDeleteCategoryName, setConfirmDeleteCategoryName] = useState<string | null>(null);
   const [dragOverCategoryTarget, setDragOverCategoryTarget] = useState<string | null>(null);
+  const [draggedCategoryName, setDraggedCategoryName] = useState<string | null>(null);
+  const [dragOverCategoryReorderTarget, setDragOverCategoryReorderTarget] = useState<string | null>(null);
+  const [categoryDropPosition, setCategoryDropPosition] = useState<'above' | 'below' | null>(null);
   const [activeCategoryMenuPlaylistId, setActiveCategoryMenuPlaylistId] = useState<string | null>(null);
   const [showBatchMoveCategoryModal, setShowBatchMoveCategoryModal] = useState(false);
   const [isCategoryCascadeMenuOpen, setIsCategoryCascadeMenuOpen] = useState(false);
@@ -3136,6 +3139,76 @@ export default function App() {
     await handleDrop(e, catName);
   };
 
+  // --- Category Reorder Drag and Drop ---
+  const handleCategoryDragStart = (e: React.DragEvent, cat: string) => {
+    if (renamingCategoryName === cat) {
+      e.preventDefault();
+      return;
+    }
+    setDraggedCategoryName(cat);
+    e.dataTransfer.effectAllowed = 'move';
+    try {
+      e.dataTransfer.setData('application/x-solid-category', cat);
+      e.dataTransfer.setData('text/plain', cat);
+    } catch {}
+  };
+
+  const handleCategoryDragOverForReorder = (e: React.DragEvent, cat: string) => {
+    if (!draggedCategoryName) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (draggedCategoryName === cat) {
+      setDragOverCategoryReorderTarget(null);
+      setCategoryDropPosition(null);
+      return;
+    }
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverCategoryReorderTarget(cat);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relY = e.clientY - rect.top;
+    const pos = relY < rect.height / 2 ? 'above' : 'below';
+    setCategoryDropPosition(pos);
+  };
+
+  const handleCategoryDropForReorder = (e: React.DragEvent, targetCat: string) => {
+    if (!draggedCategoryName) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const sourceCat = draggedCategoryName;
+    const pos = categoryDropPosition || 'above';
+
+    setDraggedCategoryName(null);
+    setDragOverCategoryReorderTarget(null);
+    setCategoryDropPosition(null);
+
+    if (sourceCat === targetCat) return;
+
+    setCategories(prev => {
+      const copy = [...prev];
+      const fromIdx = copy.indexOf(sourceCat);
+      if (fromIdx === -1) return prev;
+      copy.splice(fromIdx, 1);
+
+      let toIdx = copy.indexOf(targetCat);
+      if (toIdx === -1) return prev;
+      if (pos === 'below') toIdx += 1;
+      copy.splice(toIdx, 0, sourceCat);
+
+      try {
+        set('v2_solidCategories', copy).catch(console.error);
+      } catch {}
+
+      return copy;
+    });
+  };
+
+  const handleCategoryDragEnd = () => {
+    setDraggedCategoryName(null);
+    setDragOverCategoryReorderTarget(null);
+    setCategoryDropPosition(null);
+  };
+
   // --- Playlist Drag and Drop ---
   const handlePlaylistDragStart = (e: React.DragEvent, id: string) => {
     if (id === 'all-tracks') {
@@ -3179,6 +3252,9 @@ export default function App() {
     setDraggedPlaylistId(null);
     setDragOverPlaylistId(null);
     setDragOverCategoryTarget(null);
+    setDraggedCategoryName(null);
+    setDragOverCategoryReorderTarget(null);
+    setCategoryDropPosition(null);
   };
 
   const togglePlaylistSelection = (e: React.MouseEvent, playlistId: string) => {
@@ -5751,9 +5827,30 @@ export default function App() {
                                 const count = playlists.filter(p => p.id !== 'all-tracks' && p.category === cat).length;
                                 const isCurrentActive = hoveredCategoryInMenu === cat;
                                 const isSelected = selectedCategoryFilter === cat;
+                                const isBeingDragged = draggedCategoryName === cat;
+                                const isReorderTarget = dragOverCategoryReorderTarget === cat;
+                                const isDropAbove = isReorderTarget && categoryDropPosition === 'above';
+                                const isDropBelow = isReorderTarget && categoryDropPosition === 'below';
+
                                 return (
                                   <div
                                     key={cat}
+                                    onDragOver={(e) => {
+                                      if (draggedCategoryName) {
+                                        handleCategoryDragOverForReorder(e, cat);
+                                      }
+                                    }}
+                                    onDragLeave={() => {
+                                      if (dragOverCategoryReorderTarget === cat) {
+                                        setDragOverCategoryReorderTarget(null);
+                                        setCategoryDropPosition(null);
+                                      }
+                                    }}
+                                    onDrop={(e) => {
+                                      if (draggedCategoryName) {
+                                        handleCategoryDropForReorder(e, cat);
+                                      }
+                                    }}
                                     onMouseEnter={() => {
                                       setHoveredCategoryInMenu(cat);
                                       setHoveredPlaylistInMenu(null);
@@ -5765,14 +5862,40 @@ export default function App() {
                                       setHoveredPlaylistInMenu(null);
                                       setIsCategoryCascadeMenuOpen(false);
                                     }}
-                                    className="px-2.5 py-1.5 flex items-center justify-between cursor-pointer transition-colors"
+                                    className={`px-2.5 py-1.5 flex items-center justify-between cursor-pointer transition-colors relative ${isBeingDragged ? 'opacity-30' : ''}`}
                                     style={{
                                       backgroundColor: isCurrentActive ? 'var(--theme-accentMuted)' : (isSelected ? 'var(--theme-surfaceLighter)' : 'transparent'),
                                       color: isCurrentActive ? 'var(--theme-accent)' : 'inherit',
                                       fontSize: `${listFontSize}px`
                                     }}
+                                    title={`${cat} (${count} lists) - 前端グリップで上下並べ替え可能`}
                                   >
+                                    {isDropAbove && (
+                                      <div 
+                                        className="absolute top-0 left-0 right-0 h-[2px] z-30 pointer-events-none" 
+                                        style={{ backgroundColor: 'var(--theme-accent)' }} 
+                                      />
+                                    )}
+
                                     <span className="truncate flex items-center gap-1.5 font-medium">
+                                      <div
+                                        draggable
+                                        onDragStart={(e) => {
+                                          e.stopPropagation();
+                                          handleCategoryDragStart(e, cat);
+                                        }}
+                                        onDragEnd={(e) => {
+                                          e.stopPropagation();
+                                          handleCategoryDragEnd();
+                                        }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                        }}
+                                        className="p-1 -ml-1 -my-1 rounded-[2px] flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-black/10 dark:hover:bg-white/10 shrink-0 transition-colors"
+                                        title="ドラッグしてカテゴリーを並べ替え"
+                                      >
+                                        <GripVertical size={10} className="shrink-0 opacity-30 hover:opacity-100 transition-opacity" style={{ color: 'var(--theme-textDim)' }} />
+                                      </div>
                                       <Bookmark size={listFontSize >= 13 ? 11 : 9.5} style={{ color: 'var(--theme-accent)' }} fill={isCurrentActive || isSelected ? 'currentColor' : 'none'} />
                                       <span className="truncate">{cat}</span>
                                     </span>
@@ -5780,6 +5903,13 @@ export default function App() {
                                       <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({count})</span>
                                       <ChevronRight size={10} className="opacity-70" />
                                     </div>
+
+                                    {isDropBelow && (
+                                      <div 
+                                        className="absolute bottom-0 left-0 right-0 h-[2px] z-30 pointer-events-none" 
+                                        style={{ backgroundColor: 'var(--theme-accent)' }} 
+                                      />
+                                    )}
                                   </div>
                                 );
                               })}
@@ -5805,7 +5935,14 @@ export default function App() {
                                   fontSize: `${listFontSize}px`
                                 }}
                               >
-                                <span className="truncate flex items-center gap-1.5">
+                                <span className="truncate flex items-center gap-1.5 font-medium">
+                                  {/* Invisible spacer matching the category grip handle dimensions so mark and text align perfectly */}
+                                  <div
+                                    className="p-1 -ml-1 -my-1 rounded-[2px] flex items-center justify-center shrink-0 pointer-events-none select-none"
+                                    aria-hidden="true"
+                                  >
+                                    <div className="w-[10px] h-[10px]" />
+                                  </div>
                                   <Bookmark size={listFontSize >= 13 ? 11 : 9.5} style={{ color: 'var(--theme-listHeader-textMuted)' }} strokeDasharray="2 2" />
                                   <span className="truncate">UNCATEGORIZED</span>
                                 </span>
@@ -6602,7 +6739,10 @@ export default function App() {
                             className="text-left px-2 py-1 hover:opacity-80 flex items-center justify-between transition-colors"
                             style={{ backgroundColor: !pl.category ? 'var(--theme-accentMuted)' : 'transparent' }}
                           >
-                            <span>UNCATEGORIZED (未分類)</span>
+                            <span className="truncate flex items-center gap-1">
+                              <Bookmark size={9} style={{ color: 'var(--theme-listHeader-textMuted)' }} strokeDasharray="2 2" />
+                              <span>UNCATEGORIZED (未分類)</span>
+                            </span>
                             {!pl.category && <Check size={9} style={{ color: 'var(--theme-accent)' }} />}
                           </button>
                           {categories.map(cat => (
@@ -7077,37 +7217,90 @@ export default function App() {
                     const isExpanded = expandedCategoryNames.has(cat);
                     const isDragOver = dragOverCategoryTarget === cat;
                     const isRenaming = renamingCategoryName === cat;
+                    const isBeingDragged = draggedCategoryName === cat;
+                    const isReorderTarget = dragOverCategoryReorderTarget === cat;
+                    const isDropAbove = isReorderTarget && categoryDropPosition === 'above';
+                    const isDropBelow = isReorderTarget && categoryDropPosition === 'below';
 
                     return (
-                      <div key={cat} className="flex flex-col border-b last:border-b-0" style={{ borderColor: 'var(--theme-list-border)' }}>
+                      <div 
+                        key={cat} 
+                        className={`flex flex-col border-b last:border-b-0 relative transition-opacity ${isBeingDragged ? 'opacity-30' : ''}`} 
+                        style={{ borderColor: 'var(--theme-list-border)' }}
+                      >
+                        {/* Reorder Drop Indicator Line (Above) */}
+                        {isDropAbove && (
+                          <div 
+                            className="absolute top-0 left-0 right-0 h-[2px] z-30 pointer-events-none" 
+                            style={{ backgroundColor: 'var(--theme-accent)' }} 
+                          />
+                        )}
+
                         {/* Category Folder Row */}
                         <div
                           onDragOver={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            e.dataTransfer.dropEffect = 'copy';
-                            if (dragOverCategoryTarget !== cat) setDragOverCategoryTarget(cat);
+                            if (draggedCategoryName) {
+                              handleCategoryDragOverForReorder(e, cat);
+                            } else {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.dataTransfer.dropEffect = 'copy';
+                              if (dragOverCategoryTarget !== cat) setDragOverCategoryTarget(cat);
+                            }
                           }}
                           onDragLeave={(e) => {
                             e.stopPropagation();
-                            if (dragOverCategoryTarget === cat) setDragOverCategoryTarget(null);
+                            if (draggedCategoryName) {
+                              if (dragOverCategoryReorderTarget === cat) {
+                                setDragOverCategoryReorderTarget(null);
+                                setCategoryDropPosition(null);
+                              }
+                            } else {
+                              if (dragOverCategoryTarget === cat) setDragOverCategoryTarget(null);
+                            }
                           }}
-                          onDrop={(e) => handleCategoryFolderDrop(e, cat)}
+                          onDrop={(e) => {
+                            if (draggedCategoryName) {
+                              handleCategoryDropForReorder(e, cat);
+                            } else {
+                              handleCategoryFolderDrop(e, cat);
+                            }
+                          }}
                           onClick={() => toggleCategoryExpand(cat)}
                           onDoubleClick={(e) => {
                             e.stopPropagation();
                             setRenamingCategoryName(cat);
                             setEditCategoryNameInput(cat);
                           }}
-                          className="flex items-center justify-between px-2.5 py-1.5 cursor-pointer select-none transition-colors group"
+                          className="flex items-center justify-between px-2 py-1.5 cursor-pointer select-none transition-colors group"
                           style={{
-                            backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : 'var(--theme-listHeader-bg)',
+                            backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : (isReorderTarget ? 'var(--theme-surfaceLighter)' : 'var(--theme-listHeader-bg)'),
                             borderLeft: isDragOver ? '3px solid var(--theme-accent)' : '3px solid transparent',
                             color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-listHeader-text)'
                           }}
-                          title={`${cat} (${catPlaylists.length} lists) - クリックで開閉 / ダブルクリックで名前変更 / リストや音源をD&Dで所属`}
+                          title={`${cat} (${catPlaylists.length} lists) - 前端グリップをドラッグして上下並べ替え / クリックで開閉 / ダブルクリックで名前変更 / リストや音源をD&Dで所属`}
                         >
-                          <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
+                          <div className="flex items-center gap-1 truncate min-w-0 flex-1">
+                            {/* Grip handle: Only this front area is draggable with grab cursor */}
+                            <div
+                              draggable={!isRenaming}
+                              onDragStart={(e) => {
+                                e.stopPropagation();
+                                handleCategoryDragStart(e, cat);
+                              }}
+                              onDragEnd={(e) => {
+                                e.stopPropagation();
+                                handleCategoryDragEnd();
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                              }}
+                              className="p-1 -ml-1 -my-1 rounded-[2px] flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-black/10 dark:hover:bg-white/10 shrink-0 transition-colors"
+                              title="ドラッグしてカテゴリーを並べ替え"
+                            >
+                              <GripVertical size={11} className="shrink-0 opacity-30 group-hover:opacity-80 hover:opacity-100 transition-opacity" style={{ color: 'var(--theme-listHeader-textMuted)' }} />
+                            </div>
+                            
                             <span className="text-[10px] shrink-0" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
                               {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
                             </span>
@@ -7181,6 +7374,14 @@ export default function App() {
                           </div>
                         </div>
 
+                        {/* Reorder Drop Indicator Line (Below) */}
+                        {isDropBelow && (
+                          <div 
+                            className="absolute bottom-0 left-0 right-0 h-[2px] z-30 pointer-events-none" 
+                            style={{ backgroundColor: 'var(--theme-accent)' }} 
+                          />
+                        )}
+
                         {/* Playlists in this category when expanded */}
                         {isExpanded && (
                           <div className="flex flex-col border-l ml-1" style={{ borderColor: 'var(--theme-list-border)' }}>
@@ -7227,7 +7428,7 @@ export default function App() {
                           }}
                           onDrop={(e) => handleCategoryFolderDrop(e, undefined)}
                           onClick={() => toggleCategoryExpand('__UNCATEGORIZED__')}
-                          className="flex items-center justify-between px-2.5 py-1.5 cursor-pointer select-none transition-colors group"
+                          className="flex items-center justify-between px-2 py-1.5 cursor-pointer select-none transition-colors group"
                           style={{
                             backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : 'var(--theme-listHeader-bg)',
                             borderLeft: isDragOver ? '3px solid var(--theme-accent)' : '3px solid transparent',
@@ -7235,12 +7436,20 @@ export default function App() {
                           }}
                           title="UNCATEGORIZED (未分類) - クリックで開閉 / ドロップで未分類に移動"
                         >
-                          <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
+                          <div className="flex items-center gap-1 truncate min-w-0 flex-1">
+                            {/* Invisible spacer matching the category grip handle dimensions so Chevron, Bookmark mark and text align perfectly */}
+                            <div
+                              className="p-1 -ml-1 -my-1 rounded-[2px] flex items-center justify-center shrink-0 pointer-events-none select-none"
+                              aria-hidden="true"
+                            >
+                              <div className="w-[11px] h-[11px]" />
+                            </div>
+
                             <span className="text-[10px] shrink-0" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
                               {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
                             </span>
                             <Bookmark size={12} className="shrink-0" style={{ color: 'var(--theme-listHeader-textMuted)' }} strokeDasharray="2 2" />
-                            <span className="font-mono tracking-wider uppercase truncate" style={{ fontSize: 'var(--list-font-size)' }}>
+                            <span className="font-mono font-semibold tracking-wider uppercase truncate" style={{ fontSize: 'var(--list-font-size)' }}>
                               UNCATEGORIZED
                             </span>
                           </div>
@@ -7561,12 +7770,58 @@ export default function App() {
                     </button>
                     {selectedTrackIds.size > 0 && (
                       <div className="flex items-center gap-3">
-                        {/* Compact Batch Indicator (Full move controls appear at bottom of table) */}
-                        <div className="flex items-center gap-1 border-r pr-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
-                          <span className="text-[9px] font-mono font-semibold px-1 py-0.5 border rounded-[1px] shrink-0 flex items-center gap-1" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
+                        {/* Batch Indicator & Move Controls (TOP, UP, DOWN, BOTTOM) */}
+                        <div className="flex items-center gap-1.5 border-r pr-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
+                          <span className="text-[9px] font-mono font-semibold px-1.5 py-0.5 border rounded-[2px] shrink-0 flex items-center gap-1" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
                             <Check size={9} />
                             <span>{selectedTrackIds.size} 選択中</span>
                           </span>
+
+                          <div className="flex items-center gap-1 shrink-0 ml-0.5">
+                            <button 
+                              type="button"
+                              disabled={!canMoveSelectedTop}
+                              onClick={() => moveSelectedTracks('top')}
+                              className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer"
+                              style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                              title={`選択した${selectedTrackIds.size}曲を一括で一番上へ移動 (TOP)`}
+                            >
+                              <ChevronsUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                            </button>
+
+                            <button 
+                              type="button"
+                              disabled={!canMoveSelectedUp}
+                              onClick={() => moveSelectedTracks('up')}
+                              className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer"
+                              style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                              title={`選択した${selectedTrackIds.size}曲を一括で一つ上へ移動 (UP)`}
+                            >
+                              <ChevronUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                            </button>
+
+                            <button 
+                              type="button"
+                              disabled={!canMoveSelectedDown}
+                              onClick={() => moveSelectedTracks('down')}
+                              className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer"
+                              style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                              title={`選択した${selectedTrackIds.size}曲を一括で一つ下へ移動 (DOWN)`}
+                            >
+                              <ChevronDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                            </button>
+
+                            <button 
+                              type="button"
+                              disabled={!canMoveSelectedBottom}
+                              onClick={() => moveSelectedTracks('bottom')}
+                              className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer"
+                              style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                              title={`選択した${selectedTrackIds.size}曲を一括で一番下へ移動 (BOTTOM)`}
+                            >
+                              <ChevronsDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                            </button>
+                          </div>
                         </div>
 
                         {/* Batch Clean Filename to Title tool */}
@@ -8110,7 +8365,10 @@ export default function App() {
                   className="text-left px-2.5 py-1.5 border rounded-[2px] text-[10px] tracking-wider transition-colors hover:opacity-80 flex items-center justify-between"
                   style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-bg)', color: 'var(--theme-textMain)' }}
                 >
-                  <span>UNCATEGORIZED (未分類に戻す)</span>
+                  <span className="truncate flex items-center gap-1.5">
+                    <Bookmark size={10} style={{ color: 'var(--theme-textDim)' }} strokeDasharray="2 2" />
+                    <span>UNCATEGORIZED (未分類に戻す)</span>
+                  </span>
                 </button>
                 {categories.map(cat => (
                   <button
