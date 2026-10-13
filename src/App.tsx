@@ -732,6 +732,7 @@ export default function App() {
     const handleResize = () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
+        if (typeof document !== 'undefined' && document.fullscreenElement) return;
         const w = window.outerWidth || window.innerWidth;
         const h = window.outerHeight || window.innerHeight;
         if (w > 100 && h > 100) {
@@ -841,6 +842,9 @@ export default function App() {
       set('v2_solidViewMode', viewMode).catch(() => {});
     } catch (e) {}
 
+    // Skip window.resizeTo if currently in fullscreen to prevent OS window frame restoration
+    if (typeof document !== 'undefined' && document.fullscreenElement) return;
+
     try {
       if (typeof window !== 'undefined' && window.resizeTo) {
         const target = windowSizes[viewMode] || DEFAULT_WINDOW_SIZES[viewMode];
@@ -871,10 +875,11 @@ export default function App() {
   const toggleFullscreen = async () => {
     try {
       if (!document.fullscreenElement) {
-        if (document.documentElement.requestFullscreen) {
-          await document.documentElement.requestFullscreen();
-        } else if ((document.documentElement as any).webkitRequestFullscreen) {
-          await (document.documentElement as any).webkitRequestFullscreen();
+        const el = document.documentElement;
+        if (el.requestFullscreen) {
+          await el.requestFullscreen({ navigationUI: 'hide' });
+        } else if ((el as any).webkitRequestFullscreen) {
+          await (el as any).webkitRequestFullscreen();
         }
       } else {
         if (document.exitFullscreen) {
@@ -4497,7 +4502,7 @@ export default function App() {
       )}
 
       {/* --- MAIN UI --- */}
-      <div className={`flex flex-col h-full w-full p-4 gap-6 box-border transition-opacity duration-300 ${viewMode !== 'full' ? 'opacity-0 pointer-events-none absolute' : 'opacity-100 relative'}`}>
+      <div className={`flex flex-col h-full w-full ${isFullscreen ? 'p-1.5 gap-3' : 'p-4 gap-6'} box-border transition-all duration-300 ${viewMode !== 'full' ? 'opacity-0 pointer-events-none absolute' : 'opacity-100 relative'}`}>
 
       {/* Top Header Row */}
       <header className="flex justify-between items-center px-1 relative z-50">

@@ -25,5 +25,10 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
+  ],
+  "display_override": [
+    "fullscreen",
+    "window-controls-overlay",
+    "standalone"
   ]
 }
