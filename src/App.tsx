@@ -506,7 +506,13 @@ export default function App() {
   });
   const [drillDownAlbum, setDrillDownAlbum] = useState<{ artist: string; album: string } | null>(null);
   const [focusedAlbumId, setFocusedAlbumId] = useState<string | null>(null);
-  const [expandedSidebarFolderIds, setExpandedSidebarFolderIds] = useState<Set<string>>(() => new Set());
+  const [expandedSidebarFolderIds, setExpandedSidebarFolderIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solid_expandedSidebarFolderIds');
+      if (saved) return new Set(JSON.parse(saved));
+    } catch {}
+    return new Set();
+  });
   const [sidebarDragAlbum, setSidebarDragAlbum] = useState<{ playlistId: string; albumId: string } | null>(null);
   const [sidebarDragOverAlbum, setSidebarDragOverAlbum] = useState<{ playlistId: string; albumId: string } | null>(null);
   const [catalogFilter, setCatalogFilter] = useState<string>('all');
@@ -627,7 +633,20 @@ export default function App() {
     } catch {}
     return '__ALL__';
   });
-  const [expandedCategoryNames, setExpandedCategoryNames] = useState<Set<string>>(new Set());
+  const [expandedCategoryNames, setExpandedCategoryNames] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solid_expandedCategoryNames');
+      if (saved) return new Set(JSON.parse(saved));
+    } catch {}
+    return new Set();
+  });
+  const [treeExpansionStage, setTreeExpansionStage] = useState<'collapsed' | 'cats-only' | 'full' | 'custom'>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solid_tree_expand_stage') as any;
+      if (saved === 'collapsed' || saved === 'cats-only' || saved === 'full' || saved === 'custom') return saved;
+    } catch {}
+    return 'cats-only';
+  });
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [renamingCategoryName, setRenamingCategoryName] = useState<string | null>(null);
@@ -669,6 +688,18 @@ export default function App() {
     return 520; // デフォルト高さを従来の320pxから520pxへ大幅拡張
   });
 
+  // Cascading Category Menu frosted glass opacity/blur level (0: full transparency -> 50: standard frosted -> 100: opaque)
+  const [cascadeFrostLevel, setCascadeFrostLevel] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solidCascadeFrostLevel');
+      if (saved !== null) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+      }
+    } catch {}
+    return 50; // デフォルトは中間（50%）の標準曇りガラス状態
+  });
+
   const handleCascadeGripMouseDown = (e: React.MouseEvent, target: 'cat' | 'pl' | 'album' | 'all') => {
     e.preventDefault();
     e.stopPropagation();
@@ -686,14 +717,8 @@ export default function App() {
         } else if (target === 'album') {
           updated.album = Math.max(180, Math.min(800, initialWidths.album + deltaX));
         } else if (target === 'all') {
-          const hoveredTargetPl = hoveredPlaylistInMenu ? playlists.find(p => p.id === hoveredPlaylistInMenu) : null;
-          const hasMultiple = hoveredTargetPl && hoveredTargetPl.id !== 'all-tracks' && (playlistAlbumsMap[hoveredTargetPl.id]?.length || 0) > 1;
-          if (hasMultiple) {
-            updated.pl = Math.max(180, Math.min(800, initialWidths.pl + Math.round(deltaX * 0.5)));
-            updated.album = Math.max(180, Math.min(800, initialWidths.album + Math.round(deltaX * 0.5)));
-          } else {
-            updated.pl = Math.max(180, Math.min(800, initialWidths.pl + deltaX));
-          }
+          updated.pl = Math.max(180, Math.min(800, initialWidths.pl + Math.round(deltaX * 0.5)));
+          updated.album = Math.max(180, Math.min(800, initialWidths.album + Math.round(deltaX * 0.5)));
         }
         return updated;
       });
@@ -753,14 +778,8 @@ export default function App() {
       setCascadeHeight(Math.max(240, Math.min(maxHeightAllowed, initialH + deltaY)));
       setCascadeColWidths(prev => {
         let updated = { ...prev };
-        const hoveredTargetPl = hoveredPlaylistInMenu ? playlists.find(p => p.id === hoveredPlaylistInMenu) : null;
-        const hasMultiple = hoveredTargetPl && hoveredTargetPl.id !== 'all-tracks' && (playlistAlbumsMap[hoveredTargetPl.id]?.length || 0) > 1;
-        if (hasMultiple) {
-          updated.pl = Math.max(180, Math.min(800, initialWidths.pl + Math.round(deltaX * 0.5)));
-          updated.album = Math.max(180, Math.min(800, initialWidths.album + Math.round(deltaX * 0.5)));
-        } else {
-          updated.pl = Math.max(180, Math.min(800, initialWidths.pl + deltaX));
-        }
+        updated.pl = Math.max(180, Math.min(800, initialWidths.pl + Math.round(deltaX * 0.5)));
+        updated.album = Math.max(180, Math.min(800, initialWidths.album + Math.round(deltaX * 0.5)));
         return updated;
       });
     };
@@ -1113,7 +1132,34 @@ export default function App() {
           });
           const catList = Array.from(discoveredCats);
           setCategories(catList);
-          setExpandedCategoryNames(new Set([...catList, '__UNCATEGORIZED__']));
+
+          const savedTreeStage = localStorage.getItem('v2_solid_tree_expand_stage') as any;
+          const savedCatNames = localStorage.getItem('v2_solid_expandedCategoryNames');
+          const savedFolderIds = localStorage.getItem('v2_solid_expandedSidebarFolderIds');
+
+          if (savedTreeStage === 'collapsed') {
+            setExpandedCategoryNames(new Set());
+            setExpandedSidebarFolderIds(new Set());
+          } else if (savedTreeStage === 'cats-only') {
+            setExpandedCategoryNames(new Set([...catList, '__UNCATEGORIZED__']));
+            setExpandedSidebarFolderIds(new Set());
+          } else if (savedTreeStage === 'full') {
+            setExpandedCategoryNames(new Set([...catList, '__UNCATEGORIZED__']));
+            const expFolderIds = validPlaylists
+              .filter((p: any) => p.id !== 'all-tracks' && (playlistAlbumsMap[p.id]?.length || 0) > 1)
+              .map((p: any) => p.id);
+            setExpandedSidebarFolderIds(new Set(expFolderIds));
+          } else if (savedCatNames || savedFolderIds) {
+            if (savedCatNames) {
+              try { setExpandedCategoryNames(new Set(JSON.parse(savedCatNames))); } catch {}
+            }
+            if (savedFolderIds) {
+              try { setExpandedSidebarFolderIds(new Set(JSON.parse(savedFolderIds))); } catch {}
+            }
+          } else {
+            setExpandedCategoryNames(new Set([...catList, '__UNCATEGORIZED__']));
+            setExpandedSidebarFolderIds(new Set());
+          }
 
           const savedCategoryMode = await get('v2_solidSidebarCategoryMode');
           if (savedCategoryMode === 'dropdown' || savedCategoryMode === 'tree') {
@@ -3051,6 +3097,10 @@ export default function App() {
       } else {
         next.add(catName);
       }
+      try {
+        localStorage.setItem('v2_solid_expandedCategoryNames', JSON.stringify(Array.from(next)));
+        localStorage.setItem('v2_solid_tree_expand_stage', 'custom');
+      } catch {}
       return next;
     });
   };
@@ -5320,23 +5370,47 @@ export default function App() {
                     const handleToggleCycle = () => {
                       if (isTreeMode) {
                         if (isFullOpen) {
-                          // Stage 3 -> Stage 1: Collapse everything
+                          // Stage 3 -> Stage 1: Collapse everything (カテゴリーだけの表示)
                           setExpandedCategoryNames(new Set());
                           setExpandedSidebarFolderIds(new Set());
+                          setTreeExpansionStage('collapsed');
+                          try {
+                            localStorage.setItem('v2_solid_tree_expand_stage', 'collapsed');
+                            localStorage.setItem('v2_solid_expandedCategoryNames', JSON.stringify([]));
+                            localStorage.setItem('v2_solid_expandedSidebarFolderIds', JSON.stringify([]));
+                          } catch {}
                         } else if (isFullyCollapsed) {
                           // Stage 1 -> Stage 2: Open categories only (sub-albums remain closed)
                           setExpandedCategoryNames(new Set(allTreeCatKeys));
                           setExpandedSidebarFolderIds(new Set());
+                          setTreeExpansionStage('cats-only');
+                          try {
+                            localStorage.setItem('v2_solid_tree_expand_stage', 'cats-only');
+                            localStorage.setItem('v2_solid_expandedCategoryNames', JSON.stringify(allTreeCatKeys));
+                            localStorage.setItem('v2_solid_expandedSidebarFolderIds', JSON.stringify([]));
+                          } catch {}
                         } else {
                           // Stage 2 -> Stage 3: Full open (both categories and all folders)
                           setExpandedCategoryNames(new Set(allTreeCatKeys));
                           setExpandedSidebarFolderIds(new Set(expandableFolderIds));
+                          setTreeExpansionStage('full');
+                          try {
+                            localStorage.setItem('v2_solid_tree_expand_stage', 'full');
+                            localStorage.setItem('v2_solid_expandedCategoryNames', JSON.stringify(allTreeCatKeys));
+                            localStorage.setItem('v2_solid_expandedSidebarFolderIds', JSON.stringify(expandableFolderIds));
+                          } catch {}
                         }
                       } else {
                         if (isFullOpen) {
                           setExpandedSidebarFolderIds(new Set());
+                          try {
+                            localStorage.setItem('v2_solid_expandedSidebarFolderIds', JSON.stringify([]));
+                          } catch {}
                         } else {
                           setExpandedSidebarFolderIds(new Set(expandableFolderIds));
+                          try {
+                            localStorage.setItem('v2_solid_expandedSidebarFolderIds', JSON.stringify(expandableFolderIds));
+                          } catch {}
                         }
                       }
                     };
@@ -5620,7 +5694,7 @@ export default function App() {
                         <div
                           className="absolute left-0 top-full mt-1 z-50 flex flex-col border shadow-2xl font-mono rounded-[2px] overflow-hidden"
                           style={{
-                            backgroundColor: 'var(--theme-surface)',
+                            backgroundColor: 'transparent',
                             borderColor: 'var(--theme-border)',
                             color: 'var(--theme-textMain)',
                             fontSize: `${listFontSize}px`,
@@ -5636,6 +5710,7 @@ export default function App() {
                                 minWidth: '140px',
                                 height: `${cascadeHeight}px`,
                                 maxHeight: `${cascadeHeight}px`,
+                                backgroundColor: 'var(--theme-surface)',
                                 borderColor: 'var(--theme-border)' 
                               }}
                             >
@@ -5861,93 +5936,157 @@ export default function App() {
                                     )}
                                   </div>
 
-                                  {/* Resizer Handle between Column 2 & Column 3 (Only when 3rd column is open) */}
-                                  {(() => {
-                                    const hoveredTargetPl = hoveredPlaylistInMenu ? playlists.find(p => p.id === hoveredPlaylistInMenu) : null;
-                                    const showTertiary = hoveredTargetPl && hoveredTargetPl.id !== 'all-tracks' && (playlistAlbumsMap[hoveredTargetPl.id]?.length || 0) > 1;
-                                    if (!showTertiary) return null;
-                                    return (
-                                      <div
-                                        onMouseDown={(e) => handleCascadeGripMouseDown(e, 'pl')}
-                                        className="w-1.5 hover:w-2 hover:bg-[var(--theme-accent)] transition-all cursor-col-resize shrink-0 flex items-center justify-center select-none group border-l"
-                                        style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-border)' }}
-                                        title="リスト列の横幅をドラッグで調整 (DRAG TO RESIZE)"
-                                      >
-                                        <div className="w-[1px] h-4 bg-[var(--theme-textDim)] group-hover:bg-white" />
-                                      </div>
-                                    );
-                                  })()}
+                                  {/* Resizer Handle between Column 2 & Column 3 */}
+                                  <div
+                                    onMouseDown={(e) => handleCascadeGripMouseDown(e, 'pl')}
+                                    className="w-1.5 hover:w-2 hover:bg-[var(--theme-accent)] transition-all cursor-col-resize shrink-0 flex items-center justify-center select-none group border-l"
+                                    style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-border)' }}
+                                    title="リスト列の横幅をドラッグで調整 (DRAG TO RESIZE)"
+                                  >
+                                    <div className="w-[1px] h-4 bg-[var(--theme-textDim)] group-hover:bg-white" />
+                                  </div>
                                 </>
                               );
                             })()}
 
-                            {/* Tertiary Cascading Column: Direct Sub-folders / Albums in Hovered Playlist */}
-                            {hoveredPlaylistInMenu && (() => {
-                              const targetPl = playlists.find(p => p.id === hoveredPlaylistInMenu);
-                              if (!targetPl) return null;
-                              const subAlbums = targetPl.id !== 'all-tracks' ? (playlistAlbumsMap[targetPl.id] || []) : [];
-                              // Only display tertiary column if there are multiple sub-albums/folders (e.g. YMO with 3 albums)
-                              if (subAlbums.length <= 1) return null;
+                            {/* Tertiary Cascading Column: Direct Sub-folders / Albums in Hovered Playlist (Always rendered; frosted glass when empty) */}
+                            {(() => {
+                              const targetPl = hoveredPlaylistInMenu ? playlists.find(p => p.id === hoveredPlaylistInMenu) : null;
+                              const subAlbums = (targetPl && targetPl.id !== 'all-tracks') ? (playlistAlbumsMap[targetPl.id] || []) : [];
+                              const hasMultiple = subAlbums.length > 1;
+
+                              if (hasMultiple && targetPl) {
+                                return (
+                                  <div 
+                                    className="border-l py-1 flex flex-col overflow-y-auto shrink-0 shadow-xl" 
+                                    style={{ 
+                                      width: `${cascadeColWidths.album}px`, 
+                                      minWidth: '180px',
+                                      height: `${cascadeHeight}px`,
+                                      maxHeight: `${cascadeHeight}px`,
+                                      borderColor: 'var(--theme-border)', 
+                                      backgroundColor: 'var(--theme-surface)' 
+                                    }}
+                                  >
+                                    <div className="px-2.5 py-1 uppercase tracking-wider font-semibold border-b flex justify-between items-center shrink-0" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', fontSize: `${Math.max(9, listFontSize - 2)}px` }}>
+                                      <span className="truncate flex items-center gap-1.5" title={targetPl.name}>
+                                        <Folder size={listFontSize >= 13 ? 11 : 9.5} className="shrink-0 opacity-60" style={{ color: 'var(--theme-textDim)' }} />
+                                        <span className="truncate opacity-80">{targetPl.name}</span>
+                                      </span>
+                                      <span className="font-mono opacity-70 shrink-0 text-[8.5px] px-1 border rounded-[2px]" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)' }}>
+                                        {subAlbums.length} ALBUMS
+                                      </span>
+                                    </div>
+
+                                    {subAlbums.map((group, idx) => {
+                                      const isCurrentAlbumSelected = (focusedAlbumId && (focusedAlbumId === group.id || focusedAlbumId.toLowerCase() === group.album.toLowerCase())) ||
+                                        (drillDownAlbum && drillDownAlbum.album.toLowerCase() === group.album.toLowerCase());
+
+                                      return (
+                                        <button
+                                          key={group.id || idx}
+                                          type="button"
+                                          onClick={() => {
+                                            setActivePlaylistId(targetPl.id);
+                                            setFocusedAlbumId(group.id || group.album);
+                                            setDrillDownAlbum(null);
+                                            if (hoveredCategoryInMenu && hoveredCategoryInMenu !== '__ALL__') {
+                                              setSelectedCategoryFilter(hoveredCategoryInMenu);
+                                              try { localStorage.setItem('v2_solidSelectedCategoryFilter', hoveredCategoryInMenu); } catch {}
+                                            }
+                                            setIsCategoryCascadeMenuOpen(false);
+                                          }}
+                                          className="text-left px-2.5 py-1.5 flex items-center justify-between hover:opacity-80 transition-colors border-b last:border-b-0 cursor-pointer focus:outline-none"
+                                          style={{
+                                            borderColor: 'var(--theme-list-border)',
+                                            backgroundColor: isCurrentAlbumSelected ? 'var(--theme-accentMuted)' : 'transparent',
+                                            color: isCurrentAlbumSelected ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+                                            fontSize: `${listFontSize}px`
+                                          }}
+                                          title={`アルバム選択: ${group.album} (${group.tracks.length}曲)`}
+                                        >
+                                          <span className="truncate flex items-center gap-1.5 flex-1 pr-1 font-medium">
+                                            <ListMusic size={listFontSize >= 13 ? 12 : 10.5} className="shrink-0" style={{ color: isCurrentAlbumSelected ? 'var(--theme-accent)' : 'var(--theme-list-textDim)' }} />
+                                            <span className="truncate">{group.album}</span>
+                                          </span>
+                                          <span className="font-mono shrink-0 opacity-70" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>
+                                            {group.tracks.length}曲
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              }
+
+                              // Frosted Glass Empty Panel (曇りガラス表示: 枠は維持し、中身はスライダーで透明度・曇り度を調整可能)
+                              // 0〜50: 0%〜35% に推移, 50〜100: 35%〜100% に推移
+                              const frostSurfacePercent = cascadeFrostLevel <= 50
+                                ? Math.round((cascadeFrostLevel / 50) * 35)
+                                : Math.round(35 + ((cascadeFrostLevel - 50) / 50) * 65);
+
+                              // blur: 0%のとき0px, 50%のとき16px, 100%のとき24px
+                              const frostBlurPx = cascadeFrostLevel <= 50
+                                ? Math.round((cascadeFrostLevel / 50) * 16)
+                                : Math.round(16 + ((cascadeFrostLevel - 50) / 50) * 8);
+
+                              const frostedFgColor = isLightTheme ? '#1e293b' : '#ffffff';
+                              const frostedSubColor = isLightTheme ? '#475569' : 'rgba(255, 255, 255, 0.75)';
+                              const frostedBorderColor = isLightTheme ? 'rgba(30, 41, 59, 0.6)' : 'rgba(255, 255, 255, 0.85)';
+                              const frostedBgHighlight = isLightTheme ? 'rgba(30, 41, 59, 0.08)' : 'rgba(255, 255, 255, 0.12)';
 
                               return (
                                 <div 
-                                  className="border-l py-1 flex flex-col overflow-y-auto shrink-0 shadow-xl" 
+                                  className="border-l py-1 flex flex-col shrink-0 select-none transition-all relative overflow-hidden" 
                                   style={{ 
                                     width: `${cascadeColWidths.album}px`, 
                                     minWidth: '180px',
                                     height: `${cascadeHeight}px`,
                                     maxHeight: `${cascadeHeight}px`,
                                     borderColor: 'var(--theme-border)', 
-                                    backgroundColor: 'var(--theme-surface)' 
+                                    backgroundColor: frostSurfacePercent === 100 
+                                      ? 'var(--theme-surface)' 
+                                      : (frostSurfacePercent === 0 ? 'transparent' : `color-mix(in srgb, var(--theme-surface) ${frostSurfacePercent}%, transparent)`),
+                                    backdropFilter: frostBlurPx > 0 ? `blur(${frostBlurPx}px)` : 'none',
+                                    WebkitBackdropFilter: frostBlurPx > 0 ? `blur(${frostBlurPx}px)` : 'none'
                                   }}
                                 >
-                                  <div className="px-2.5 py-1 uppercase tracking-wider font-semibold border-b flex justify-between items-center" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', fontSize: `${Math.max(9, listFontSize - 2)}px` }}>
-                                    <span className="truncate font-bold text-ellipsis flex items-center gap-1.5" title={targetPl.name}>
-                                      <Folder size={listFontSize >= 13 ? 11 : 9.5} className="shrink-0" style={{ color: 'var(--theme-accent)' }} />
-                                      <span className="truncate">{targetPl.name}</span>
+                                  {/* Subdued header matching Column 1 (CATEGORIES) and Column 2 (ALL PLAYLISTS) */}
+                                  <div className="px-2.5 py-1 uppercase tracking-wider font-semibold border-b flex justify-between items-center shrink-0" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', fontSize: `${Math.max(9, listFontSize - 2)}px` }}>
+                                    <span className="truncate flex items-center gap-1.5" title={targetPl ? targetPl.name : 'SUB-ALBUMS'}>
+                                      <Folder size={listFontSize >= 13 ? 11 : 9.5} className="shrink-0 opacity-60" style={{ color: 'var(--theme-textDim)' }} />
+                                      <span className="truncate opacity-80">{targetPl ? targetPl.name : 'SUB-ALBUMS'}</span>
                                     </span>
-                                    <span className="font-mono opacity-70 shrink-0 text-[8.5px] px-1 border rounded-[2px]" style={{ borderColor: 'var(--theme-borderActive)' }}>
-                                      {subAlbums.length} ALBUMS
+                                    <span className="font-mono opacity-60 text-[8px] px-1 border rounded-[2px]" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)' }}>
+                                      {targetPl ? (targetPl.tracks.length > 0 ? '1 ALBUM' : 'EMPTY') : '—'}
                                     </span>
                                   </div>
 
-                                  {subAlbums.map((group, idx) => {
-                                    const isCurrentAlbumSelected = (focusedAlbumId && (focusedAlbumId === group.id || focusedAlbumId.toLowerCase() === group.album.toLowerCase())) ||
-                                      (drillDownAlbum && drillDownAlbum.album.toLowerCase() === group.album.toLowerCase());
-
-                                    return (
-                                      <button
-                                        key={group.id || idx}
-                                        type="button"
-                                        onClick={() => {
-                                          setActivePlaylistId(targetPl.id);
-                                          setFocusedAlbumId(group.id || group.album);
-                                          setDrillDownAlbum(null);
-                                          if (hoveredCategoryInMenu && hoveredCategoryInMenu !== '__ALL__') {
-                                            setSelectedCategoryFilter(hoveredCategoryInMenu);
-                                            try { localStorage.setItem('v2_solidSelectedCategoryFilter', hoveredCategoryInMenu); } catch {}
-                                          }
-                                          setIsCategoryCascadeMenuOpen(false);
-                                        }}
-                                        className="text-left px-2.5 py-1.5 flex items-center justify-between hover:opacity-80 transition-colors border-b last:border-b-0 cursor-pointer focus:outline-none"
-                                        style={{
-                                          borderColor: 'var(--theme-list-border)',
-                                          backgroundColor: isCurrentAlbumSelected ? 'var(--theme-accentMuted)' : 'transparent',
-                                          color: isCurrentAlbumSelected ? 'var(--theme-accent)' : 'var(--theme-textMain)',
-                                          fontSize: `${listFontSize}px`
-                                        }}
-                                        title={`アルバム選択: ${group.album} (${group.tracks.length}曲)`}
-                                      >
-                                        <span className="truncate flex items-center gap-1.5 flex-1 pr-1 font-medium">
-                                          <ListMusic size={listFontSize >= 13 ? 12 : 10.5} className="shrink-0" style={{ color: isCurrentAlbumSelected ? 'var(--theme-accent)' : 'var(--theme-list-textDim)' }} />
-                                          <span className="truncate">{group.album}</span>
-                                        </span>
-                                        <span className="font-mono shrink-0 opacity-70" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>
-                                          {group.tracks.length}曲
-                                        </span>
-                                      </button>
-                                    );
-                                  })}
+                                  {/* Frosted Glass Body */}
+                                  <div className="flex-1 flex flex-col items-center justify-center p-4 text-center">
+                                    <div 
+                                      className="w-10 h-10 rounded-full border-[1.5px] flex items-center justify-center mb-2.5 shadow-sm transition-colors" 
+                                      style={{ 
+                                        borderColor: frostedBorderColor, 
+                                        backgroundColor: frostedBgHighlight,
+                                        color: frostedFgColor 
+                                      }}
+                                    >
+                                      <Folder size={15} style={{ color: frostedFgColor }} strokeWidth={2} />
+                                    </div>
+                                    <span 
+                                      className="text-[9.5px] font-mono tracking-widest uppercase font-semibold" 
+                                      style={{ color: frostedFgColor }}
+                                    >
+                                      {targetPl ? 'NO SUB-CATEGORIES' : 'SELECT PLAYLIST'}
+                                    </span>
+                                    <span 
+                                      className="text-[8px] font-mono mt-1 font-medium tracking-wide" 
+                                      style={{ color: frostedSubColor }}
+                                    >
+                                      {targetPl ? '(SINGLE ALBUM)' : '(HOVER TO PREVIEW)'}
+                                    </span>
+                                  </div>
                                 </div>
                               );
                             })()}
@@ -5968,22 +6107,44 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* Industrial Footer with width & height controls & tactile grip indicator */}
+                          {/* Industrial Footer with width & height controls, frosted glass slider, & tactile grip indicator */}
                           <div 
-                            className="border-t px-2 py-1 flex items-center justify-between text-[8px] font-mono shrink-0 select-none" 
+                            className="border-t px-2 py-1 flex items-center justify-between text-[8px] font-mono shrink-0 select-none gap-2" 
                             style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-listHeader-textMuted)' }}
                           >
-                            <div className="flex items-center gap-1.5">
-                              <GripVertical size={10} style={{ color: 'var(--theme-accent)' }} />
-                              {(() => {
-                                const hoveredTargetPl = hoveredPlaylistInMenu ? playlists.find(p => p.id === hoveredPlaylistInMenu) : null;
-                                const showTertiary = hoveredTargetPl && hoveredTargetPl.id !== 'all-tracks' && (playlistAlbumsMap[hoveredTargetPl.id]?.length || 0) > 1;
-                                return (
-                                  <span>WIDTH: CAT {cascadeColWidths.cat}px • LIST {cascadeColWidths.pl}px{showTertiary ? ` • ALBUM ${cascadeColWidths.album}px` : ''} • H: {cascadeHeight}px</span>
-                                );
-                              })()}
+                            <div className="flex items-center gap-1.5 truncate">
+                              <GripVertical size={10} style={{ color: 'var(--theme-accent)' }} className="shrink-0" />
+                              <span className="truncate">W: CAT {cascadeColWidths.cat} • LIST {cascadeColWidths.pl} • ALB {cascadeColWidths.album} • H: {cascadeHeight}px</span>
                             </div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 shrink-0">
+                              {/* Frosted Glass / Transparency adjustment slider */}
+                              <div 
+                                className="flex items-center gap-1.5 px-2 py-0.5 border rounded-[1px]" 
+                                style={{ borderColor: 'var(--theme-listHeader-border)', backgroundColor: 'var(--theme-surface)' }}
+                                title="第3列（空枠）の曇りガラス・透明度を調整 (0%: 完全透明 〜 50%: 標準曇り 〜 100%: 不透明)"
+                              >
+                                <span className="opacity-70 text-[7.5px] font-mono tracking-wider">FROST:</span>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="100"
+                                  step="5"
+                                  value={cascadeFrostLevel}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    setCascadeFrostLevel(val);
+                                    try { localStorage.setItem('v2_solidCascadeFrostLevel', val.toString()); } catch {}
+                                  }}
+                                  className="w-14 h-1 cursor-pointer accent-[var(--theme-accent)]"
+                                  style={{ accentColor: 'var(--theme-accent)' }}
+                                />
+                                <span className="w-5 text-right font-mono text-[7.5px] font-bold" style={{ color: 'var(--theme-accent)' }}>
+                                  {cascadeFrostLevel}%
+                                </span>
+                              </div>
+
+                              <span className="opacity-30 mx-0.5">|</span>
+
                               {/* Width controls */}
                               <button
                                 type="button"
@@ -6060,10 +6221,12 @@ export default function App() {
                                   try { localStorage.setItem('v2_solidCascadeColWidths', JSON.stringify(nextW)); } catch {}
                                   setCascadeHeight(520);
                                   try { localStorage.setItem('v2_solidCascadeHeight', '520'); } catch {}
+                                  setCascadeFrostLevel(50);
+                                  try { localStorage.setItem('v2_solidCascadeFrostLevel', '50'); } catch {}
                                 }}
                                 className="px-1 py-0.5 border rounded-[1px] hover:opacity-80 active:scale-95 ml-0.5"
                                 style={{ borderColor: 'var(--theme-listHeader-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-listHeader-textMuted)' }}
-                                title="標準サイズ（幅・高さ）にリセット (RESET)"
+                                title="標準サイズ（幅・高さ）および曇り度をリセット (RESET)"
                               >
                                 RESET
                               </button>
@@ -6172,8 +6335,18 @@ export default function App() {
                         const allCats = new Set([...categories, '__UNCATEGORIZED__']);
                         if (expandedCategoryNames.size >= allCats.size) {
                           setExpandedCategoryNames(new Set());
+                          setTreeExpansionStage('collapsed');
+                          try {
+                            localStorage.setItem('v2_solid_tree_expand_stage', 'collapsed');
+                            localStorage.setItem('v2_solid_expandedCategoryNames', JSON.stringify([]));
+                          } catch {}
                         } else {
                           setExpandedCategoryNames(allCats);
+                          setTreeExpansionStage('cats-only');
+                          try {
+                            localStorage.setItem('v2_solid_tree_expand_stage', 'cats-only');
+                            localStorage.setItem('v2_solid_expandedCategoryNames', JSON.stringify(Array.from(allCats)));
+                          } catch {}
                         }
                       }}
                       className="px-1.5 h-5 text-[8.5px] font-mono border rounded-[2px] hover:opacity-80 transition-colors flex items-center justify-center"
@@ -6342,6 +6515,10 @@ export default function App() {
                             const next = new Set(prev);
                             if (next.has(pl.id)) next.delete(pl.id);
                             else next.add(pl.id);
+                            try {
+                              localStorage.setItem('v2_solid_expandedSidebarFolderIds', JSON.stringify(Array.from(next)));
+                              localStorage.setItem('v2_solid_tree_expand_stage', 'custom');
+                            } catch {}
                             return next;
                           });
                         }}
