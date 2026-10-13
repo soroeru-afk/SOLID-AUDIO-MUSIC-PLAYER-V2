@@ -213,12 +213,6 @@ const THEMES = [
   }
 ];
 
-const DEFAULT_WINDOW_SIZES: Record<'full' | 'mini' | 'slim', { width: number; height: number }> = {
-  full: { width: 1700, height: 1200 },
-  mini: { width: 500, height: 720 },
-  slim: { width: 720, height: 160 }
-};
-
 export const FONT_OPTIONS = [
   { 
     id: 'GOTHIC', 
@@ -241,6 +235,12 @@ export const FONT_OPTIONS = [
     fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, monospace" 
   },
 ] as const;
+
+const DEFAULT_WINDOW_SIZES: Record<'full' | 'mini' | 'slim', { width: number; height: number }> = {
+  full: { width: 1700, height: 1200 },
+  mini: { width: 500, height: 720 },
+  slim: { width: 720, height: 160 }
+};
 
 // --- Utils ---
 const formatTime = (seconds: number) => {
@@ -641,24 +641,68 @@ export default function App() {
   const [hoveredPlaylistInMenu, setHoveredPlaylistInMenu] = useState<string | null>(null);
   const categoryCascadeMenuRef = useRef<HTMLDivElement>(null);
 
-  // Duplicates & Mini Mode State
-  const [duplicateGroups, setDuplicateGroups] = useState<Track[][]>([]);
-  const [showDuplicatesModal, setShowDuplicatesModal] = useState(false);
-  const [windowSizes, setWindowSizes] = useState<Record<'full' | 'mini' | 'slim', { width: number; height: number }>>(() => {
+  // Cascading Category Menu column widths with hand-grip resizing support
+  const [cascadeColWidths, setCascadeColWidths] = useState<{ cat: number; pl: number; album: number }>(() => {
     try {
-      const saved = localStorage.getItem('v2_solidWindowSizes');
+      const saved = localStorage.getItem('v2_solidCascadeColWidths');
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
-          full: parsed.full && parsed.full.width ? parsed.full : DEFAULT_WINDOW_SIZES.full,
-          mini: parsed.mini && parsed.mini.width ? parsed.mini : DEFAULT_WINDOW_SIZES.mini,
-          slim: parsed.slim && parsed.slim.width ? parsed.slim : DEFAULT_WINDOW_SIZES.slim
+          cat: typeof parsed.cat === 'number' ? parsed.cat : 192,
+          pl: typeof parsed.pl === 'number' ? parsed.pl : 280,
+          album: typeof parsed.album === 'number' ? parsed.album : 280,
         };
       }
-    } catch (e) {}
-    return DEFAULT_WINDOW_SIZES;
+    } catch {}
+    return { cat: 192, pl: 280, album: 280 };
   });
 
+  const handleCascadeGripMouseDown = (e: React.MouseEvent, target: 'cat' | 'pl' | 'album' | 'all') => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const initialWidths = { ...cascadeColWidths };
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const deltaX = ev.clientX - startX;
+      setCascadeColWidths(prev => {
+        let updated = { ...prev };
+        if (target === 'cat') {
+          updated.cat = Math.max(140, Math.min(500, initialWidths.cat + deltaX));
+        } else if (target === 'pl') {
+          updated.pl = Math.max(180, Math.min(800, initialWidths.pl + deltaX));
+        } else if (target === 'album') {
+          updated.album = Math.max(180, Math.min(800, initialWidths.album + deltaX));
+        } else if (target === 'all') {
+          const hoveredTargetPl = hoveredPlaylistInMenu ? playlists.find(p => p.id === hoveredPlaylistInMenu) : null;
+          const hasMultiple = hoveredTargetPl && hoveredTargetPl.id !== 'all-tracks' && (playlistAlbumsMap[hoveredTargetPl.id]?.length || 0) > 1;
+          if (hasMultiple) {
+            updated.pl = Math.max(180, Math.min(800, initialWidths.pl + Math.round(deltaX * 0.5)));
+            updated.album = Math.max(180, Math.min(800, initialWidths.album + Math.round(deltaX * 0.5)));
+          } else {
+            updated.pl = Math.max(180, Math.min(800, initialWidths.pl + deltaX));
+          }
+        }
+        return updated;
+      });
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      setCascadeColWidths(latest => {
+        try { localStorage.setItem('v2_solidCascadeColWidths', JSON.stringify(latest)); } catch {}
+        return latest;
+      });
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  // Duplicates & Mini Mode State
+  const [duplicateGroups, setDuplicateGroups] = useState<Track[][]>([]);
+  const [showDuplicatesModal, setShowDuplicatesModal] = useState(false);
   const [viewMode, setViewMode] = useState<'full' | 'mini' | 'slim'>(() => {
     try {
       const saved = localStorage.getItem('v2_solidViewMode');
@@ -667,46 +711,40 @@ export default function App() {
     return 'full';
   });
 
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
-
-  const playerRef = useRef<HTMLDivElement>(null);
-
-  // Resize window according to current viewMode
-  useEffect(() => {
+  const [windowSizes, setWindowSizes] = useState<Record<'full' | 'mini' | 'slim', { width: number; height: number }>>(() => {
     try {
-      localStorage.setItem('v2_solidViewMode', viewMode);
-      set('v2_solidViewMode', viewMode).catch(() => {});
-    } catch (e) {}
-
-    const targetSize = windowSizes[viewMode];
-    if (targetSize && window.outerWidth && window.outerHeight) {
-      if (window.outerWidth !== targetSize.width || window.outerHeight !== targetSize.height) {
-        try {
-          window.resizeTo(targetSize.width, targetSize.height);
-        } catch (e) {
-          console.warn('Window resizing failed (likely restricted by browser):', e);
-        }
+      const saved = localStorage.getItem('v2_solidWindowSizes');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          full: parsed.full && parsed.full.width ? parsed.full : DEFAULT_WINDOW_SIZES.full,
+          mini: parsed.mini && parsed.mini.width ? parsed.mini : DEFAULT_WINDOW_SIZES.mini,
+          slim: parsed.slim && parsed.slim.width ? parsed.slim : DEFAULT_WINDOW_SIZES.slim,
+        };
       }
-    }
-  }, [viewMode, windowSizes]);
+    } catch (e) {}
+    return DEFAULT_WINDOW_SIZES;
+  });
 
-  // Track window resizing manually by user and persist per viewMode
+  // Track window resizing and persist custom dimensions per viewMode
   useEffect(() => {
     let resizeTimer: any;
     const handleResize = () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        if (window.outerWidth && window.outerHeight) {
+        const w = window.outerWidth || window.innerWidth;
+        const h = window.outerHeight || window.innerHeight;
+        if (w > 100 && h > 100) {
           setWindowSizes(prev => {
-            const next = {
+            const updated = {
               ...prev,
-              [viewMode]: { width: window.outerWidth, height: window.outerHeight }
+              [viewMode]: { width: w, height: h }
             };
             try {
-              localStorage.setItem('v2_solidWindowSizes', JSON.stringify(next));
-              set('v2_solidWindowSizes', next).catch(() => {});
+              localStorage.setItem('v2_solidWindowSizes', JSON.stringify(updated));
+              set('v2_solidWindowSizes', updated).catch(() => {});
             } catch (e) {}
-            return next;
+            return updated;
           });
         }
       }, 300);
@@ -718,6 +756,10 @@ export default function App() {
       clearTimeout(resizeTimer);
     };
   }, [viewMode]);
+
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  const playerRef = useRef<HTMLDivElement>(null);
 
   // Dragging State for Mini/Slim modes
   const [playerOffset, setPlayerOffset] = useState({ x: 0, y: 0 });
@@ -792,6 +834,25 @@ export default function App() {
     setPlayerOffset({ x: 0, y: 0 });
   }, [viewMode]);
 
+  // Resize window according to current viewMode
+  useEffect(() => {
+    try {
+      localStorage.setItem('v2_solidViewMode', viewMode);
+      set('v2_solidViewMode', viewMode).catch(() => {});
+    } catch (e) {}
+
+    try {
+      if (typeof window !== 'undefined' && window.resizeTo) {
+        const target = windowSizes[viewMode] || DEFAULT_WINDOW_SIZES[viewMode];
+        if (target && target.width && target.height) {
+          window.resizeTo(target.width, target.height);
+        }
+      }
+    } catch (e) {
+      console.warn("window.resizeTo is restricted by browser context", e);
+    }
+  }, [viewMode, windowSizes]);
+
   // Load from IndexedDB
   useEffect(() => {
     const loadState = async () => {
@@ -813,6 +874,15 @@ export default function App() {
         const savedEqLow = await get('v2_solidEqLow');
         const savedEqMid = await get('v2_solidEqMid');
         const savedEqHigh = await get('v2_solidEqHigh');
+        const savedWindowSizes = await get('v2_solidWindowSizes');
+        
+        if (savedWindowSizes && typeof savedWindowSizes === 'object') {
+          setWindowSizes(prev => ({
+            full: savedWindowSizes.full && savedWindowSizes.full.width ? savedWindowSizes.full : prev.full,
+            mini: savedWindowSizes.mini && savedWindowSizes.mini.width ? savedWindowSizes.mini : prev.mini,
+            slim: savedWindowSizes.slim && savedWindowSizes.slim.width ? savedWindowSizes.slim : prev.slim,
+          }));
+        }
         
         if (savedVolume !== undefined && !isNaN(savedVolume) && savedVolume >= 0 && savedVolume <= 1) setVolume(savedVolume);
         if (savedIsMuted !== undefined) setIsMuted(!!savedIsMuted);
@@ -848,16 +918,6 @@ export default function App() {
         const savedFontFamily = await get('v2_solidFontFamily');
         if (savedFontFamily && FONT_OPTIONS.some(f => f.id === savedFontFamily)) {
           setFontFamilyId(savedFontFamily);
-        }
-
-        const savedWindowSizes = await get('v2_solidWindowSizes');
-
-        if (savedWindowSizes && typeof savedWindowSizes === 'object') {
-          setWindowSizes(prev => ({
-            full: savedWindowSizes.full && savedWindowSizes.full.width ? savedWindowSizes.full : prev.full,
-            mini: savedWindowSizes.mini && savedWindowSizes.mini.width ? savedWindowSizes.mini : prev.mini,
-            slim: savedWindowSizes.slim && savedWindowSizes.slim.width ? savedWindowSizes.slim : prev.slim,
-          }));
         }
         
         if (savedLibrary && savedPlaylists) {
@@ -1371,6 +1431,50 @@ export default function App() {
 
     return Array.from(map.values());
   }, [albumGroups]);
+
+  // When drillDownAlbum is selected (e.g. from sidebar TREE sub-album), filter to that album so ALBUM / CARDS / LIST displays only that album
+  const displayedAlbumGroups = useMemo<AlbumGroup[]>(() => {
+    if (drillDownAlbum) {
+      const filtered = albumGroups.filter(a => {
+        if (activePlaylistId !== 'all-tracks') {
+          return a.album.toLowerCase() === drillDownAlbum.album.toLowerCase();
+        }
+        return a.album.toLowerCase() === drillDownAlbum.album.toLowerCase() &&
+               a.artist.toLowerCase() === drillDownAlbum.artist.toLowerCase();
+      });
+      if (filtered.length > 0) return filtered;
+    }
+    return albumGroups;
+  }, [albumGroups, drillDownAlbum, activePlaylistId]);
+
+  const displayedArtistGroups = useMemo<ArtistGroup[]>(() => {
+    if (drillDownAlbum) {
+      const map = new Map<string, ArtistGroup>();
+      for (const album of displayedAlbumGroups) {
+        const cleanArtist = (album.artist || 'Unknown Artist').trim();
+        const key = cleanArtist.toLowerCase();
+        let artist = map.get(key);
+        if (!artist) {
+          artist = {
+            artist: cleanArtist,
+            albums: [],
+            totalTracks: 0,
+            totalDuration: 0,
+            coverUrl: album.coverUrl,
+          };
+          map.set(key, artist);
+        }
+        artist.albums.push(album);
+        artist.totalTracks += album.tracks.length;
+        artist.totalDuration += album.totalDuration;
+        if (!artist.coverUrl && album.coverUrl) {
+          artist.coverUrl = album.coverUrl;
+        }
+      }
+      return Array.from(map.values());
+    }
+    return artistGroups;
+  }, [artistGroups, displayedAlbumGroups, drillDownAlbum]);
 
   // Catalog tracks: when catalogFilter === 'all', takes all tracks across the entire library!
   const catalogTracks = useMemo(() => {
@@ -2435,8 +2539,10 @@ export default function App() {
           const firstSelected = currentList.findIndex(t => selectedTrackIds.has(t.id));
           if (firstSelected !== -1) {
             anchorIndex = firstSelected;
+            lastSelectedTrackIdRef.current = currentList[firstSelected]?.id || null;
           } else {
             anchorIndex = currentIndex !== -1 ? currentIndex : 0;
+            lastSelectedTrackIdRef.current = currentList[anchorIndex]?.id || trackId;
           }
         }
 
@@ -2453,7 +2559,9 @@ export default function App() {
             }
           }
           setSelectedTrackIds(rangeIds);
-          // Keep anchor so subsequent Shift-clicks adjust from original anchor
+          if (!lastSelectedTrackIdRef.current) {
+            lastSelectedTrackIdRef.current = currentList[anchorIndex]?.id || trackId;
+          }
           return;
         }
       }
@@ -2477,6 +2585,11 @@ export default function App() {
       });
       lastSelectedTrackIdRef.current = trackId;
   };
+
+  useEffect(() => {
+    setSelectedTrackIds(new Set());
+    lastSelectedTrackIdRef.current = null;
+  }, [activePlaylistId]);
 
   const handleSort = (key: 'title' | 'artist' | 'album' | 'fileName' | 'trackNumber') => {
     setSortConfig(prev => {
@@ -3050,6 +3163,27 @@ export default function App() {
     }
   };
 
+  const currentRenderList = drillDownAlbum ? drillDownTracks : displayTracks;
+  const canMoveSelectedTop = useMemo(() => {
+    if (selectedTrackIds.size === 0) return false;
+    return !currentRenderList.slice(0, selectedTrackIds.size).every(t => selectedTrackIds.has(t.id));
+  }, [currentRenderList, selectedTrackIds]);
+
+  const canMoveSelectedBottom = useMemo(() => {
+    if (selectedTrackIds.size === 0) return false;
+    return !currentRenderList.slice(currentRenderList.length - selectedTrackIds.size).every(t => selectedTrackIds.has(t.id));
+  }, [currentRenderList, selectedTrackIds]);
+
+  const canMoveSelectedUp = useMemo(() => {
+    if (selectedTrackIds.size === 0) return false;
+    return currentRenderList.some((t, i) => i > 0 && selectedTrackIds.has(t.id) && !selectedTrackIds.has(currentRenderList[i - 1].id));
+  }, [currentRenderList, selectedTrackIds]);
+
+  const canMoveSelectedDown = useMemo(() => {
+    if (selectedTrackIds.size === 0) return false;
+    return currentRenderList.some((t, i) => i < currentRenderList.length - 1 && selectedTrackIds.has(t.id) && !selectedTrackIds.has(currentRenderList[i + 1].id));
+  }, [currentRenderList, selectedTrackIds]);
+
   // Move multiple selected tracks together: Top, Up, Down, Bottom (Supports both full playlist and drillDownAlbum)
   const moveSelectedTracks = (direction: 'top' | 'up' | 'down' | 'bottom') => {
     if (selectedTrackIds.size === 0) return;
@@ -3117,15 +3251,23 @@ export default function App() {
     }
 
     if (activePlaylistId === 'all-tracks') {
-      setLibrary(prev => applyDirection(prev));
-    }
-
-    setPlaylists(prev => {
-      return prev.map(p => {
-        if (p.id !== activePlaylistId) return p;
-        return { ...p, tracks: applyDirection(p.tracks) };
+      const reordered = applyDirection(displayTracks);
+      setLibrary(reordered);
+      setPlaylists(prev => prev.map(p => {
+        if (p.id !== 'all-tracks') return p;
+        return { ...p, tracks: reordered };
+      }));
+    } else {
+      const reordered = applyDirection(displayTracks);
+      setPlaylists(prev => {
+        return prev.map(p => {
+          if (p.id !== activePlaylistId) return p;
+          const reorderedIdSet = new Set(reordered.map(t => t.id));
+          const remaining = p.tracks.filter(t => !reorderedIdSet.has(t.id));
+          return { ...p, tracks: [...reordered, ...remaining] };
+        });
       });
-    });
+    }
 
     if (activePlaylistId === playingPlaylistId) {
       setPlaybackQueue(prevQueue => {
@@ -3965,70 +4107,85 @@ export default function App() {
                   </button>
                 </>
               )}
-            <button 
-              onClick={(e) => {
-                if (selectedTrackIds.size > 1 && selectedTrackIds.has(track.id)) {
-                  e.stopPropagation();
-                  moveSelectedTracks('top');
-                } else {
-                  moveTrack(e, idx, 0);
-                }
-              }} 
-              title={selectedTrackIds.size > 1 && selectedTrackIds.has(track.id) ? `選択した${selectedTrackIds.size}曲を先頭へ移動` : (activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '先頭へ移動')} 
-              className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
-              disabled={idx === 0 || activeSortConfig.key !== 'none'} 
-              style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
-            >
-              <ChevronsUp size={10} />
-            </button>
-            <button 
-              onClick={(e) => {
-                if (selectedTrackIds.size > 1 && selectedTrackIds.has(track.id)) {
-                  e.stopPropagation();
-                  moveSelectedTracks('up');
-                } else {
-                  moveTrack(e, idx, idx - 1);
-                }
-              }} 
-              title={selectedTrackIds.size > 1 && selectedTrackIds.has(track.id) ? `選択した${selectedTrackIds.size}曲を一つ上へ移動` : (activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '一つ上へ移動')} 
-              className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
-              disabled={idx === 0 || activeSortConfig.key !== 'none'} 
-              style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
-            >
-              <ChevronUp size={10} />
-            </button>
-            <button 
-              onClick={(e) => {
-                if (selectedTrackIds.size > 1 && selectedTrackIds.has(track.id)) {
-                  e.stopPropagation();
-                  moveSelectedTracks('down');
-                } else {
-                  moveTrack(e, idx, idx + 1);
-                }
-              }} 
-              title={selectedTrackIds.size > 1 && selectedTrackIds.has(track.id) ? `選択した${selectedTrackIds.size}曲を一つ下へ移動` : (activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '一つ下へ移動')} 
-              className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
-              disabled={idx === tracksToRender.length - 1 || activeSortConfig.key !== 'none'} 
-              style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
-            >
-              <ChevronDown size={10} />
-            </button>
-            <button 
-              onClick={(e) => {
-                if (selectedTrackIds.size > 1 && selectedTrackIds.has(track.id)) {
-                  e.stopPropagation();
-                  moveSelectedTracks('bottom');
-                } else {
-                  moveTrack(e, idx, tracksToRender.length - 1);
-                }
-              }} 
-              title={selectedTrackIds.size > 1 && selectedTrackIds.has(track.id) ? `選択した${selectedTrackIds.size}曲を末尾へ移動` : (activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '末尾へ移動')} 
-              className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
-              disabled={idx === tracksToRender.length - 1 || activeSortConfig.key !== 'none'} 
-              style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
-            >
-              <ChevronsDown size={10} />
-            </button>
+            {(() => {
+              const isSelected = selectedTrackIds.has(track.id);
+              const hasMultipleSelected = selectedTrackIds.size > 1;
+              const isBatchRow = hasMultipleSelected && isSelected;
+
+              const isTopBtnDisabled = isBatchRow ? !canMoveSelectedTop : idx === 0;
+              const isUpBtnDisabled = isBatchRow ? !canMoveSelectedUp : idx === 0;
+              const isDownBtnDisabled = isBatchRow ? !canMoveSelectedDown : idx === tracksToRender.length - 1;
+              const isBottomBtnDisabled = isBatchRow ? !canMoveSelectedBottom : idx === tracksToRender.length - 1;
+
+              return (
+                <>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isBatchRow) {
+                        moveSelectedTracks('top');
+                      } else {
+                        moveTrack(e, idx, 0);
+                      }
+                    }} 
+                    title={isBatchRow ? `選択した${selectedTrackIds.size}曲を一括で一番上へ移動 (TOP)` : '一番上へ移動 (TOP)'} 
+                    className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
+                    disabled={isTopBtnDisabled} 
+                    style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
+                  >
+                    <ChevronsUp size={10} />
+                  </button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isBatchRow) {
+                        moveSelectedTracks('up');
+                      } else {
+                        moveTrack(e, idx, idx - 1);
+                      }
+                    }} 
+                    title={isBatchRow ? `選択した${selectedTrackIds.size}曲を一括で一つ上へ移動 (UP)` : '一つ上へ移動 (UP)'} 
+                    className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
+                    disabled={isUpBtnDisabled} 
+                    style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
+                  >
+                    <ChevronUp size={10} />
+                  </button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isBatchRow) {
+                        moveSelectedTracks('down');
+                      } else {
+                        moveTrack(e, idx, idx + 1);
+                      }
+                    }} 
+                    title={isBatchRow ? `選択した${selectedTrackIds.size}曲を一括で一つ下へ移動 (DOWN)` : '一つ下へ移動 (DOWN)'} 
+                    className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
+                    disabled={isDownBtnDisabled} 
+                    style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
+                  >
+                    <ChevronDown size={10} />
+                  </button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isBatchRow) {
+                        moveSelectedTracks('bottom');
+                      } else {
+                        moveTrack(e, idx, tracksToRender.length - 1);
+                      }
+                    }} 
+                    title={isBatchRow ? `選択した${selectedTrackIds.size}曲を一括で一番下へ移動 (BOTTOM)` : '一番下へ移動 (BOTTOM)'} 
+                    className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
+                    disabled={isBottomBtnDisabled} 
+                    style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
+                  >
+                    <ChevronsDown size={10} />
+                  </button>
+                </>
+              );
+            })()}
           </div>
           )}
         </div>
@@ -4937,56 +5094,111 @@ export default function App() {
                     const expandableFolderIds = playlists
                       .filter(p => p.id !== 'all-tracks' && (playlistAlbumsMap[p.id]?.length || 0) > 1)
                       .map(p => p.id);
+                    const isTreeMode = sidebarCategoryMode === 'tree';
+                    const uncategorizedCount = playlists.filter(p => p.id !== 'all-tracks' && !p.category).length;
+                    const allTreeCatKeys: string[] = categories.length > 0
+                      ? (uncategorizedCount > 0 ? [...categories, '__UNCATEGORIZED__'] : [...categories])
+                      : (uncategorizedCount > 0 ? ['__UNCATEGORIZED__'] : []);
+
+                    const isAllTreeCatsOpen = allTreeCatKeys.length > 0 && allTreeCatKeys.every(cat => expandedCategoryNames.has(cat));
                     const isAllFoldersOpen = expandableFolderIds.length > 0 && expandableFolderIds.every(id => expandedSidebarFolderIds.has(id));
+
+                    // In tree mode, all is considered open if categories (and any folders) are expanded
+                    const isAllOpen = isTreeMode
+                      ? (allTreeCatKeys.length > 0 && expandableFolderIds.length > 0
+                          ? (isAllTreeCatsOpen && isAllFoldersOpen)
+                          : allTreeCatKeys.length > 0
+                          ? isAllTreeCatsOpen
+                          : isAllFoldersOpen)
+                      : isAllFoldersOpen;
+
+                    const isDisabled = isTreeMode
+                      ? (allTreeCatKeys.length === 0 && expandableFolderIds.length === 0)
+                      : (expandableFolderIds.length === 0);
+
                     return (
                       <button
                         type="button"
-                        disabled={expandableFolderIds.length === 0}
+                        disabled={isDisabled}
                         onClick={() => {
-                          if (isAllFoldersOpen) {
-                            setExpandedSidebarFolderIds(new Set());
+                          if (isTreeMode) {
+                            if (isAllOpen) {
+                              // Collapse everything: all categories and all folders
+                              setExpandedCategoryNames(new Set());
+                              setExpandedSidebarFolderIds(new Set());
+                            } else {
+                              // Expand everything: all categories and all folders
+                              setExpandedCategoryNames(new Set(allTreeCatKeys));
+                              setExpandedSidebarFolderIds(new Set(expandableFolderIds));
+                            }
                           } else {
-                            setExpandedSidebarFolderIds(new Set(expandableFolderIds));
+                            if (isAllOpen) {
+                              setExpandedSidebarFolderIds(new Set());
+                            } else {
+                              setExpandedSidebarFolderIds(new Set(expandableFolderIds));
+                            }
                           }
                         }}
-                        className="flex items-center gap-1 justify-center border rounded-[2px] px-1.5 h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95 disabled:opacity-35"
+                        className="flex items-center gap-1 justify-center border rounded-[2px] w-[54px] h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95 disabled:opacity-35 shrink-0"
                         style={
-                          isAllFoldersOpen
+                          isAllOpen
                             ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
                             : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }
                         }
                         title={
-                          expandableFolderIds.length === 0
-                            ? '複数アルバムを含むフォルダがありません'
-                            : isAllFoldersOpen
-                            ? 'すべてのアルバムフォルダを一括で閉じる (CLOSE ALL)'
-                            : `すべてのアルバムフォルダ (${expandableFolderIds.length}件) を一括で開く (OPEN ALL)`
+                          isDisabled
+                            ? '展開可能な項目がありません'
+                            : isAllOpen
+                            ? (isTreeMode ? 'すべてのカテゴリーとフォルダーを一括で閉じる (CLOSE ALL)' : 'すべてのアルバムフォルダを一括で閉じる (CLOSE ALL)')
+                            : (isTreeMode ? 'すべてのカテゴリーとフォルダーを一括で開く (OPEN ALL)' : `すべてのアルバムフォルダ (${expandableFolderIds.length}件) を一括で開く (OPEN ALL)`)
                         }
                       >
-                        {isAllFoldersOpen ? <FolderOpen size={10} /> : <Folder size={10} />}
-                        <span>{isAllFoldersOpen ? 'CLOSE' : 'OPEN'}</span>
+                        {isAllOpen ? <FolderOpen size={10} className="shrink-0" /> : <Folder size={10} className="shrink-0" />}
+                        <span>{isAllOpen ? 'CLOSE' : 'OPEN'}</span>
                       </button>
                     );
                   })()}
 
-                  {/* SELECT button to toggle selection mode */}
-                  <button 
-                    onClick={() => {
-                      const nextMode = !isPlaylistSelectionMode;
-                      setIsPlaylistSelectionMode(nextMode);
-                      if (!nextMode && selectedPlaylistIds.size === 0) {
+                  {/* SELECT / CANCEL button for selection mode */}
+                  {isPlaylistSelectionMode ? (
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setIsPlaylistSelectionMode(false);
+                        setSelectedPlaylistIds(new Set());
+                        lastSelectedPlaylistIdRef.current = null;
                         setConfirmDeleteSelectedPlaylists(false);
-                      }
-                    }}
-                    className="flex items-center justify-center border rounded-[2px] px-1.5 h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95"
-                    style={isPlaylistSelectionMode 
-                      ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' } 
-                      : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }
-                    }
-                    title={isPlaylistSelectionMode ? "選択モード終了" : "プレイリスト選択モード (SETリピート・一括操作)"}
-                  >
-                    SELECT
-                  </button>
+                      }}
+                      className="flex items-center justify-center border rounded-[2px] w-[54px] h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95 shrink-0"
+                      style={{ 
+                        backgroundColor: 'var(--theme-accentMuted)', 
+                        borderColor: 'var(--theme-accent)', 
+                        color: 'var(--theme-accent)' 
+                      }}
+                      title="選択をキャンセルして選択モードを終了 (チェックボックス非表示)"
+                    >
+                      CANCEL
+                    </button>
+                  ) : (
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setIsPlaylistSelectionMode(true);
+                        setSelectedPlaylistIds(new Set());
+                        lastSelectedPlaylistIdRef.current = null;
+                        setConfirmDeleteSelectedPlaylists(false);
+                      }}
+                      className="flex items-center justify-center border rounded-[2px] w-[54px] h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95 shrink-0"
+                      style={{ 
+                        backgroundColor: 'var(--theme-bg)', 
+                        borderColor: 'var(--theme-listHeader-border)', 
+                        color: 'var(--theme-listHeader-text)' 
+                      }}
+                      title="プレイリスト選択モード (チェックボックスを表示して一括操作・SETリピート)"
+                    >
+                      SELECT
+                    </button>
+                  )}
 
                   <button 
                     onClick={() => { setIsCreatingPlaylist(true); setNewPlaylistName(''); }}
@@ -5099,10 +5311,15 @@ export default function App() {
                     )}
 
                     <button 
-                      onClick={() => { setSelectedPlaylistIds(new Set()); setConfirmDeleteSelectedPlaylists(false); }}
+                      onClick={() => { 
+                        setSelectedPlaylistIds(new Set()); 
+                        setIsPlaylistSelectionMode(false);
+                        lastSelectedPlaylistIdRef.current = null;
+                        setConfirmDeleteSelectedPlaylists(false); 
+                      }}
                       className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
                       style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                      title="選択を解除"
+                      title="選択をキャンセルして選択モードを終了"
                     >
                       <X size={10} style={{ color: 'var(--theme-listHeader-textMuted)' }} />
                     </button>
@@ -5150,329 +5367,459 @@ export default function App() {
 
               {/* Mode-specific category selector / toolbar */}
               {sidebarCategoryMode === 'dropdown' ? (
-                <div className="flex items-center gap-1.5 px-2 py-1 border-b relative" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-listHeader-border)' }}>
-                  <span className="text-[9px] font-mono uppercase tracking-wider shrink-0" style={{ color: 'var(--theme-listHeader-textMuted)' }}>CAT:</span>
-                  
-                  {/* Cascading Category & Playlist Direct Selection Dropdown Trigger */}
-                  <div className="relative flex-1 min-w-0" ref={categoryCascadeMenuRef}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsCategoryCascadeMenuOpen(prev => {
-                          const willOpen = !prev;
-                          if (willOpen) {
-                            // Default active category in dropdown to current selected category, or first category
-                            const initialCat = selectedCategoryFilter !== '__ALL__' 
-                              ? selectedCategoryFilter 
-                              : (categories[0] || '__ALL__');
-                            setHoveredCategoryInMenu(initialCat);
-                            setHoveredPlaylistInMenu(activePlaylistId !== 'all-tracks' ? activePlaylistId : null);
-                          } else {
-                            setHoveredPlaylistInMenu(null);
-                          }
-                          return willOpen;
-                        });
-                      }}
-                      className="w-full flex items-center justify-between font-mono border rounded-[2px] px-2 py-1 truncate cursor-pointer transition-colors hover:opacity-90 focus:outline-none"
-                      style={{
-                        borderColor: isCategoryCascadeMenuOpen ? 'var(--theme-accent)' : 'var(--theme-listHeader-border)',
-                        backgroundColor: 'var(--theme-surface)',
-                        color: 'var(--theme-textMain)',
-                        fontSize: `${listFontSize}px`
-                      }}
-                      title="カテゴリー・プレイリストをプルダウン＆ダイレクト選択 (SIZE連動)"
-                    >
-                      <span className="truncate font-medium flex items-center gap-1.5">
-                        <Bookmark size={listFontSize >= 13 ? 12 : 10} style={{ color: selectedCategoryFilter !== '__ALL__' ? 'var(--theme-accent)' : 'var(--theme-listHeader-textMuted)' }} />
-                        <span className="truncate">
-                          {selectedCategoryFilter === '__ALL__'
-                            ? `ALL PLAYLISTS (${playlists.filter(p => p.id !== 'all-tracks').length})`
-                            : selectedCategoryFilter === '__UNCATEGORIZED__'
-                            ? `UNCATEGORIZED (${playlists.filter(p => p.id !== 'all-tracks' && !p.category).length})`
-                            : `${selectedCategoryFilter} (${playlists.filter(p => p.id !== 'all-tracks' && p.category === selectedCategoryFilter).length})`}
-                        </span>
-                      </span>
-                      <ChevronDown size={listFontSize >= 13 ? 12 : 10} className={`shrink-0 ml-1 transition-transform ${isCategoryCascadeMenuOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--theme-listHeader-textMuted)' }} />
-                    </button>
-
-                    {/* Cascading Dropdown Popover */}
-                    {isCategoryCascadeMenuOpen && (
-                      <div
-                        className="absolute left-0 top-full mt-1 z-50 flex border shadow-2xl font-mono rounded-[2px] overflow-hidden"
-                        style={{
-                          backgroundColor: 'var(--theme-surface)',
-                          borderColor: 'var(--theme-border)',
-                          color: 'var(--theme-textMain)',
-                          fontSize: `${listFontSize}px`,
-                          minWidth: '240px',
-                          maxHeight: '380px'
+                <div className="flex items-center justify-between px-2.5 h-[32px] border-b shrink-0 relative" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-listHeader-border)' }}>
+                  <div className="flex items-center gap-1.5 flex-1 min-w-0 pr-1">
+                    <span className="text-[9px] font-mono uppercase tracking-wider shrink-0" style={{ color: 'var(--theme-listHeader-textMuted)' }}>CAT:</span>
+                    
+                    {/* Cascading Category & Playlist Direct Selection Dropdown Trigger */}
+                    <div className="relative flex-1 min-w-0" ref={categoryCascadeMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCategoryCascadeMenuOpen(prev => {
+                            const willOpen = !prev;
+                            if (willOpen) {
+                              const initialCat = selectedCategoryFilter !== '__ALL__' 
+                                ? selectedCategoryFilter 
+                                : (categories[0] || '__ALL__');
+                              setHoveredCategoryInMenu(initialCat);
+                              setHoveredPlaylistInMenu(activePlaylistId !== 'all-tracks' ? activePlaylistId : null);
+                            } else {
+                              setHoveredPlaylistInMenu(null);
+                            }
+                            return willOpen;
+                          });
                         }}
+                        className="w-full h-5 flex items-center justify-between font-mono border rounded-[2px] px-1.5 truncate cursor-pointer transition-colors hover:opacity-90 focus:outline-none"
+                        style={{
+                          borderColor: isCategoryCascadeMenuOpen ? 'var(--theme-accent)' : 'var(--theme-listHeader-border)',
+                          backgroundColor: 'var(--theme-surface)',
+                          color: 'var(--theme-textMain)',
+                          fontSize: `${Math.min(12, Math.max(9, listFontSize))}px`
+                        }}
+                        title="カテゴリー・プレイリストをプルダウン＆ダイレクト選択 (SIZE連動)"
                       >
-                        {/* Primary Column: Categories */}
-                        <div className="w-48 border-r py-1 flex flex-col max-h-80 overflow-y-auto shrink-0" style={{ borderColor: 'var(--theme-border)' }}>
-                          <div className="px-2.5 py-1 uppercase tracking-wider font-semibold border-b flex items-center justify-between" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', fontSize: `${Math.max(9, listFontSize - 2)}px` }}>
-                            <span>CATEGORIES</span>
-                            <span className="opacity-70">{categories.length + 1}</span>
-                          </div>
+                        <span className="truncate font-medium flex items-center gap-1">
+                          <Bookmark size={10} style={{ color: selectedCategoryFilter !== '__ALL__' ? 'var(--theme-accent)' : 'var(--theme-listHeader-textMuted)' }} />
+                          <span className="truncate">
+                            {selectedCategoryFilter === '__ALL__'
+                              ? `ALL PLAYLISTS (${playlists.filter(p => p.id !== 'all-tracks').length})`
+                              : selectedCategoryFilter === '__UNCATEGORIZED__'
+                              ? `UNCATEGORIZED (${playlists.filter(p => p.id !== 'all-tracks' && !p.category).length})`
+                              : `${selectedCategoryFilter} (${playlists.filter(p => p.id !== 'all-tracks' && p.category === selectedCategoryFilter).length})`}
+                          </span>
+                        </span>
+                        <ChevronDown size={10} className={`shrink-0 ml-1 transition-transform ${isCategoryCascadeMenuOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--theme-listHeader-textMuted)' }} />
+                      </button>
 
-                          {/* 1. ALL PLAYLISTS */}
-                          <div
-                            onMouseEnter={() => {
-                              setHoveredCategoryInMenu('__ALL__');
-                              setHoveredPlaylistInMenu(null);
-                            }}
-                            onClick={() => {
-                              setSelectedCategoryFilter('__ALL__');
-                              try { localStorage.setItem('v2_solidSelectedCategoryFilter', '__ALL__'); } catch {}
-                              setHoveredCategoryInMenu('__ALL__');
-                              setHoveredPlaylistInMenu(null);
-                            }}
-                            className="px-2.5 py-1.5 flex items-center justify-between cursor-pointer transition-colors"
-                            style={{
-                              backgroundColor: hoveredCategoryInMenu === '__ALL__' ? 'var(--theme-accentMuted)' : (selectedCategoryFilter === '__ALL__' ? 'var(--theme-surfaceLighter)' : 'transparent'),
-                              color: hoveredCategoryInMenu === '__ALL__' ? 'var(--theme-accent)' : 'inherit',
-                              fontSize: `${listFontSize}px`
-                            }}
-                          >
-                            <span className="truncate">ALL PLAYLISTS</span>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({playlists.filter(p => p.id !== 'all-tracks').length})</span>
-                              <ChevronRight size={10} className="opacity-70" />
-                            </div>
-                          </div>
+                      {/* Cascading Dropdown Popover with Hand-Grip Resizing */}
+                      {isCategoryCascadeMenuOpen && (
+                        <div
+                          className="absolute left-0 top-full mt-1 z-50 flex flex-col border shadow-2xl font-mono rounded-[2px] overflow-hidden"
+                          style={{
+                            backgroundColor: 'var(--theme-surface)',
+                            borderColor: 'var(--theme-border)',
+                            color: 'var(--theme-textMain)',
+                            fontSize: `${listFontSize}px`,
+                            maxHeight: '440px'
+                          }}
+                        >
+                          <div className="flex overflow-hidden">
+                            {/* Primary Column: Categories */}
+                            <div 
+                              className="border-r py-1 flex flex-col max-h-80 overflow-y-auto shrink-0" 
+                              style={{ 
+                                width: `${cascadeColWidths.cat}px`, 
+                                minWidth: '140px',
+                                borderColor: 'var(--theme-border)' 
+                              }}
+                            >
+                              <div className="px-2.5 py-1 uppercase tracking-wider font-semibold border-b flex items-center justify-between" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', fontSize: `${Math.max(9, listFontSize - 2)}px` }}>
+                                <span>CATEGORIES</span>
+                                <span className="opacity-70">{categories.length + 1}</span>
+                              </div>
 
-                          {/* 2. User defined Categories */}
-                          {categories.map(cat => {
-                            const count = playlists.filter(p => p.id !== 'all-tracks' && p.category === cat).length;
-                            const isCurrentActive = hoveredCategoryInMenu === cat;
-                            const isSelected = selectedCategoryFilter === cat;
-                            return (
+                              {/* 1. ALL PLAYLISTS */}
                               <div
-                                key={cat}
                                 onMouseEnter={() => {
-                                  setHoveredCategoryInMenu(cat);
+                                  setHoveredCategoryInMenu('__ALL__');
                                   setHoveredPlaylistInMenu(null);
                                 }}
                                 onClick={() => {
-                                  setSelectedCategoryFilter(cat);
-                                  try { localStorage.setItem('v2_solidSelectedCategoryFilter', cat); } catch {}
-                                  setHoveredCategoryInMenu(cat);
+                                  setSelectedCategoryFilter('__ALL__');
+                                  try { localStorage.setItem('v2_solidSelectedCategoryFilter', '__ALL__'); } catch {}
+                                  setHoveredCategoryInMenu('__ALL__');
                                   setHoveredPlaylistInMenu(null);
                                 }}
                                 className="px-2.5 py-1.5 flex items-center justify-between cursor-pointer transition-colors"
                                 style={{
-                                  backgroundColor: isCurrentActive ? 'var(--theme-accentMuted)' : (isSelected ? 'var(--theme-surfaceLighter)' : 'transparent'),
-                                  color: isCurrentActive ? 'var(--theme-accent)' : 'inherit',
+                                  backgroundColor: hoveredCategoryInMenu === '__ALL__' ? 'var(--theme-accentMuted)' : (selectedCategoryFilter === '__ALL__' ? 'var(--theme-surfaceLighter)' : 'transparent'),
+                                  color: hoveredCategoryInMenu === '__ALL__' ? 'var(--theme-accent)' : 'inherit',
                                   fontSize: `${listFontSize}px`
                                 }}
                               >
-                                <span className="truncate flex items-center gap-1.5 font-medium">
-                                  <Bookmark size={listFontSize >= 13 ? 11 : 9.5} style={{ color: 'var(--theme-accent)' }} fill={isCurrentActive || isSelected ? 'currentColor' : 'none'} />
-                                  <span className="truncate">{cat}</span>
-                                </span>
+                                <span className="truncate">ALL PLAYLISTS</span>
                                 <div className="flex items-center gap-1 shrink-0">
-                                  <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({count})</span>
+                                  <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({playlists.filter(p => p.id !== 'all-tracks').length})</span>
                                   <ChevronRight size={10} className="opacity-70" />
                                 </div>
                               </div>
-                            );
-                          })}
 
-                          {/* 3. UNCATEGORIZED */}
-                          <div
-                            onMouseEnter={() => {
-                              setHoveredCategoryInMenu('__UNCATEGORIZED__');
-                              setHoveredPlaylistInMenu(null);
-                            }}
-                            onClick={() => {
-                              setSelectedCategoryFilter('__UNCATEGORIZED__');
-                              try { localStorage.setItem('v2_solidSelectedCategoryFilter', '__UNCATEGORIZED__'); } catch {}
-                              setHoveredCategoryInMenu('__UNCATEGORIZED__');
-                              setHoveredPlaylistInMenu(null);
-                            }}
-                            className="px-2.5 py-1.5 flex items-center justify-between cursor-pointer transition-colors border-t"
-                            style={{
-                              borderColor: 'var(--theme-border)',
-                              backgroundColor: hoveredCategoryInMenu === '__UNCATEGORIZED__' ? 'var(--theme-accentMuted)' : (selectedCategoryFilter === '__UNCATEGORIZED__' ? 'var(--theme-surfaceLighter)' : 'transparent'),
-                              color: hoveredCategoryInMenu === '__UNCATEGORIZED__' ? 'var(--theme-accent)' : 'inherit',
-                              fontSize: `${listFontSize}px`
-                            }}
+                              {/* 2. User defined Categories */}
+                              {categories.map(cat => {
+                                const count = playlists.filter(p => p.id !== 'all-tracks' && p.category === cat).length;
+                                const isCurrentActive = hoveredCategoryInMenu === cat;
+                                const isSelected = selectedCategoryFilter === cat;
+                                return (
+                                  <div
+                                    key={cat}
+                                    onMouseEnter={() => {
+                                      setHoveredCategoryInMenu(cat);
+                                      setHoveredPlaylistInMenu(null);
+                                    }}
+                                    onClick={() => {
+                                      setSelectedCategoryFilter(cat);
+                                      try { localStorage.setItem('v2_solidSelectedCategoryFilter', cat); } catch {}
+                                      setHoveredCategoryInMenu(cat);
+                                      setHoveredPlaylistInMenu(null);
+                                    }}
+                                    className="px-2.5 py-1.5 flex items-center justify-between cursor-pointer transition-colors"
+                                    style={{
+                                      backgroundColor: isCurrentActive ? 'var(--theme-accentMuted)' : (isSelected ? 'var(--theme-surfaceLighter)' : 'transparent'),
+                                      color: isCurrentActive ? 'var(--theme-accent)' : 'inherit',
+                                      fontSize: `${listFontSize}px`
+                                    }}
+                                  >
+                                    <span className="truncate flex items-center gap-1.5 font-medium">
+                                      <Bookmark size={listFontSize >= 13 ? 11 : 9.5} style={{ color: 'var(--theme-accent)' }} fill={isCurrentActive || isSelected ? 'currentColor' : 'none'} />
+                                      <span className="truncate">{cat}</span>
+                                    </span>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({count})</span>
+                                      <ChevronRight size={10} className="opacity-70" />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+
+                              {/* 3. UNCATEGORIZED */}
+                              <div
+                                onMouseEnter={() => {
+                                  setHoveredCategoryInMenu('__UNCATEGORIZED__');
+                                  setHoveredPlaylistInMenu(null);
+                                }}
+                                onClick={() => {
+                                  setSelectedCategoryFilter('__UNCATEGORIZED__');
+                                  try { localStorage.setItem('v2_solidSelectedCategoryFilter', '__UNCATEGORIZED__'); } catch {}
+                                  setHoveredCategoryInMenu('__UNCATEGORIZED__');
+                                  setHoveredPlaylistInMenu(null);
+                                }}
+                                className="px-2.5 py-1.5 flex items-center justify-between cursor-pointer transition-colors border-t"
+                                style={{
+                                  borderColor: 'var(--theme-border)',
+                                  backgroundColor: hoveredCategoryInMenu === '__UNCATEGORIZED__' ? 'var(--theme-accentMuted)' : (selectedCategoryFilter === '__UNCATEGORIZED__' ? 'var(--theme-surfaceLighter)' : 'transparent'),
+                                  color: hoveredCategoryInMenu === '__UNCATEGORIZED__' ? 'var(--theme-accent)' : 'inherit',
+                                  fontSize: `${listFontSize}px`
+                                }}
+                              >
+                                <span className="truncate flex items-center gap-1.5">
+                                  <Bookmark size={listFontSize >= 13 ? 11 : 9.5} style={{ color: 'var(--theme-listHeader-textMuted)' }} strokeDasharray="2 2" />
+                                  <span className="truncate">UNCATEGORIZED</span>
+                                </span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({playlists.filter(p => p.id !== 'all-tracks' && !p.category).length})</span>
+                                  <ChevronRight size={10} className="opacity-70" />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Resizer Handle between Column 1 & Column 2 */}
+                            <div
+                              onMouseDown={(e) => handleCascadeGripMouseDown(e, 'cat')}
+                              className="w-1.5 hover:w-2 hover:bg-[var(--theme-accent)] transition-all cursor-col-resize shrink-0 flex items-center justify-center select-none group"
+                              style={{ backgroundColor: 'var(--theme-border)' }}
+                              title="カテゴリー列の横幅をドラッグで調整 (DRAG TO RESIZE)"
+                            >
+                              <div className="w-[1px] h-4 bg-[var(--theme-textDim)] group-hover:bg-white" />
+                            </div>
+
+                            {/* Secondary Cascading Column: Direct Playlists in Hovered Category */}
+                            {hoveredCategoryInMenu && (() => {
+                              const subPlaylists = playlists.filter(p => {
+                                if (p.id === 'all-tracks') return false;
+                                if (hoveredCategoryInMenu === '__ALL__') return true;
+                                if (hoveredCategoryInMenu === '__UNCATEGORIZED__') return !p.category;
+                                return p.category === hoveredCategoryInMenu;
+                              });
+
+                              const catDisplayName = hoveredCategoryInMenu === '__ALL__' 
+                                ? 'ALL PLAYLISTS' 
+                                : hoveredCategoryInMenu === '__UNCATEGORIZED__' 
+                                ? 'UNCATEGORIZED' 
+                                : hoveredCategoryInMenu;
+
+                              return (
+                                <>
+                                  <div 
+                                    className="py-1 flex flex-col max-h-80 overflow-y-auto shrink-0" 
+                                    style={{ 
+                                      width: `${cascadeColWidths.pl}px`, 
+                                      minWidth: '180px',
+                                      backgroundColor: 'var(--theme-bg)' 
+                                    }}
+                                  >
+                                    <div className="px-2.5 py-1 uppercase tracking-wider font-semibold border-b flex justify-between items-center" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', fontSize: `${Math.max(9, listFontSize - 2)}px` }}>
+                                      <span className="truncate font-bold text-ellipsis flex items-center gap-1.5">
+                                        <Bookmark size={listFontSize >= 13 ? 11 : 9.5} style={{ color: 'var(--theme-accent)' }} />
+                                        <span className="truncate">{catDisplayName}</span>
+                                      </span>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <span>{subPlaylists.length} ITEMS</span>
+                                        {hoveredCategoryInMenu !== selectedCategoryFilter && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setSelectedCategoryFilter(hoveredCategoryInMenu);
+                                              try { localStorage.setItem('v2_solidSelectedCategoryFilter', hoveredCategoryInMenu); } catch {}
+                                              setIsCategoryCascadeMenuOpen(false);
+                                            }}
+                                            className="px-1 border rounded-[2px] text-[8px] hover:opacity-80"
+                                            style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }}
+                                            title="このカテゴリーのみをサイドバーに表示"
+                                          >
+                                            VIEW
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {subPlaylists.length === 0 ? (
+                                      <div className="p-4 text-center italic opacity-60" style={{ fontSize: `${Math.max(9, listFontSize - 2)}px`, color: 'var(--theme-textDim)' }}>
+                                        NO FOLDERS / LISTS
+                                      </div>
+                                    ) : (
+                                      subPlaylists.map(pl => {
+                                        const isCurrentActive = activePlaylistId === pl.id;
+                                        const isCurrentHovered = hoveredPlaylistInMenu === pl.id;
+                                        const subAlbums = pl.id !== 'all-tracks' ? (playlistAlbumsMap[pl.id] || []) : [];
+                                        const hasMultipleSubAlbums = subAlbums.length > 1;
+
+                                        return (
+                                          <button
+                                            key={pl.id}
+                                            type="button"
+                                            onMouseEnter={() => setHoveredPlaylistInMenu(pl.id)}
+                                            onClick={() => {
+                                              setActivePlaylistId(pl.id);
+                                              setFocusedAlbumId(null);
+                                              setDrillDownAlbum(null);
+                                              if (hoveredCategoryInMenu !== '__ALL__') {
+                                                setSelectedCategoryFilter(hoveredCategoryInMenu);
+                                                try { localStorage.setItem('v2_solidSelectedCategoryFilter', hoveredCategoryInMenu); } catch {}
+                                              }
+                                              setIsCategoryCascadeMenuOpen(false);
+                                            }}
+                                            className="text-left px-2.5 py-1.5 flex items-center justify-between hover:opacity-80 transition-colors border-b last:border-b-0 cursor-pointer focus:outline-none"
+                                            style={{
+                                              borderColor: 'var(--theme-list-border)',
+                                              backgroundColor: (isCurrentHovered || isCurrentActive) ? 'var(--theme-accentMuted)' : 'transparent',
+                                              color: (isCurrentHovered || isCurrentActive) ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+                                              fontSize: `${listFontSize}px`
+                                            }}
+                                            title={`ダイレクト選択: ${pl.name} (${pl.tracks.length}曲)`}
+                                          >
+                                            <span className="truncate flex items-center gap-2 flex-1 pr-1 font-medium">
+                                              {hasMultipleSubAlbums ? (
+                                                <Folder size={listFontSize >= 13 ? 12 : 10.5} className="shrink-0" style={{ color: (isCurrentHovered || isCurrentActive) ? 'var(--theme-accent)' : 'var(--theme-list-textDim)' }} />
+                                              ) : (
+                                                <ListMusic size={listFontSize >= 13 ? 12 : 10.5} className="shrink-0" style={{ color: (isCurrentHovered || isCurrentActive) ? 'var(--theme-accent)' : 'var(--theme-list-textDim)' }} />
+                                              )}
+                                              <span className="truncate">{pl.name}</span>
+                                            </span>
+                                            <div className="flex items-center gap-1.5 shrink-0 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>
+                                              {hasMultipleSubAlbums && (
+                                                <span className="text-[8.5px] px-1 border rounded-[2px]" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
+                                                  {subAlbums.length} ALB
+                                                </span>
+                                              )}
+                                              <span className="opacity-70">{pl.tracks.length}曲</span>
+                                              {hasMultipleSubAlbums && <ChevronRight size={10} className="opacity-70" />}
+                                            </div>
+                                          </button>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+
+                                  {/* Resizer Handle between Column 2 & Column 3 (Only when 3rd column is open) */}
+                                  {(() => {
+                                    const hoveredTargetPl = hoveredPlaylistInMenu ? playlists.find(p => p.id === hoveredPlaylistInMenu) : null;
+                                    const showTertiary = hoveredTargetPl && hoveredTargetPl.id !== 'all-tracks' && (playlistAlbumsMap[hoveredTargetPl.id]?.length || 0) > 1;
+                                    if (!showTertiary) return null;
+                                    return (
+                                      <div
+                                        onMouseDown={(e) => handleCascadeGripMouseDown(e, 'pl')}
+                                        className="w-1.5 hover:w-2 hover:bg-[var(--theme-accent)] transition-all cursor-col-resize shrink-0 flex items-center justify-center select-none group border-l"
+                                        style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-border)' }}
+                                        title="リスト列の横幅をドラッグで調整 (DRAG TO RESIZE)"
+                                      >
+                                        <div className="w-[1px] h-4 bg-[var(--theme-textDim)] group-hover:bg-white" />
+                                      </div>
+                                    );
+                                  })()}
+                                </>
+                              );
+                            })()}
+
+                            {/* Tertiary Cascading Column: Direct Sub-folders / Albums in Hovered Playlist */}
+                            {hoveredPlaylistInMenu && (() => {
+                              const targetPl = playlists.find(p => p.id === hoveredPlaylistInMenu);
+                              if (!targetPl) return null;
+                              const subAlbums = targetPl.id !== 'all-tracks' ? (playlistAlbumsMap[targetPl.id] || []) : [];
+                              // Only display tertiary column if there are multiple sub-albums/folders (e.g. YMO with 3 albums)
+                              if (subAlbums.length <= 1) return null;
+
+                              return (
+                                <div 
+                                  className="border-l py-1 flex flex-col max-h-80 overflow-y-auto shrink-0 shadow-xl" 
+                                  style={{ 
+                                    width: `${cascadeColWidths.album}px`, 
+                                    minWidth: '180px',
+                                    borderColor: 'var(--theme-border)', 
+                                    backgroundColor: 'var(--theme-surface)' 
+                                  }}
+                                >
+                                  <div className="px-2.5 py-1 uppercase tracking-wider font-semibold border-b flex justify-between items-center" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', fontSize: `${Math.max(9, listFontSize - 2)}px` }}>
+                                    <span className="truncate font-bold text-ellipsis flex items-center gap-1.5" title={targetPl.name}>
+                                      <Folder size={listFontSize >= 13 ? 11 : 9.5} className="shrink-0" style={{ color: 'var(--theme-accent)' }} />
+                                      <span className="truncate">{targetPl.name}</span>
+                                    </span>
+                                    <span className="font-mono opacity-70 shrink-0 text-[8.5px] px-1 border rounded-[2px]" style={{ borderColor: 'var(--theme-borderActive)' }}>
+                                      {subAlbums.length} ALBUMS
+                                    </span>
+                                  </div>
+
+                                  {subAlbums.map((group, idx) => {
+                                    const isCurrentAlbumSelected = (focusedAlbumId && (focusedAlbumId === group.id || focusedAlbumId.toLowerCase() === group.album.toLowerCase())) ||
+                                      (drillDownAlbum && drillDownAlbum.album.toLowerCase() === group.album.toLowerCase());
+
+                                    return (
+                                      <button
+                                        key={group.id || idx}
+                                        type="button"
+                                        onClick={() => {
+                                          setActivePlaylistId(targetPl.id);
+                                          setFocusedAlbumId(group.id || group.album);
+                                          setDrillDownAlbum(null);
+                                          if (hoveredCategoryInMenu && hoveredCategoryInMenu !== '__ALL__') {
+                                            setSelectedCategoryFilter(hoveredCategoryInMenu);
+                                            try { localStorage.setItem('v2_solidSelectedCategoryFilter', hoveredCategoryInMenu); } catch {}
+                                          }
+                                          setIsCategoryCascadeMenuOpen(false);
+                                        }}
+                                        className="text-left px-2.5 py-1.5 flex items-center justify-between hover:opacity-80 transition-colors border-b last:border-b-0 cursor-pointer focus:outline-none"
+                                        style={{
+                                          borderColor: 'var(--theme-list-border)',
+                                          backgroundColor: isCurrentAlbumSelected ? 'var(--theme-accentMuted)' : 'transparent',
+                                          color: isCurrentAlbumSelected ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+                                          fontSize: `${listFontSize}px`
+                                        }}
+                                        title={`アルバム選択: ${group.album} (${group.tracks.length}曲)`}
+                                      >
+                                        <span className="truncate flex items-center gap-1.5 flex-1 pr-1 font-medium">
+                                          <ListMusic size={listFontSize >= 13 ? 12 : 10.5} className="shrink-0" style={{ color: isCurrentAlbumSelected ? 'var(--theme-accent)' : 'var(--theme-list-textDim)' }} />
+                                          <span className="truncate">{group.album}</span>
+                                        </span>
+                                        <span className="font-mono shrink-0 opacity-70" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>
+                                          {group.tracks.length}曲
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
+
+                            {/* Tactile Industrial Hand-Grip Resize Strip at the right edge of popover */}
+                            <div
+                              onMouseDown={(e) => handleCascadeGripMouseDown(e, 'all')}
+                              className="w-4 hover:w-5 active:w-5 transition-all cursor-ew-resize shrink-0 flex flex-col items-center justify-center gap-1.5 select-none group border-l hover:bg-[var(--theme-accentMuted)]"
+                              style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)' }}
+                              title="プルダウン全体の横幅をドラッグして自由に拡大・調整 (DRAG TO RESIZE WIDTH)"
+                            >
+                              <div className="flex flex-col items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+                                <GripVertical size={13} style={{ color: 'var(--theme-accent)' }} />
+                                <div className="w-[3px] h-3 rounded-full bg-[var(--theme-textDim)] group-hover:bg-[var(--theme-accent)] transition-colors" />
+                                <div className="w-[3px] h-3 rounded-full bg-[var(--theme-textDim)] group-hover:bg-[var(--theme-accent)] transition-colors" />
+                                <div className="w-[3px] h-3 rounded-full bg-[var(--theme-textDim)] group-hover:bg-[var(--theme-accent)] transition-colors" />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Industrial Footer with width controls & tactile grip indicator */}
+                          <div 
+                            className="border-t px-2 py-1 flex items-center justify-between text-[8px] font-mono shrink-0" 
+                            style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-listHeader-textMuted)' }}
                           >
-                            <span className="truncate flex items-center gap-1.5">
-                              <Bookmark size={listFontSize >= 13 ? 11 : 9.5} style={{ color: 'var(--theme-listHeader-textMuted)' }} strokeDasharray="2 2" />
-                              <span className="truncate">UNCATEGORIZED</span>
-                            </span>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({playlists.filter(p => p.id !== 'all-tracks' && !p.category).length})</span>
-                              <ChevronRight size={10} className="opacity-70" />
+                            <div className="flex items-center gap-1.5">
+                              <GripVertical size={10} style={{ color: 'var(--theme-accent)' }} />
+                              {(() => {
+                                const hoveredTargetPl = hoveredPlaylistInMenu ? playlists.find(p => p.id === hoveredPlaylistInMenu) : null;
+                                const showTertiary = hoveredTargetPl && hoveredTargetPl.id !== 'all-tracks' && (playlistAlbumsMap[hoveredTargetPl.id]?.length || 0) > 1;
+                                return (
+                                  <span>WIDTH: CAT {cascadeColWidths.cat}px • LIST {cascadeColWidths.pl}px{showTertiary ? ` • ALBUM ${cascadeColWidths.album}px` : ''}</span>
+                                );
+                              })()}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCascadeColWidths(prev => {
+                                    const next = { cat: Math.max(140, prev.cat - 30), pl: Math.max(180, prev.pl - 40), album: Math.max(180, prev.album - 40) };
+                                    try { localStorage.setItem('v2_solidCascadeColWidths', JSON.stringify(next)); } catch {}
+                                    return next;
+                                  });
+                                }}
+                                className="px-1.5 py-0.5 border rounded-[1px] hover:opacity-80 active:scale-95"
+                                style={{ borderColor: 'var(--theme-listHeader-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-textMain)' }}
+                                title="プルダウン横幅を縮小 (-)"
+                              >
+                                - W
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCascadeColWidths(prev => {
+                                    const next = { cat: Math.min(500, prev.cat + 40), pl: Math.min(800, prev.pl + 60), album: Math.min(800, prev.album + 60) };
+                                    try { localStorage.setItem('v2_solidCascadeColWidths', JSON.stringify(next)); } catch {}
+                                    return next;
+                                  });
+                                }}
+                                className="px-1.5 py-0.5 border rounded-[1px] hover:opacity-80 active:scale-95"
+                                style={{ borderColor: 'var(--theme-listHeader-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-accent)' }}
+                                title="プルダウン横幅を拡大 (+)"
+                              >
+                                + W
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = { cat: 192, pl: 280, album: 280 };
+                                  setCascadeColWidths(next);
+                                  try { localStorage.setItem('v2_solidCascadeColWidths', JSON.stringify(next)); } catch {}
+                                }}
+                                className="px-1 py-0.5 border rounded-[1px] hover:opacity-80 active:scale-95 ml-0.5"
+                                style={{ borderColor: 'var(--theme-listHeader-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-listHeader-textMuted)' }}
+                                title="標準幅にリセット (RESET)"
+                              >
+                                RESET
+                              </button>
                             </div>
                           </div>
                         </div>
-
-                        {/* Secondary Cascading Column: Direct Playlists in Hovered Category */}
-                        {hoveredCategoryInMenu && (() => {
-                          const subPlaylists = playlists.filter(p => {
-                            if (p.id === 'all-tracks') return false;
-                            if (hoveredCategoryInMenu === '__ALL__') return true;
-                            if (hoveredCategoryInMenu === '__UNCATEGORIZED__') return !p.category;
-                            return p.category === hoveredCategoryInMenu;
-                          });
-
-                          const catDisplayName = hoveredCategoryInMenu === '__ALL__' 
-                            ? 'ALL PLAYLISTS' 
-                            : hoveredCategoryInMenu === '__UNCATEGORIZED__' 
-                            ? 'UNCATEGORIZED' 
-                            : hoveredCategoryInMenu;
-
-                          return (
-                            <div className="w-64 py-1 flex flex-col max-h-80 overflow-y-auto shrink-0" style={{ backgroundColor: 'var(--theme-bg)' }}>
-                              <div className="px-2.5 py-1 uppercase tracking-wider font-semibold border-b flex justify-between items-center" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', fontSize: `${Math.max(9, listFontSize - 2)}px` }}>
-                                <span className="truncate font-bold text-ellipsis">
-                                  📁 {catDisplayName}
-                                </span>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <span>{subPlaylists.length} FOLDERS</span>
-                                  {hoveredCategoryInMenu !== selectedCategoryFilter && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedCategoryFilter(hoveredCategoryInMenu);
-                                        try { localStorage.setItem('v2_solidSelectedCategoryFilter', hoveredCategoryInMenu); } catch {}
-                                        setIsCategoryCascadeMenuOpen(false);
-                                      }}
-                                      className="px-1 border rounded-[2px] text-[8px] hover:opacity-80"
-                                      style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }}
-                                      title="このカテゴリーのみをサイドバーに表示"
-                                    >
-                                      VIEW
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-
-                              {subPlaylists.length === 0 ? (
-                                <div className="p-4 text-center italic opacity-60" style={{ fontSize: `${Math.max(9, listFontSize - 2)}px`, color: 'var(--theme-textDim)' }}>
-                                  NO FOLDERS / LISTS
-                                </div>
-                              ) : (
-                                subPlaylists.map(pl => {
-                                  const isCurrentActive = activePlaylistId === pl.id;
-                                  const isCurrentHovered = hoveredPlaylistInMenu === pl.id;
-                                  const subAlbums = pl.id !== 'all-tracks' ? (playlistAlbumsMap[pl.id] || []) : [];
-                                  const hasSubAlbums = subAlbums.length > 0;
-
-                                  return (
-                                    <button
-                                      key={pl.id}
-                                      type="button"
-                                      onMouseEnter={() => setHoveredPlaylistInMenu(pl.id)}
-                                      onClick={() => {
-                                        // Direct Select this playlist!
-                                        setActivePlaylistId(pl.id);
-                                        setFocusedAlbumId(null);
-                                        setDrillDownAlbum(null);
-                                        setSelectedPlaylistIds(new Set([pl.id]));
-                                        lastSelectedPlaylistIdRef.current = pl.id;
-                                        // Also switch category filter if not ALL
-                                        if (hoveredCategoryInMenu !== '__ALL__') {
-                                          setSelectedCategoryFilter(hoveredCategoryInMenu);
-                                          try { localStorage.setItem('v2_solidSelectedCategoryFilter', hoveredCategoryInMenu); } catch {}
-                                        }
-                                        setIsCategoryCascadeMenuOpen(false);
-                                      }}
-                                      className="text-left px-2.5 py-1.5 flex items-center justify-between hover:opacity-80 transition-colors border-b last:border-b-0 cursor-pointer focus:outline-none"
-                                      style={{
-                                        borderColor: 'var(--theme-list-border)',
-                                        backgroundColor: (isCurrentHovered || isCurrentActive) ? 'var(--theme-accentMuted)' : 'transparent',
-                                        color: (isCurrentHovered || isCurrentActive) ? 'var(--theme-accent)' : 'var(--theme-textMain)',
-                                        fontSize: `${listFontSize}px`
-                                      }}
-                                      title={`ダイレクト選択: ${pl.name} (${pl.tracks.length}曲)`}
-                                    >
-                                      <span className="truncate flex items-center gap-2 flex-1 pr-1 font-medium">
-                                        <Folder size={listFontSize >= 13 ? 12 : 10.5} className="shrink-0" style={{ color: (isCurrentHovered || isCurrentActive) ? 'var(--theme-accent)' : 'var(--theme-list-textDim)' }} />
-                                        <span className="truncate">{pl.name}</span>
-                                      </span>
-                                      <div className="flex items-center gap-1.5 shrink-0 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>
-                                        {hasSubAlbums && subAlbums.length > 1 && (
-                                          <span className="text-[8.5px] px-1 border rounded-[2px]" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
-                                            {subAlbums.length} ALB
-                                          </span>
-                                        )}
-                                        <span className="opacity-70">{pl.tracks.length}曲</span>
-                                        {hasSubAlbums && <ChevronRight size={10} className="opacity-70" />}
-                                      </div>
-                                    </button>
-                                  );
-                                })
-                              )}
-                            </div>
-                          );
-                        })()}
-
-                        {/* Tertiary Cascading Column: Direct Sub-folders / Albums in Hovered Playlist */}
-                        {hoveredPlaylistInMenu && (() => {
-                          const targetPl = playlists.find(p => p.id === hoveredPlaylistInMenu);
-                          if (!targetPl) return null;
-                          const subAlbums = targetPl.id !== 'all-tracks' ? (playlistAlbumsMap[targetPl.id] || []) : [];
-                          if (subAlbums.length === 0) return null;
-
-                          return (
-                            <div className="w-64 border-l py-1 flex flex-col max-h-80 overflow-y-auto shrink-0 shadow-xl" style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}>
-                              <div className="px-2.5 py-1 uppercase tracking-wider font-semibold border-b flex justify-between items-center" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', fontSize: `${Math.max(9, listFontSize - 2)}px` }}>
-                                <span className="truncate font-bold text-ellipsis" title={targetPl.name}>
-                                  📁 {targetPl.name}
-                                </span>
-                                <span className="font-mono opacity-70 shrink-0 text-[8.5px] px-1 border rounded-[2px]" style={{ borderColor: 'var(--theme-borderActive)' }}>
-                                  {subAlbums.length} FOLDERS
-                                </span>
-                              </div>
-
-                              {subAlbums.map((group, idx) => {
-                                const isCurrentAlbumSelected = (focusedAlbumId && (focusedAlbumId === group.id || focusedAlbumId.toLowerCase() === group.album.toLowerCase())) ||
-                                  (drillDownAlbum && drillDownAlbum.album.toLowerCase() === group.album.toLowerCase());
-
-                                return (
-                                  <button
-                                    key={group.id || idx}
-                                    type="button"
-                                    onClick={() => {
-                                      // Direct select this album folder to be pinned/zoomed at the top!
-                                      setActivePlaylistId(targetPl.id);
-                                      setFocusedAlbumId(group.id || group.album);
-                                      setDrillDownAlbum(null);
-                                      setSelectedPlaylistIds(new Set([targetPl.id]));
-                                      lastSelectedPlaylistIdRef.current = targetPl.id;
-                                      if (hoveredCategoryInMenu && hoveredCategoryInMenu !== '__ALL__') {
-                                        setSelectedCategoryFilter(hoveredCategoryInMenu);
-                                        try { localStorage.setItem('v2_solidSelectedCategoryFilter', hoveredCategoryInMenu); } catch {}
-                                      }
-                                      setIsCategoryCascadeMenuOpen(false);
-                                    }}
-                                    className="text-left px-2.5 py-1.5 flex items-center justify-between hover:opacity-80 transition-colors border-b last:border-b-0 cursor-pointer focus:outline-none"
-                                    style={{
-                                      borderColor: 'var(--theme-list-border)',
-                                      backgroundColor: isCurrentAlbumSelected ? 'var(--theme-accentMuted)' : 'transparent',
-                                      color: isCurrentAlbumSelected ? 'var(--theme-accent)' : 'var(--theme-textMain)',
-                                      fontSize: `${listFontSize}px`
-                                    }}
-                                    title={`フォルダ選択: ${group.album} (${group.tracks.length}曲)`}
-                                  >
-                                    <span className="truncate flex items-center gap-1.5 flex-1 pr-1 font-medium">
-                                      <Folder size={listFontSize >= 13 ? 12 : 10.5} className="shrink-0" style={{ color: isCurrentAlbumSelected ? 'var(--theme-accent)' : 'var(--theme-accent)' }} />
-                                      <span className="truncate">{group.album}</span>
-                                    </span>
-                                    <span className="font-mono shrink-0 opacity-70" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>
-                                      {group.tracks.length}曲
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
 
                   {/* Actions for current selected category & sidebar collapse button */}
@@ -5539,8 +5886,8 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                /* Tree mode toolbar */
-                <div className="flex items-center justify-between px-2.5 py-1 border-b" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-listHeader-border)' }}>
+                /* Tree mode toolbar (Seamlessly matched with LIST mode: h-[32px] px-2.5) */
+                <div className="flex items-center justify-between px-2.5 h-[32px] border-b shrink-0 relative" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-listHeader-border)' }}>
                   <div className="flex items-center gap-1">
                     <span className="text-[9px] font-mono tracking-wider font-semibold" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
                       CATEGORIES ({categories.length})
@@ -5557,7 +5904,7 @@ export default function App() {
                           setExpandedCategoryNames(allCats);
                         }
                       }}
-                      className="px-1.5 py-0.5 text-[8.5px] font-mono border rounded-[2px] hover:opacity-80 transition-colors"
+                      className="px-1.5 h-5 text-[8.5px] font-mono border rounded-[2px] hover:opacity-80 transition-colors flex items-center justify-center"
                       style={{
                         borderColor: 'var(--theme-listHeader-border)',
                         color: 'var(--theme-listHeader-textMuted)',
@@ -5582,7 +5929,7 @@ export default function App() {
                   </div>
                 </div>
               )}
-          <div className="flex flex-col h-full overflow-y-auto w-full relative" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
+          <div className="flex flex-col h-full overflow-y-auto w-full relative" style={{ backgroundColor: 'var(--theme-list-bg)', scrollbarGutter: 'stable' }}>
             {(() => {
               const renderPlaylistItem = (pl: Playlist, plIdx: number, isSubItem: boolean = false) => {
               const isSelected = pl.id !== 'all-tracks' && selectedPlaylistIds.has(pl.id);
@@ -5621,8 +5968,6 @@ export default function App() {
                     setActivePlaylistId(pl.id);
                     setFocusedAlbumId(null);
                     setDrillDownAlbum(null);
-                    setSelectedPlaylistIds(new Set([pl.id]));
-                    lastSelectedPlaylistIdRef.current = pl.id;
                   }
                 }}
                 onDoubleClick={() => {
@@ -5986,9 +6331,6 @@ export default function App() {
                           setActivePlaylistId(pl.id);
                           setDrillDownAlbum({ artist: subAlb.artist, album: subAlb.album });
                           setSelectedTrackIds(new Set());
-                          // Switch to TRACKS view so the user can immediately edit/reorder or play tracks of this album
-                          setBankViewMode('tracks');
-                          localStorage.setItem('v2_solid_bank_view_mode', 'tracks');
                         }}
                         onDoubleClick={(e) => {
                           e.stopPropagation();
@@ -6018,7 +6360,7 @@ export default function App() {
                             e.currentTarget.style.backgroundColor = 'transparent';
                           }
                         }}
-                        title={`${subAlb.album} (${subAlb.tracks.length}曲) - クリックでTRACKS編集 / ダブルクリックまたはペンアイコンでタイトル変更`}
+                        title={`${subAlb.album} (${subAlb.tracks.length}曲) - クリックでアルバム表示 / ダブルクリックまたはペンアイコンでタイトル変更`}
                       >
                         {isRenamingThisSub ? (
                           <div
@@ -6590,7 +6932,6 @@ export default function App() {
                  <button
                    onClick={() => {
                      setBankViewMode('album');
-                     setDrillDownAlbum(null);
                      localStorage.setItem('v2_solid_bank_view_mode', 'album');
                    }}
                    className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors font-bold"
@@ -6605,7 +6946,6 @@ export default function App() {
                  <button
                    onClick={() => {
                      setBankViewMode('card');
-                     setDrillDownAlbum(null);
                      localStorage.setItem('v2_solid_bank_view_mode', 'card');
                    }}
                    className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors font-bold"
@@ -6620,7 +6960,6 @@ export default function App() {
                  <button
                    onClick={() => {
                      setBankViewMode('list');
-                     setDrillDownAlbum(null);
                      localStorage.setItem('v2_solid_bank_view_mode', 'list');
                    }}
                    className="flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 border rounded-[1px] transition-colors"
@@ -6773,47 +7112,12 @@ export default function App() {
                     </button>
                     {selectedTrackIds.size > 0 && (
                       <div className="flex items-center gap-3">
-                        {/* Batch Move / Reorder Buttons for Selected Tracks */}
+                        {/* Compact Batch Indicator (Full move controls appear at bottom of table) */}
                         <div className="flex items-center gap-1 border-r pr-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
-                          <span className="text-[9px] font-mono font-semibold px-1 py-0.5 border rounded-[1px] shrink-0" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
-                            {selectedTrackIds.size} 選択中
+                          <span className="text-[9px] font-mono font-semibold px-1 py-0.5 border rounded-[1px] shrink-0 flex items-center gap-1" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
+                            <Check size={9} />
+                            <span>{selectedTrackIds.size} 選択中</span>
                           </span>
-                          <button 
-                            type="button"
-                            onClick={() => moveSelectedTracks('top')}
-                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
-                            style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
-                            title={`選択した${selectedTrackIds.size}曲を一番上へ移動 (TOP)`}
-                          >
-                            <ChevronsUp size={11} />
-                          </button>
-                          <button 
-                            type="button"
-                            onClick={() => moveSelectedTracks('up')}
-                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
-                            style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
-                            title={`選択した${selectedTrackIds.size}曲を一つ上へ移動 (UP)`}
-                          >
-                            <ChevronUp size={11} />
-                          </button>
-                          <button 
-                            type="button"
-                            onClick={() => moveSelectedTracks('down')}
-                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
-                            style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
-                            title={`選択した${selectedTrackIds.size}曲を一つ下へ移動 (DOWN)`}
-                          >
-                            <ChevronDown size={11} />
-                          </button>
-                          <button 
-                            type="button"
-                            onClick={() => moveSelectedTracks('bottom')}
-                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
-                            style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
-                            title={`選択した${selectedTrackIds.size}曲を一番下へ移動 (BOTTOM)`}
-                          >
-                            <ChevronsDown size={11} />
-                          </button>
                         </div>
 
                         {/* Batch Clean Filename to Title tool */}
@@ -7014,8 +7318,8 @@ export default function App() {
           ) : bankViewMode !== 'tracks' ? (
             <AlbumCardView
               activePlaylistId={activePlaylistId}
-              albums={albumGroups}
-              artists={artistGroups}
+              albums={displayedAlbumGroups}
+              artists={displayedArtistGroups}
               cardSize={cardSize}
               cardScale={cardScale}
               displayMode={bankViewMode}
@@ -7229,9 +7533,88 @@ export default function App() {
                   {colVisibility.actions && <div className="w-24 flex-shrink-0 text-center" style={{ color: 'var(--theme-list-textMuted)' }}>操作</div>}
                 </div>
                 {/* List Items */}
-                <div className="flex flex-col flex-1 pb-4 w-full">
+                <div className="flex flex-col flex-1 pb-16 w-full">
                   {memoizedTrackList}
                 </div>
+
+                {/* Floating / Sticky Industrial Batch Action Bar at bottom */}
+                {selectedTrackIds.size > 0 && (
+                  <div
+                    className="sticky bottom-0 left-0 right-0 z-30 px-3 py-1.5 border-t flex items-center justify-between gap-2 shadow-2xl font-mono shrink-0 select-none"
+                    style={{
+                      backgroundColor: 'var(--theme-surface)',
+                      borderColor: 'var(--theme-accent)',
+                      boxShadow: '0 -4px 16px rgba(0,0,0,0.45)'
+                    }}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 border rounded-[1px] flex items-center gap-1 shrink-0" style={{ borderColor: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)', color: 'var(--theme-accent)' }}>
+                        <Check size={10} />
+                        <span>{selectedTrackIds.size}曲 選択中</span>
+                      </span>
+                      <span className="text-[8.5px] opacity-75 hidden sm:inline truncate" style={{ color: 'var(--theme-textMuted)' }}>
+                        (Shiftキーで範囲選択 / 矢印で一括移動)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        disabled={!canMoveSelectedTop}
+                        onClick={() => moveSelectedTracks('top')}
+                        className="flex items-center gap-1 text-[9px] font-mono px-2 py-1 border rounded-[1px] hover:opacity-80 active:scale-95 disabled:opacity-25 transition-all cursor-pointer"
+                        style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                        title={`選択した${selectedTrackIds.size}曲を一括で一番上へ移動 (TOP)`}
+                      >
+                        <ChevronsUp size={11} />
+                        <span>TOP (一番上)</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canMoveSelectedUp}
+                        onClick={() => moveSelectedTracks('up')}
+                        className="flex items-center gap-1 text-[9px] font-mono px-2 py-1 border rounded-[1px] hover:opacity-80 active:scale-95 disabled:opacity-25 transition-all cursor-pointer"
+                        style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                        title={`選択した${selectedTrackIds.size}曲を一括で一つ上へ移動 (UP)`}
+                      >
+                        <ChevronUp size={11} />
+                        <span>UP (上へ)</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canMoveSelectedDown}
+                        onClick={() => moveSelectedTracks('down')}
+                        className="flex items-center gap-1 text-[9px] font-mono px-2 py-1 border rounded-[1px] hover:opacity-80 active:scale-95 disabled:opacity-25 transition-all cursor-pointer"
+                        style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                        title={`選択した${selectedTrackIds.size}曲を一括で一つ下へ移動 (DOWN)`}
+                      >
+                        <ChevronDown size={11} />
+                        <span>DOWN (下へ)</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canMoveSelectedBottom}
+                        onClick={() => moveSelectedTracks('bottom')}
+                        className="flex items-center gap-1 text-[9px] font-mono px-2 py-1 border rounded-[1px] hover:opacity-80 active:scale-95 disabled:opacity-25 transition-all cursor-pointer"
+                        style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                        title={`選択した${selectedTrackIds.size}曲を一括で一番下へ移動 (BOTTOM)`}
+                      >
+                        <ChevronsDown size={11} />
+                        <span>BOTTOM (一番下)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedTrackIds(new Set()); lastSelectedTrackIdRef.current = null; }}
+                        className="flex items-center gap-1 text-[9px] font-mono px-2 py-1 border rounded-[1px] hover:opacity-80 active:scale-95 transition-all cursor-pointer ml-1"
+                        style={{ backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)' }}
+                        title="選択を解除"
+                      >
+                        <X size={10} />
+                        <span>解除</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
