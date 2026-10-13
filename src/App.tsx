@@ -853,6 +853,41 @@ export default function App() {
     }
   }, [viewMode, windowSizes]);
 
+  // Fullscreen state and handler
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        if (document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+        } else if ((document.documentElement as any).webkitRequestFullscreen) {
+          await (document.documentElement as any).webkitRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen();
+        }
+      }
+    } catch (err) {
+      console.warn('Fullscreen toggle request:', err);
+    }
+  };
+
   // Load from IndexedDB
   useEffect(() => {
     const loadState = async () => {
@@ -4471,16 +4506,43 @@ export default function App() {
           <h1 className="text-xl font-bold tracking-widest uppercase">SOLID AUDIO MUSIC PLAYER</h1>
         </div>
         <div className="flex items-center gap-4">
-          <button 
-            onClick={() => setViewMode('mini')}
-            className="flex items-center justify-center border h-6 px-2 transition-colors hover:opacity-80"
-            style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-textMuted)' }}
-            onMouseEnter={e => e.currentTarget.style.color = 'var(--theme-textMain)'}
-            onMouseLeave={e => e.currentTarget.style.color = 'var(--theme-textMuted)'}
-            title="Mini Player Mode"
-          >
-            <Minimize2 size={12} />
-          </button>
+          <div className="flex items-center gap-1">
+            {/* Full Screen Toggle Button */}
+            <button 
+              onClick={toggleFullscreen}
+              className="flex items-center justify-center border h-6 px-2 transition-colors hover:opacity-80"
+              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)', color: isFullscreen ? 'var(--theme-accent)' : 'var(--theme-textMuted)' }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--theme-textMain)'}
+              onMouseLeave={e => e.currentTarget.style.color = isFullscreen ? 'var(--theme-accent)' : 'var(--theme-textMuted)'}
+              title={isFullscreen ? "Full Screen 解除 (閉じる)" : "Full Screen 表示"}
+            >
+              {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+            </button>
+
+            {/* Card Mode Button */}
+            <button 
+              onClick={() => setViewMode('mini')}
+              className="flex items-center justify-center border h-6 px-2 transition-colors hover:opacity-80"
+              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-textMuted)' }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--theme-textMain)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--theme-textMuted)'}
+              title="Card Mode (カード型ミニプレーヤー)"
+            >
+              <PanelTop size={12} />
+            </button>
+
+            {/* Slim Bar Mode Button */}
+            <button 
+              onClick={() => setViewMode('slim')}
+              className="flex items-center justify-center border h-6 px-2 transition-colors hover:opacity-80"
+              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-textMuted)' }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--theme-textMain)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--theme-textMuted)'}
+              title="Slim Bar Mode (スリムバー型ミニプレーヤー)"
+            >
+              <Minus size={12} />
+            </button>
+          </div>
           
           <div 
             className="flex items-center gap-3 border h-6 px-3"
@@ -5450,6 +5512,7 @@ export default function App() {
                                   try { localStorage.setItem('v2_solidSelectedCategoryFilter', '__ALL__'); } catch {}
                                   setHoveredCategoryInMenu('__ALL__');
                                   setHoveredPlaylistInMenu(null);
+                                  setIsCategoryCascadeMenuOpen(false);
                                 }}
                                 className="px-2.5 py-1.5 flex items-center justify-between cursor-pointer transition-colors"
                                 style={{
@@ -5482,6 +5545,7 @@ export default function App() {
                                       try { localStorage.setItem('v2_solidSelectedCategoryFilter', cat); } catch {}
                                       setHoveredCategoryInMenu(cat);
                                       setHoveredPlaylistInMenu(null);
+                                      setIsCategoryCascadeMenuOpen(false);
                                     }}
                                     className="px-2.5 py-1.5 flex items-center justify-between cursor-pointer transition-colors"
                                     style={{
@@ -5513,6 +5577,7 @@ export default function App() {
                                   try { localStorage.setItem('v2_solidSelectedCategoryFilter', '__UNCATEGORIZED__'); } catch {}
                                   setHoveredCategoryInMenu('__UNCATEGORIZED__');
                                   setHoveredPlaylistInMenu(null);
+                                  setIsCategoryCascadeMenuOpen(false);
                                 }}
                                 className="px-2.5 py-1.5 flex items-center justify-between cursor-pointer transition-colors border-t"
                                 style={{
