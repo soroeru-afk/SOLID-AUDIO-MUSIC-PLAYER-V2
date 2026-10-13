@@ -37,6 +37,7 @@ interface AlbumCardViewProps {
   onDeleteAlbum?: (album: AlbumGroup) => void;
   onDeleteAlbums?: (albums: AlbumGroup[]) => void;
   onRenameAlbum?: (album: AlbumGroup, newName: string) => void;
+  focusedAlbumId?: string | null;
   currentTrackId?: string;
   isPlaying?: boolean;
 }
@@ -71,6 +72,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   onDeleteAlbum,
   onDeleteAlbums,
   onRenameAlbum,
+  focusedAlbumId,
   currentTrackId,
   isPlaying,
 }) => {
@@ -99,15 +101,15 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   // Reset manual zoom override and selection when switching sidebar playlists or display modes
   const firstAlbumId = albums[0]?.id || null;
   useEffect(() => {
-    setZoomedAlbumId(null);
+    setZoomedAlbumId(focusedAlbumId || null);
     setConfirmDeleteAlbumId(null);
     setRenamingAlbumId(null);
     setSelectedAlbumIds(new Set());
     setConfirmDeleteSelected(false);
     if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTo({ top: 0 });
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, [activePlaylistId, displayMode, firstAlbumId]);
+  }, [activePlaylistId, displayMode, firstAlbumId, focusedAlbumId]);
 
   const toggleSelectAlbum = (albumId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -322,11 +324,17 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     </div>
   );
 
+  const matchedFocusedAlbum = focusedAlbumId
+    ? albums.find((a) => a.id === focusedAlbumId || a.album.toLowerCase() === focusedAlbumId.toLowerCase())
+    : null;
+
   const effectiveZoomedAlbumId =
     zoomedAlbumId === '__NONE__'
       ? null
       : zoomedAlbumId !== null
       ? zoomedAlbumId
+      : matchedFocusedAlbum
+      ? matchedFocusedAlbum.id
       : displayMode === 'album' && activePlaylistId && activePlaylistId !== 'all-tracks' && albums.length > 0
       ? albums[0].id
       : null;
@@ -340,7 +348,9 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     }
   };
 
-  const zoomedAlbum = effectiveZoomedAlbumId ? albums.find((a) => a.id === effectiveZoomedAlbumId) || null : null;
+  const zoomedAlbum = effectiveZoomedAlbumId
+    ? albums.find((a) => a.id === effectiveZoomedAlbumId || a.album.toLowerCase() === effectiveZoomedAlbumId.toLowerCase()) || null
+    : null;
 
   const handleAlbumDragStart = (e: React.DragEvent, albumId: string) => {
     if (renamingAlbumId === albumId) {

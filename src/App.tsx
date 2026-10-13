@@ -5,7 +5,8 @@ import {
   ChevronsUp, ChevronsDown, Palette, Activity, Check, X, Trash2, ListPlus, AlertCircle,
   Minimize2, Maximize2, Layers, Minus, PanelTop, GripVertical, Type, Eye, EyeOff,
   LayoutGrid, List, Disc, User, ChevronRight, ArrowLeft, PanelLeftClose, PanelLeftOpen, Edit2,
-  ArrowLeftRight, FileText
+  ArrowLeftRight, FileText, FolderPlus, FolderTree, Tag, Move,
+  Bookmark, BookmarkPlus, BookmarkCheck
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { get, set, del } from 'idb-keyval';
@@ -35,6 +36,7 @@ interface Playlist {
   id: string;
   name: string;
   tracks: Track[];
+  category?: string;
 }
 
 const THEMES = [
@@ -503,6 +505,7 @@ export default function App() {
     }
   });
   const [drillDownAlbum, setDrillDownAlbum] = useState<{ artist: string; album: string } | null>(null);
+  const [focusedAlbumId, setFocusedAlbumId] = useState<string | null>(null);
   const [expandedSidebarFolderIds, setExpandedSidebarFolderIds] = useState<Set<string>>(() => new Set());
   const [sidebarDragAlbum, setSidebarDragAlbum] = useState<{ playlistId: string; albumId: string } | null>(null);
   const [sidebarDragOverAlbum, setSidebarDragOverAlbum] = useState<{ playlistId: string; albumId: string } | null>(null);
@@ -607,6 +610,36 @@ export default function App() {
   const [isPlaylistSelectionMode, setIsPlaylistSelectionMode] = useState(false);
   const lastSelectedPlaylistIdRef = useRef<string | null>(null);
   const [confirmDeleteSelectedPlaylists, setConfirmDeleteSelectedPlaylists] = useState(false);
+
+  // --- Category Management State ---
+  const [categories, setCategories] = useState<string[]>([]);
+  const [sidebarCategoryMode, setSidebarCategoryMode] = useState<'dropdown' | 'tree'>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solidSidebarCategoryMode');
+      if (saved === 'dropdown' || saved === 'tree') return saved;
+    } catch {}
+    return 'tree';
+  });
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solidSelectedCategoryFilter');
+      if (saved) return saved;
+    } catch {}
+    return '__ALL__';
+  });
+  const [expandedCategoryNames, setExpandedCategoryNames] = useState<Set<string>>(new Set());
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [renamingCategoryName, setRenamingCategoryName] = useState<string | null>(null);
+  const [editCategoryNameInput, setEditCategoryNameInput] = useState('');
+  const [confirmDeleteCategoryName, setConfirmDeleteCategoryName] = useState<string | null>(null);
+  const [dragOverCategoryTarget, setDragOverCategoryTarget] = useState<string | null>(null);
+  const [activeCategoryMenuPlaylistId, setActiveCategoryMenuPlaylistId] = useState<string | null>(null);
+  const [showBatchMoveCategoryModal, setShowBatchMoveCategoryModal] = useState(false);
+  const [isCategoryCascadeMenuOpen, setIsCategoryCascadeMenuOpen] = useState(false);
+  const [hoveredCategoryInMenu, setHoveredCategoryInMenu] = useState<string | null>(null);
+  const [hoveredPlaylistInMenu, setHoveredPlaylistInMenu] = useState<string | null>(null);
+  const categoryCascadeMenuRef = useRef<HTMLDivElement>(null);
 
   // Duplicates & Mini Mode State
   const [duplicateGroups, setDuplicateGroups] = useState<Track[][]>([]);
@@ -856,9 +889,31 @@ export default function App() {
           // Restore playlists
           const validPlaylists = savedPlaylists.map((p: any) => ({
             ...p,
+            category: p.category || undefined,
             tracks: p.tracks.map((pt: Track) => libraryMap.get(pt.id)).filter(Boolean) as Track[]
           }));
           setPlaylists(validPlaylists);
+
+          const savedCategories = await get('v2_solidCategories');
+          const discoveredCats = new Set<string>();
+          if (Array.isArray(savedCategories)) {
+            savedCategories.forEach(c => { if (typeof c === 'string' && c.trim()) discoveredCats.add(c.trim()); });
+          }
+          validPlaylists.forEach((p: any) => {
+            if (p.category && typeof p.category === 'string' && p.category.trim()) discoveredCats.add(p.category.trim());
+          });
+          const catList = Array.from(discoveredCats);
+          setCategories(catList);
+          setExpandedCategoryNames(new Set([...catList, '__UNCATEGORIZED__']));
+
+          const savedCategoryMode = await get('v2_solidSidebarCategoryMode');
+          if (savedCategoryMode === 'dropdown' || savedCategoryMode === 'tree') {
+            setSidebarCategoryMode(savedCategoryMode);
+          }
+          const savedSelectedCat = await get('v2_solidSelectedCategoryFilter');
+          if (savedSelectedCat) {
+            setSelectedCategoryFilter(savedSelectedCat);
+          }
 
           if (savedPlayingPlaylistId) setPlayingPlaylistId(savedPlayingPlaylistId);
           if (savedPlaybackQueueIds && Array.isArray(savedPlaybackQueueIds)) {
@@ -897,11 +952,13 @@ export default function App() {
         set('v2_solidPlayingPlaylistId', playingPlaylistId).catch(console.error);
         set('v2_solidPlaybackQueueIds', playbackQueue.map(t => t.id)).catch(console.error);
         set('v2_solidCurrentTrackIndex', currentTrackIndex).catch(console.error);
-
+        set('v2_solidCategories', categories).catch(console.error);
+        set('v2_solidSidebarCategoryMode', sidebarCategoryMode).catch(console.error);
+        set('v2_solidSelectedCategoryFilter', selectedCategoryFilter).catch(console.error);
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [library, playlists, sidebarWidth, colWidths, colVisibility, colOrder, themeIndex, fontFamilyId, listFontSize, activePlaylistId, playingPlaylistId, playbackQueue, currentTrackIndex, isInitialized]);
+  }, [library, playlists, sidebarWidth, colWidths, colVisibility, colOrder, themeIndex, fontFamilyId, listFontSize, activePlaylistId, playingPlaylistId, playbackQueue, currentTrackIndex, categories, sidebarCategoryMode, selectedCategoryFilter, isInitialized]);
 
   // Close theme menu on outside click or Escape key
   useEffect(() => {
@@ -940,6 +997,25 @@ export default function App() {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isFontMenuOpen]);
+
+  // Close Category Cascade Menu on outside click or Escape key
+  useEffect(() => {
+    if (!isCategoryCascadeMenuOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (categoryCascadeMenuRef.current && !categoryCascadeMenuRef.current.contains(e.target as Node)) {
+        setIsCategoryCascadeMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsCategoryCascadeMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isCategoryCascadeMenuOpen]);
 
 
   // (Moved player state)
@@ -1962,12 +2038,21 @@ export default function App() {
     };
   };
 
-  const processFiles = async (files: FileList | File[], targetPlaylistName?: string) => {
+  const processFiles = async (files: FileList | File[], targetPlaylistName?: string, targetCategory?: string) => {
     const fileArray = Array.from(files);
     if (fileArray.length === 0) return;
 
     setIsLoadingFiles(true);
     setLoadingProgress({ done: 0, total: fileArray.length });
+
+    // Determine target category
+    const effectiveCategory = targetCategory !== undefined 
+      ? targetCategory 
+      : (selectedCategoryFilter !== '__ALL__' && selectedCategoryFilter !== '__UNCATEGORIZED__' ? selectedCategoryFilter : undefined);
+
+    if (effectiveCategory && !categories.includes(effectiveCategory)) {
+      setCategories(prev => prev.includes(effectiveCategory) ? prev : [...prev, effectiveCategory]);
+    }
 
     // Process sequentially (1 by 1) to prevent V8 memory spikes (OOM)
     const allTracks: Track[] = [];
@@ -2017,8 +2102,12 @@ export default function App() {
                let updatedPlaylists = [...prev];
                let existingPl = updatedPlaylists.find(p => p.name === targetPlaylistName);
                if (!existingPl) {
-                 existingPl = { id: uuidv4(), name: targetPlaylistName, tracks: [] };
+                 existingPl = { id: uuidv4(), name: targetPlaylistName, tracks: [], category: effectiveCategory };
                  updatedPlaylists.push(existingPl);
+               } else if (effectiveCategory && !existingPl.category) {
+                 existingPl = { ...existingPl, category: effectiveCategory };
+                 const targetIdx = updatedPlaylists.findIndex(p => p.name === targetPlaylistName);
+                 if (targetIdx !== -1) updatedPlaylists[targetIdx] = existingPl;
                }
                const targetId = existingPl.id;
                return updatedPlaylists.map(p => {
@@ -2064,8 +2153,12 @@ export default function App() {
           if (targetPlaylistName) {
             let existing = updatedPlaylists.find(p => p.name === targetPlaylistName);
             if (!existing) {
-              existing = { id: uuidv4(), name: targetPlaylistName, tracks: [] };
+              existing = { id: uuidv4(), name: targetPlaylistName, tracks: [], category: effectiveCategory };
               updatedPlaylists.push(existing);
+            } else if (effectiveCategory && !existing.category) {
+              existing = { ...existing, category: effectiveCategory };
+              const targetIdx = updatedPlaylists.findIndex(p => p.name === targetPlaylistName);
+              if (targetIdx !== -1) updatedPlaylists[targetIdx] = existing;
             }
             currentTargetId = existing.id;
           }
@@ -2104,6 +2197,10 @@ export default function App() {
       const fileArray = Array.from(e.target.files) as File[];
       if (fileInputRef.current) fileInputRef.current.value = '';
 
+      const targetCat = (selectedCategoryFilter !== '__ALL__' && selectedCategoryFilter !== '__UNCATEGORIZED__')
+        ? selectedCategoryFilter
+        : undefined;
+
       // Group files by the top-level selected folder name so the entire parent folder (including all its album subfolders)
       // becomes a single item in the sidebar and unfolds all its subfolder albums inside the right pane!
       const folderGroups = new Map<string | undefined, File[]>();
@@ -2119,16 +2216,21 @@ export default function App() {
 
       for (const [playlistName, files] of Array.from(folderGroups.entries())) {
         if (files.length > 0) {
-          await processFiles(files, playlistName);
+          await processFiles(files, playlistName, targetCat);
         }
       }
     }
   };
 
-  const handleDrop = async (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent, dropTargetCategory?: string) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
+    setDragOverCategoryTarget(null);
+
+    const targetCat = dropTargetCategory !== undefined
+      ? dropTargetCategory
+      : (selectedCategoryFilter !== '__ALL__' && selectedCategoryFilter !== '__UNCATEGORIZED__' ? selectedCategoryFilter : undefined);
 
     const items = e.dataTransfer.items;
     
@@ -2202,7 +2304,7 @@ export default function App() {
         
         for (const [playlistName, files] of Array.from(fileGroups.entries())) {
            if (files.length > 0) {
-              await processFiles(files, playlistName);
+              await processFiles(files, playlistName, targetCat);
            }
         }
         return;
@@ -2211,7 +2313,7 @@ export default function App() {
 
     // Fallback: use dataTransfer.files directly
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      processFiles(e.dataTransfer.files);
+      processFiles(e.dataTransfer.files, undefined, targetCat);
     }
   };
 
@@ -2573,7 +2675,15 @@ export default function App() {
 
   const submitPlaylist = () => {
     if (newPlaylistName.trim()) {
-      const newPlaylist: Playlist = { id: uuidv4(), name: newPlaylistName.trim().toUpperCase(), tracks: [] };
+      const targetCat = (selectedCategoryFilter !== '__ALL__' && selectedCategoryFilter !== '__UNCATEGORIZED__')
+        ? selectedCategoryFilter
+        : undefined;
+      const newPlaylist: Playlist = { 
+        id: uuidv4(), 
+        name: newPlaylistName.trim().toUpperCase(), 
+        tracks: [],
+        category: targetCat
+      };
       setPlaylists([playlists[0], newPlaylist, ...playlists.slice(1)]);
       setActivePlaylistId(newPlaylist.id);
     }
@@ -2590,6 +2700,116 @@ export default function App() {
       } catch {}
       return next;
     });
+  };
+
+  // --- Category Handlers ---
+  const handleCreateCategory = (nameToCreate?: string) => {
+    const raw = (nameToCreate !== undefined ? nameToCreate : newCategoryName).trim();
+    if (!raw) {
+      setIsCreatingCategory(false);
+      setNewCategoryName('');
+      return;
+    }
+    const cleanName = normalizeZenkakuAlphanumeric(raw);
+    if (!categories.includes(cleanName)) {
+      setCategories(prev => [...prev, cleanName]);
+      setExpandedCategoryNames(prev => new Set([...prev, cleanName]));
+      setSelectedCategoryFilter(cleanName);
+    }
+    setIsCreatingCategory(false);
+    setNewCategoryName('');
+  };
+
+  const handleRenameCategory = (oldName: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === oldName) {
+      setRenamingCategoryName(null);
+      return;
+    }
+    const cleanName = normalizeZenkakuAlphanumeric(trimmed);
+    setCategories(prev => prev.map(c => c === oldName ? cleanName : c));
+    setPlaylists(prev => prev.map(p => p.category === oldName ? { ...p, category: cleanName } : p));
+    setExpandedCategoryNames(prev => {
+      const next = new Set(prev);
+      if (next.has(oldName)) {
+        next.delete(oldName);
+        next.add(cleanName);
+      }
+      return next;
+    });
+    if (selectedCategoryFilter === oldName) {
+      setSelectedCategoryFilter(cleanName);
+    }
+    setRenamingCategoryName(null);
+  };
+
+  const handleDeleteCategory = (catToDelete: string) => {
+    // Belonging playlists safely revert to Uncategorized
+    setCategories(prev => prev.filter(c => c !== catToDelete));
+    setPlaylists(prev => prev.map(p => p.category === catToDelete ? { ...p, category: undefined } : p));
+    setExpandedCategoryNames(prev => {
+      const next = new Set(prev);
+      next.delete(catToDelete);
+      return next;
+    });
+    if (selectedCategoryFilter === catToDelete) {
+      setSelectedCategoryFilter('__ALL__');
+    }
+    setConfirmDeleteCategoryName(null);
+  };
+
+  const handleMovePlaylistToCategory = (playlistId: string, targetCat: string | undefined) => {
+    setPlaylists(prev => prev.map(p => p.id === playlistId ? { ...p, category: targetCat } : p));
+    setActiveCategoryMenuPlaylistId(null);
+  };
+
+  const moveSelectedPlaylistsToCategory = (targetCat: string | undefined) => {
+    if (selectedPlaylistIds.size === 0) return;
+    setPlaylists(prev => prev.map(p => selectedPlaylistIds.has(p.id) ? { ...p, category: targetCat } : p));
+    setShowBatchMoveCategoryModal(false);
+  };
+
+  const toggleCategoryExpand = (catName: string) => {
+    setExpandedCategoryNames(prev => {
+      const next = new Set(prev);
+      if (next.has(catName)) {
+        next.delete(catName);
+      } else {
+        next.add(catName);
+      }
+      return next;
+    });
+  };
+
+  const handlePlaylistDropOnCategory = (e: React.DragEvent, targetCategory: string | undefined) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverCategoryTarget(null);
+    setDragOverPlaylistId(null);
+
+    if (!draggedPlaylistId || draggedPlaylistId === 'all-tracks') return;
+
+    setPlaylists(prev => prev.map(p => {
+      if (p.id === draggedPlaylistId) {
+        return { ...p, category: targetCategory };
+      }
+      return p;
+    }));
+    setDraggedPlaylistId(null);
+  };
+
+  const handleCategoryFolderDrop = async (e: React.DragEvent, catName: string | undefined) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverCategoryTarget(null);
+    setIsDragOver(false);
+
+    if (draggedPlaylistId) {
+      handlePlaylistDropOnCategory(e, catName);
+      return;
+    }
+
+    await handleDrop(e, catName);
   };
 
   // --- Playlist Drag and Drop ---
@@ -2634,6 +2854,7 @@ export default function App() {
   const handlePlaylistDragEnd = () => {
     setDraggedPlaylistId(null);
     setDragOverPlaylistId(null);
+    setDragOverCategoryTarget(null);
   };
 
   const togglePlaylistSelection = (e: React.MouseEvent, playlistId: string) => {
@@ -4614,6 +4835,59 @@ export default function App() {
                 </div>
                 
                 <div className="flex items-center gap-1 shrink-0">
+                  {/* Category View Mode Switch: LIST vs TREE */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSidebarCategoryMode('dropdown');
+                        try { localStorage.setItem('v2_solidSidebarCategoryMode', 'dropdown'); } catch {}
+                      }}
+                      className="px-1.5 h-5 flex items-center justify-center text-[9px] font-mono tracking-wider transition-colors border rounded-[2px] hover:opacity-80 active:scale-95 focus:outline-none"
+                      style={
+                        sidebarCategoryMode === 'dropdown'
+                          ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                          : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }
+                      }
+                      title="リスト表示モード (選択したカテゴリーのリストのみ表示・ホイールスクロール不要)"
+                    >
+                      <FileText size={11} className="mr-0.5 shrink-0" />
+                      <span>LIST</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSidebarCategoryMode('tree');
+                        try { localStorage.setItem('v2_solidSidebarCategoryMode', 'tree'); } catch {}
+                      }}
+                      className="px-1.5 h-5 flex items-center justify-center text-[9px] font-mono tracking-wider transition-colors border rounded-[2px] hover:opacity-80 active:scale-95 focus:outline-none"
+                      style={
+                        sidebarCategoryMode === 'tree'
+                          ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                          : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }
+                      }
+                      title="フォルダツリー展開モード (全カテゴリーをフォルダ階層で展開・D&Dで整理)"
+                    >
+                      <FolderTree size={11} className="mr-0.5" />
+                      <span>TREE</span>
+                    </button>
+                  </div>
+
+                  {/* Add New Category button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreatingCategory(true);
+                      setNewCategoryName('');
+                    }}
+                    className="flex items-center gap-0.5 justify-center border rounded-[2px] px-1.5 h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95"
+                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }}
+                    title="新規カテゴリーを作成 (+ CATEGORY)"
+                  >
+                    <BookmarkPlus size={10} />
+                    <span>+CAT</span>
+                  </button>
+
                   {/* OPEN / CLOSE all folder playlists toggle button */}
                   {(() => {
                     const expandableFolderIds = playlists
@@ -4641,8 +4915,8 @@ export default function App() {
                           expandableFolderIds.length === 0
                             ? '複数アルバムを含むフォルダがありません'
                             : isAllFoldersOpen
-                            ? 'すべてのフォルダを一括で閉じる (CLOSE ALL)'
-                            : `すべてのフォルダ (${expandableFolderIds.length}件) を一括で開く (OPEN ALL)`
+                            ? 'すべてのアルバムフォルダを一括で閉じる (CLOSE ALL)'
+                            : `すべてのアルバムフォルダ (${expandableFolderIds.length}件) を一括で開く (OPEN ALL)`
                         }
                       >
                         {isAllFoldersOpen ? <FolderOpen size={10} /> : <Folder size={10} />}
@@ -4651,130 +4925,622 @@ export default function App() {
                     );
                   })()}
 
-                  {/* Collapse sidebar button */}
+                  {/* SELECT button to toggle selection mode */}
                   <button 
                     onClick={() => {
-                      prevSidebarWidthRef.current = sidebarWidth || 240;
-                      setIsSidebarCollapsed(true);
+                      const nextMode = !isPlaylistSelectionMode;
+                      setIsPlaylistSelectionMode(nextMode);
+                      if (!nextMode && selectedPlaylistIds.size === 0) {
+                        setConfirmDeleteSelectedPlaylists(false);
+                      }
                     }}
-                    className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
-                    title="サイドバーを折りたたむ（全画面カード表示）"
+                    className="flex items-center justify-center border rounded-[2px] px-1.5 h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95"
+                    style={isPlaylistSelectionMode 
+                      ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' } 
+                      : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }
+                    }
+                    title={isPlaylistSelectionMode ? "選択モード終了" : "プレイリスト選択モード (SETリピート・一括操作)"}
                   >
-                    <PanelLeftClose size={11} />
+                    SELECT
                   </button>
 
-                  {/* SELECT button to toggle selection mode */}
-              <button 
-                onClick={() => {
-                  const nextMode = !isPlaylistSelectionMode;
-                  setIsPlaylistSelectionMode(nextMode);
-                  if (!nextMode && selectedPlaylistIds.size === 0) {
-                    setConfirmDeleteSelectedPlaylists(false);
-                  }
-                }}
-                className="flex items-center justify-center border rounded-[2px] px-1.5 h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95"
-                style={isPlaylistSelectionMode 
-                  ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' } 
-                  : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }
-                }
-                title={isPlaylistSelectionMode ? "選択モード終了" : "プレイリスト選択モード (SETリピート・一括操作)"}
-              >
-                SELECT
-              </button>
+                  <button 
+                    onClick={() => { setIsCreatingPlaylist(true); setNewPlaylistName(''); }}
+                    className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                    title="CREATE LIST"
+                  >
+                    <Plus size={10} style={{ color: 'var(--theme-listHeader-text)' }} />
+                  </button>
+                </div>
+              </div>
 
+              {/* Batch Action & Reorder Toolbar (Appears below header when items are selected to prevent horizontal squeezing) */}
               {selectedPlaylistIds.size > 0 && (
-                <>
-                  <button 
-                    onClick={() => moveSelectedPlaylists('top')}
-                    className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                    title="選択したリストを一番上へ移動"
-                  >
-                    <ChevronsUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
-                  </button>
+                <div 
+                  className="border-b px-2 py-1 flex items-center justify-between shrink-0 gap-1.5 transition-all" 
+                  style={{ 
+                    backgroundColor: 'var(--theme-surfaceLighter)', 
+                    borderColor: 'var(--theme-listHeader-border)' 
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span 
+                      className="text-[9px] font-mono px-1.5 py-0.5 border rounded-[2px] font-semibold shrink-0" 
+                      style={{ 
+                        borderColor: 'var(--theme-accent)', 
+                        color: 'var(--theme-accent)', 
+                        backgroundColor: 'var(--theme-accentMuted)' 
+                      }}
+                    >
+                      {selectedPlaylistIds.size} SELECTED
+                    </span>
+                    <button
+                      onClick={() => setShowBatchMoveCategoryModal(true)}
+                      className="flex items-center gap-0.5 border rounded-[2px] px-1.5 h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95"
+                      style={{ backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }}
+                      title="選択したリストをカテゴリーへ一括移動 (BATCH MOVE TO CATEGORY)"
+                    >
+                      <Move size={10} />
+                      <span>MOVE</span>
+                    </button>
+                  </div>
 
-                  <button 
-                    onClick={() => moveSelectedPlaylists('up')}
-                    className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                    title="選択したリストを上に移動"
-                  >
-                    <ChevronUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
-                  </button>
-
-                  <button 
-                    onClick={() => moveSelectedPlaylists('down')}
-                    className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                    title="選択したリストを下に移動"
-                  >
-                    <ChevronDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
-                  </button>
-
-                  <button 
-                    onClick={() => moveSelectedPlaylists('bottom')}
-                    className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                    title="選択したリストを一番下へ移動"
-                  >
-                    <ChevronsDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
-                  </button>
-
-                  {confirmDeleteSelectedPlaylists ? (
-                    <div className="flex items-center gap-0.5 px-1 py-0.5 border rounded-[2px]" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-borderActive)' }} onClick={e => e.stopPropagation()}>
-                      <span className="text-[8px] uppercase tracking-tighter" style={{ color: 'var(--theme-accent)' }}>DEL?</span>
-                      <button
-                        onClick={deleteSelectedPlaylists}
-                        className="p-0.5 hover:opacity-80"
-                        title="選択したリストを削除"
-                        style={{ color: 'var(--theme-accent)' }}
-                      >
-                        <Trash2 size={10} />
-                      </button>
-                      <button
-                        onClick={() => setConfirmDeleteSelectedPlaylists(false)}
-                        className="p-0.5 hover:opacity-80"
-                        title="キャンセル"
-                        style={{ color: 'var(--theme-textDim)' }}
-                      >
-                        <X size={10} />
-                      </button>
-                    </div>
-                  ) : (
+                  <div className="flex items-center gap-1 shrink-0">
                     <button 
-                      onClick={() => setConfirmDeleteSelectedPlaylists(true)}
+                      onClick={() => moveSelectedPlaylists('top')}
                       className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
                       style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                      title="選択したリストを削除"
+                      title="選択したリストを一番上へ移動 (TOP)"
                     >
-                      <Trash2 size={10} style={{ color: 'var(--theme-accent)' }} />
+                      <ChevronsUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
                     </button>
-                  )}
 
-                  <button 
-                    onClick={() => { setSelectedPlaylistIds(new Set()); setConfirmDeleteSelectedPlaylists(false); }}
-                    className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                    title="選択を解除"
-                  >
-                    <X size={10} style={{ color: 'var(--theme-listHeader-textMuted)' }} />
-                  </button>
-                </>
+                    <button 
+                      onClick={() => moveSelectedPlaylists('up')}
+                      className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                      style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                      title="選択したリストを上に移動 (UP)"
+                    >
+                      <ChevronUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                    </button>
+
+                    <button 
+                      onClick={() => moveSelectedPlaylists('down')}
+                      className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                      style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                      title="選択したリストを下に移動 (DOWN)"
+                    >
+                      <ChevronDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                    </button>
+
+                    <button 
+                      onClick={() => moveSelectedPlaylists('bottom')}
+                      className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                      style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                      title="選択したリストを一番下へ移動 (BOTTOM)"
+                    >
+                      <ChevronsDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                    </button>
+
+                    {confirmDeleteSelectedPlaylists ? (
+                      <div className="flex items-center gap-0.5 px-1 py-0.5 border rounded-[2px]" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-borderActive)' }} onClick={e => e.stopPropagation()}>
+                        <span className="text-[8px] uppercase tracking-tighter" style={{ color: 'var(--theme-accent)' }}>DEL?</span>
+                        <button
+                          onClick={deleteSelectedPlaylists}
+                          className="p-0.5 hover:opacity-80"
+                          title="選択したリストを削除"
+                          style={{ color: 'var(--theme-accent)' }}
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteSelectedPlaylists(false)}
+                          className="p-0.5 hover:opacity-80"
+                          title="キャンセル"
+                          style={{ color: 'var(--theme-textDim)' }}
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => setConfirmDeleteSelectedPlaylists(true)}
+                        className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                        style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                        title="選択したリストを削除"
+                      >
+                        <Trash2 size={10} style={{ color: 'var(--theme-accent)' }} />
+                      </button>
+                    )}
+
+                    <button 
+                      onClick={() => { setSelectedPlaylistIds(new Set()); setConfirmDeleteSelectedPlaylists(false); }}
+                      className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
+                      style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                      title="選択を解除"
+                    >
+                      <X size={10} style={{ color: 'var(--theme-listHeader-textMuted)' }} />
+                    </button>
+                  </div>
+                </div>
               )}
 
-              <button 
-                onClick={() => { setIsCreatingPlaylist(true); setNewPlaylistName(''); }}
-                className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                title="CREATE LIST"
-              >
-                <Plus size={10} style={{ color: 'var(--theme-listHeader-text)' }} />
-              </button>
-            </div>
-          </div>
-          <div className="flex flex-col h-full overflow-y-auto w-full" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
-            {playlists.map((pl, plIdx) => {
+              {/* Inline Create Category Form */}
+              {isCreatingCategory && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b" style={{ backgroundColor: 'var(--theme-list-surface)', borderColor: 'var(--theme-list-border)' }}>
+                  <BookmarkPlus size={12} className="shrink-0" style={{ color: 'var(--theme-list-accent)' }} />
+                  <input
+                    autoFocus
+                    type="text"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="CATEGORY NAME..."
+                    className="flex-1 min-w-0 bg-transparent text-[10px] font-mono outline-none border-b px-1 py-0.5"
+                    style={{ borderColor: 'var(--theme-list-accent)', color: 'var(--theme-list-textMain)' }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCreateCategory();
+                      else if (e.key === 'Escape') setIsCreatingCategory(false);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleCreateCategory()}
+                    className="p-1 hover:opacity-80"
+                    style={{ color: 'var(--theme-list-accent)' }}
+                    title="カテゴリーを作成"
+                  >
+                    <Check size={11} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingCategory(false)}
+                    className="p-1 hover:opacity-80"
+                    style={{ color: 'var(--theme-list-textDim)' }}
+                    title="キャンセル"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
+
+              {/* Mode-specific category selector / toolbar */}
+              {sidebarCategoryMode === 'dropdown' ? (
+                <div className="flex items-center gap-1.5 px-2 py-1 border-b relative" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-listHeader-border)' }}>
+                  <span className="text-[9px] font-mono uppercase tracking-wider shrink-0" style={{ color: 'var(--theme-listHeader-textMuted)' }}>CAT:</span>
+                  
+                  {/* Cascading Category & Playlist Direct Selection Dropdown Trigger */}
+                  <div className="relative flex-1 min-w-0" ref={categoryCascadeMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCategoryCascadeMenuOpen(prev => {
+                          const willOpen = !prev;
+                          if (willOpen) {
+                            // Default active category in dropdown to current selected category, or first category
+                            const initialCat = selectedCategoryFilter !== '__ALL__' 
+                              ? selectedCategoryFilter 
+                              : (categories[0] || '__ALL__');
+                            setHoveredCategoryInMenu(initialCat);
+                            setHoveredPlaylistInMenu(activePlaylistId !== 'all-tracks' ? activePlaylistId : null);
+                          } else {
+                            setHoveredPlaylistInMenu(null);
+                          }
+                          return willOpen;
+                        });
+                      }}
+                      className="w-full flex items-center justify-between font-mono border rounded-[2px] px-2 py-1 truncate cursor-pointer transition-colors hover:opacity-90 focus:outline-none"
+                      style={{
+                        borderColor: isCategoryCascadeMenuOpen ? 'var(--theme-accent)' : 'var(--theme-listHeader-border)',
+                        backgroundColor: 'var(--theme-surface)',
+                        color: 'var(--theme-textMain)',
+                        fontSize: `${listFontSize}px`
+                      }}
+                      title="カテゴリー・プレイリストをプルダウン＆ダイレクト選択 (SIZE連動)"
+                    >
+                      <span className="truncate font-medium flex items-center gap-1.5">
+                        <Bookmark size={listFontSize >= 13 ? 12 : 10} style={{ color: selectedCategoryFilter !== '__ALL__' ? 'var(--theme-accent)' : 'var(--theme-listHeader-textMuted)' }} />
+                        <span className="truncate">
+                          {selectedCategoryFilter === '__ALL__'
+                            ? `ALL PLAYLISTS (${playlists.filter(p => p.id !== 'all-tracks').length})`
+                            : selectedCategoryFilter === '__UNCATEGORIZED__'
+                            ? `UNCATEGORIZED (${playlists.filter(p => p.id !== 'all-tracks' && !p.category).length})`
+                            : `${selectedCategoryFilter} (${playlists.filter(p => p.id !== 'all-tracks' && p.category === selectedCategoryFilter).length})`}
+                        </span>
+                      </span>
+                      <ChevronDown size={listFontSize >= 13 ? 12 : 10} className={`shrink-0 ml-1 transition-transform ${isCategoryCascadeMenuOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--theme-listHeader-textMuted)' }} />
+                    </button>
+
+                    {/* Cascading Dropdown Popover */}
+                    {isCategoryCascadeMenuOpen && (
+                      <div
+                        className="absolute left-0 top-full mt-1 z-50 flex border shadow-2xl font-mono rounded-[2px] overflow-hidden"
+                        style={{
+                          backgroundColor: 'var(--theme-surface)',
+                          borderColor: 'var(--theme-border)',
+                          color: 'var(--theme-textMain)',
+                          fontSize: `${listFontSize}px`,
+                          minWidth: '240px',
+                          maxHeight: '380px'
+                        }}
+                      >
+                        {/* Primary Column: Categories */}
+                        <div className="w-48 border-r py-1 flex flex-col max-h-80 overflow-y-auto shrink-0" style={{ borderColor: 'var(--theme-border)' }}>
+                          <div className="px-2.5 py-1 uppercase tracking-wider font-semibold border-b flex items-center justify-between" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', fontSize: `${Math.max(9, listFontSize - 2)}px` }}>
+                            <span>CATEGORIES</span>
+                            <span className="opacity-70">{categories.length + 1}</span>
+                          </div>
+
+                          {/* 1. ALL PLAYLISTS */}
+                          <div
+                            onMouseEnter={() => {
+                              setHoveredCategoryInMenu('__ALL__');
+                              setHoveredPlaylistInMenu(null);
+                            }}
+                            onClick={() => {
+                              setSelectedCategoryFilter('__ALL__');
+                              try { localStorage.setItem('v2_solidSelectedCategoryFilter', '__ALL__'); } catch {}
+                              setHoveredCategoryInMenu('__ALL__');
+                              setHoveredPlaylistInMenu(null);
+                            }}
+                            className="px-2.5 py-1.5 flex items-center justify-between cursor-pointer transition-colors"
+                            style={{
+                              backgroundColor: hoveredCategoryInMenu === '__ALL__' ? 'var(--theme-accentMuted)' : (selectedCategoryFilter === '__ALL__' ? 'var(--theme-surfaceLighter)' : 'transparent'),
+                              color: hoveredCategoryInMenu === '__ALL__' ? 'var(--theme-accent)' : 'inherit',
+                              fontSize: `${listFontSize}px`
+                            }}
+                          >
+                            <span className="truncate">ALL PLAYLISTS</span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({playlists.filter(p => p.id !== 'all-tracks').length})</span>
+                              <ChevronRight size={10} className="opacity-70" />
+                            </div>
+                          </div>
+
+                          {/* 2. User defined Categories */}
+                          {categories.map(cat => {
+                            const count = playlists.filter(p => p.id !== 'all-tracks' && p.category === cat).length;
+                            const isCurrentActive = hoveredCategoryInMenu === cat;
+                            const isSelected = selectedCategoryFilter === cat;
+                            return (
+                              <div
+                                key={cat}
+                                onMouseEnter={() => {
+                                  setHoveredCategoryInMenu(cat);
+                                  setHoveredPlaylistInMenu(null);
+                                }}
+                                onClick={() => {
+                                  setSelectedCategoryFilter(cat);
+                                  try { localStorage.setItem('v2_solidSelectedCategoryFilter', cat); } catch {}
+                                  setHoveredCategoryInMenu(cat);
+                                  setHoveredPlaylistInMenu(null);
+                                }}
+                                className="px-2.5 py-1.5 flex items-center justify-between cursor-pointer transition-colors"
+                                style={{
+                                  backgroundColor: isCurrentActive ? 'var(--theme-accentMuted)' : (isSelected ? 'var(--theme-surfaceLighter)' : 'transparent'),
+                                  color: isCurrentActive ? 'var(--theme-accent)' : 'inherit',
+                                  fontSize: `${listFontSize}px`
+                                }}
+                              >
+                                <span className="truncate flex items-center gap-1.5 font-medium">
+                                  <Bookmark size={listFontSize >= 13 ? 11 : 9.5} style={{ color: 'var(--theme-accent)' }} fill={isCurrentActive || isSelected ? 'currentColor' : 'none'} />
+                                  <span className="truncate">{cat}</span>
+                                </span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({count})</span>
+                                  <ChevronRight size={10} className="opacity-70" />
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {/* 3. UNCATEGORIZED */}
+                          <div
+                            onMouseEnter={() => {
+                              setHoveredCategoryInMenu('__UNCATEGORIZED__');
+                              setHoveredPlaylistInMenu(null);
+                            }}
+                            onClick={() => {
+                              setSelectedCategoryFilter('__UNCATEGORIZED__');
+                              try { localStorage.setItem('v2_solidSelectedCategoryFilter', '__UNCATEGORIZED__'); } catch {}
+                              setHoveredCategoryInMenu('__UNCATEGORIZED__');
+                              setHoveredPlaylistInMenu(null);
+                            }}
+                            className="px-2.5 py-1.5 flex items-center justify-between cursor-pointer transition-colors border-t"
+                            style={{
+                              borderColor: 'var(--theme-border)',
+                              backgroundColor: hoveredCategoryInMenu === '__UNCATEGORIZED__' ? 'var(--theme-accentMuted)' : (selectedCategoryFilter === '__UNCATEGORIZED__' ? 'var(--theme-surfaceLighter)' : 'transparent'),
+                              color: hoveredCategoryInMenu === '__UNCATEGORIZED__' ? 'var(--theme-accent)' : 'inherit',
+                              fontSize: `${listFontSize}px`
+                            }}
+                          >
+                            <span className="truncate flex items-center gap-1.5">
+                              <Bookmark size={listFontSize >= 13 ? 11 : 9.5} style={{ color: 'var(--theme-listHeader-textMuted)' }} strokeDasharray="2 2" />
+                              <span className="truncate">UNCATEGORIZED</span>
+                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({playlists.filter(p => p.id !== 'all-tracks' && !p.category).length})</span>
+                              <ChevronRight size={10} className="opacity-70" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Secondary Cascading Column: Direct Playlists in Hovered Category */}
+                        {hoveredCategoryInMenu && (() => {
+                          const subPlaylists = playlists.filter(p => {
+                            if (p.id === 'all-tracks') return false;
+                            if (hoveredCategoryInMenu === '__ALL__') return true;
+                            if (hoveredCategoryInMenu === '__UNCATEGORIZED__') return !p.category;
+                            return p.category === hoveredCategoryInMenu;
+                          });
+
+                          const catDisplayName = hoveredCategoryInMenu === '__ALL__' 
+                            ? 'ALL PLAYLISTS' 
+                            : hoveredCategoryInMenu === '__UNCATEGORIZED__' 
+                            ? 'UNCATEGORIZED' 
+                            : hoveredCategoryInMenu;
+
+                          return (
+                            <div className="w-64 py-1 flex flex-col max-h-80 overflow-y-auto shrink-0" style={{ backgroundColor: 'var(--theme-bg)' }}>
+                              <div className="px-2.5 py-1 uppercase tracking-wider font-semibold border-b flex justify-between items-center" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', fontSize: `${Math.max(9, listFontSize - 2)}px` }}>
+                                <span className="truncate font-bold text-ellipsis">
+                                  📁 {catDisplayName}
+                                </span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span>{subPlaylists.length} FOLDERS</span>
+                                  {hoveredCategoryInMenu !== selectedCategoryFilter && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedCategoryFilter(hoveredCategoryInMenu);
+                                        try { localStorage.setItem('v2_solidSelectedCategoryFilter', hoveredCategoryInMenu); } catch {}
+                                        setIsCategoryCascadeMenuOpen(false);
+                                      }}
+                                      className="px-1 border rounded-[2px] text-[8px] hover:opacity-80"
+                                      style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }}
+                                      title="このカテゴリーのみをサイドバーに表示"
+                                    >
+                                      VIEW
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {subPlaylists.length === 0 ? (
+                                <div className="p-4 text-center italic opacity-60" style={{ fontSize: `${Math.max(9, listFontSize - 2)}px`, color: 'var(--theme-textDim)' }}>
+                                  NO FOLDERS / LISTS
+                                </div>
+                              ) : (
+                                subPlaylists.map(pl => {
+                                  const isCurrentActive = activePlaylistId === pl.id;
+                                  const isCurrentHovered = hoveredPlaylistInMenu === pl.id;
+                                  const subAlbums = pl.id !== 'all-tracks' ? (playlistAlbumsMap[pl.id] || []) : [];
+                                  const hasSubAlbums = subAlbums.length > 0;
+
+                                  return (
+                                    <button
+                                      key={pl.id}
+                                      type="button"
+                                      onMouseEnter={() => setHoveredPlaylistInMenu(pl.id)}
+                                      onClick={() => {
+                                        // Direct Select this playlist!
+                                        setActivePlaylistId(pl.id);
+                                        setFocusedAlbumId(null);
+                                        setDrillDownAlbum(null);
+                                        setSelectedPlaylistIds(new Set([pl.id]));
+                                        lastSelectedPlaylistIdRef.current = pl.id;
+                                        // Also switch category filter if not ALL
+                                        if (hoveredCategoryInMenu !== '__ALL__') {
+                                          setSelectedCategoryFilter(hoveredCategoryInMenu);
+                                          try { localStorage.setItem('v2_solidSelectedCategoryFilter', hoveredCategoryInMenu); } catch {}
+                                        }
+                                        setIsCategoryCascadeMenuOpen(false);
+                                      }}
+                                      className="text-left px-2.5 py-1.5 flex items-center justify-between hover:opacity-80 transition-colors border-b last:border-b-0 cursor-pointer focus:outline-none"
+                                      style={{
+                                        borderColor: 'var(--theme-list-border)',
+                                        backgroundColor: (isCurrentHovered || isCurrentActive) ? 'var(--theme-accentMuted)' : 'transparent',
+                                        color: (isCurrentHovered || isCurrentActive) ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+                                        fontSize: `${listFontSize}px`
+                                      }}
+                                      title={`ダイレクト選択: ${pl.name} (${pl.tracks.length}曲)`}
+                                    >
+                                      <span className="truncate flex items-center gap-2 flex-1 pr-1 font-medium">
+                                        <Folder size={listFontSize >= 13 ? 12 : 10.5} className="shrink-0" style={{ color: (isCurrentHovered || isCurrentActive) ? 'var(--theme-accent)' : 'var(--theme-list-textDim)' }} />
+                                        <span className="truncate">{pl.name}</span>
+                                      </span>
+                                      <div className="flex items-center gap-1.5 shrink-0 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>
+                                        {hasSubAlbums && subAlbums.length > 1 && (
+                                          <span className="text-[8.5px] px-1 border rounded-[2px]" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
+                                            {subAlbums.length} ALB
+                                          </span>
+                                        )}
+                                        <span className="opacity-70">{pl.tracks.length}曲</span>
+                                        {hasSubAlbums && <ChevronRight size={10} className="opacity-70" />}
+                                      </div>
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Tertiary Cascading Column: Direct Sub-folders / Albums in Hovered Playlist */}
+                        {hoveredPlaylistInMenu && (() => {
+                          const targetPl = playlists.find(p => p.id === hoveredPlaylistInMenu);
+                          if (!targetPl) return null;
+                          const subAlbums = targetPl.id !== 'all-tracks' ? (playlistAlbumsMap[targetPl.id] || []) : [];
+                          if (subAlbums.length === 0) return null;
+
+                          return (
+                            <div className="w-64 border-l py-1 flex flex-col max-h-80 overflow-y-auto shrink-0 shadow-xl" style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}>
+                              <div className="px-2.5 py-1 uppercase tracking-wider font-semibold border-b flex justify-between items-center" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', fontSize: `${Math.max(9, listFontSize - 2)}px` }}>
+                                <span className="truncate font-bold text-ellipsis" title={targetPl.name}>
+                                  📁 {targetPl.name}
+                                </span>
+                                <span className="font-mono opacity-70 shrink-0 text-[8.5px] px-1 border rounded-[2px]" style={{ borderColor: 'var(--theme-borderActive)' }}>
+                                  {subAlbums.length} FOLDERS
+                                </span>
+                              </div>
+
+                              {subAlbums.map((group, idx) => {
+                                const isCurrentAlbumSelected = (focusedAlbumId && (focusedAlbumId === group.id || focusedAlbumId.toLowerCase() === group.album.toLowerCase())) ||
+                                  (drillDownAlbum && drillDownAlbum.album.toLowerCase() === group.album.toLowerCase());
+
+                                return (
+                                  <button
+                                    key={group.id || idx}
+                                    type="button"
+                                    onClick={() => {
+                                      // Direct select this album folder to be pinned/zoomed at the top!
+                                      setActivePlaylistId(targetPl.id);
+                                      setFocusedAlbumId(group.id || group.album);
+                                      setDrillDownAlbum(null);
+                                      setSelectedPlaylistIds(new Set([targetPl.id]));
+                                      lastSelectedPlaylistIdRef.current = targetPl.id;
+                                      if (hoveredCategoryInMenu && hoveredCategoryInMenu !== '__ALL__') {
+                                        setSelectedCategoryFilter(hoveredCategoryInMenu);
+                                        try { localStorage.setItem('v2_solidSelectedCategoryFilter', hoveredCategoryInMenu); } catch {}
+                                      }
+                                      setIsCategoryCascadeMenuOpen(false);
+                                    }}
+                                    className="text-left px-2.5 py-1.5 flex items-center justify-between hover:opacity-80 transition-colors border-b last:border-b-0 cursor-pointer focus:outline-none"
+                                    style={{
+                                      borderColor: 'var(--theme-list-border)',
+                                      backgroundColor: isCurrentAlbumSelected ? 'var(--theme-accentMuted)' : 'transparent',
+                                      color: isCurrentAlbumSelected ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+                                      fontSize: `${listFontSize}px`
+                                    }}
+                                    title={`フォルダ選択: ${group.album} (${group.tracks.length}曲)`}
+                                  >
+                                    <span className="truncate flex items-center gap-1.5 flex-1 pr-1 font-medium">
+                                      <Folder size={listFontSize >= 13 ? 12 : 10.5} className="shrink-0" style={{ color: isCurrentAlbumSelected ? 'var(--theme-accent)' : 'var(--theme-accent)' }} />
+                                      <span className="truncate">{group.album}</span>
+                                    </span>
+                                    <span className="font-mono shrink-0 opacity-70" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>
+                                      {group.tracks.length}曲
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions for current selected category & sidebar collapse button */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {selectedCategoryFilter !== '__ALL__' && selectedCategoryFilter !== '__UNCATEGORIZED__' && (
+                      <div className="flex items-center gap-0.5">
+                        {confirmDeleteCategoryName === selectedCategoryFilter ? (
+                          <div className="flex items-center gap-0.5 px-1 py-0.5 border rounded-[2px]" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-borderActive)' }}>
+                            <span className="text-[7.5px] uppercase" style={{ color: 'var(--theme-accent)' }}>DEL?</span>
+                            <button
+                              onClick={() => handleDeleteCategory(selectedCategoryFilter)}
+                              className="p-0.5 hover:opacity-80"
+                              style={{ color: 'var(--theme-accent)' }}
+                              title="カテゴリーを削除（所属リストは未分類になります）"
+                            >
+                              <Trash2 size={9} />
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteCategoryName(null)}
+                              className="p-0.5 hover:opacity-80"
+                              style={{ color: 'var(--theme-textDim)' }}
+                              title="キャンセル"
+                            >
+                              <X size={9} />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => {
+                                setRenamingCategoryName(selectedCategoryFilter);
+                                setEditCategoryNameInput(selectedCategoryFilter);
+                              }}
+                              className="p-1 hover:opacity-80"
+                              style={{ color: 'var(--theme-listHeader-textMuted)' }}
+                              title="カテゴリー名を変更"
+                            >
+                              <Edit2 size={10} />
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteCategoryName(selectedCategoryFilter)}
+                              className="p-1 hover:opacity-80"
+                              style={{ color: 'var(--theme-listHeader-textMuted)' }}
+                              title="カテゴリーを削除（所属リストは未分類になります）"
+                            >
+                              <Trash2 size={10} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        prevSidebarWidthRef.current = sidebarWidth || 240;
+                        setIsSidebarCollapsed(true);
+                      }}
+                      className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 shrink-0"
+                      style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
+                      title="サイドバーを折りたたむ（全画面表示）"
+                    >
+                      <PanelLeftClose size={11} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Tree mode toolbar */
+                <div className="flex items-center justify-between px-2.5 py-1 border-b" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-listHeader-border)' }}>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] font-mono tracking-wider font-semibold" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
+                      CATEGORIES ({categories.length})
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allCats = new Set([...categories, '__UNCATEGORIZED__']);
+                        if (expandedCategoryNames.size >= allCats.size) {
+                          setExpandedCategoryNames(new Set());
+                        } else {
+                          setExpandedCategoryNames(allCats);
+                        }
+                      }}
+                      className="px-1.5 py-0.5 text-[8.5px] font-mono border rounded-[2px] hover:opacity-80 transition-colors"
+                      style={{
+                        borderColor: 'var(--theme-listHeader-border)',
+                        color: 'var(--theme-listHeader-textMuted)',
+                        backgroundColor: 'var(--theme-bg)'
+                      }}
+                      title="すべてのカテゴリーフォルダーを一括開閉"
+                    >
+                      {expandedCategoryNames.size >= categories.length + 1 ? 'COLLAPSE CATS' : 'EXPAND CATS'}
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        prevSidebarWidthRef.current = sidebarWidth || 240;
+                        setIsSidebarCollapsed(true);
+                      }}
+                      className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 shrink-0"
+                      style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
+                      title="サイドバーを折りたたむ（全画面表示）"
+                    >
+                      <PanelLeftClose size={11} />
+                    </button>
+                  </div>
+                </div>
+              )}
+          <div className="flex flex-col h-full overflow-y-auto w-full relative" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
+            {(() => {
+              const renderPlaylistItem = (pl: Playlist, plIdx: number, isSubItem: boolean = false) => {
               const isSelected = pl.id !== 'all-tracks' && selectedPlaylistIds.has(pl.id);
               const isActive = activePlaylistId === pl.id;
               const subAlbums = pl.id !== 'all-tracks' ? (playlistAlbumsMap[pl.id] || []) : [];
@@ -4809,6 +5575,7 @@ export default function App() {
                     // Clicking the title/row ONLY selects this folder for the main view (showing all albums in main view)
                     // without expanding or collapsing the sidebar tree!
                     setActivePlaylistId(pl.id);
+                    setFocusedAlbumId(null);
                     setDrillDownAlbum(null);
                     setSelectedPlaylistIds(new Set([pl.id]));
                     lastSelectedPlaylistIdRef.current = pl.id;
@@ -4820,7 +5587,7 @@ export default function App() {
                     setRenamingPlaylistName(pl.name);
                   }
                 }}
-                className={`text-left px-3 py-2 tracking-widest flex items-center justify-between border-b transition-colors cursor-pointer group select-none ${pl.id !== 'all-tracks' && renamingPlaylistId !== pl.id ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                className={`text-left ${isSubItem ? 'pl-5 pr-3' : 'px-3'} py-2 tracking-widest flex items-center justify-between border-b transition-colors cursor-pointer group select-none ${pl.id !== 'all-tracks' && renamingPlaylistId !== pl.id ? 'cursor-grab active:cursor-grabbing' : ''}`}
                 style={{
                   backgroundColor: isSelected 
                     ? 'var(--theme-list-accentMuted)' 
@@ -4956,6 +5723,80 @@ export default function App() {
                     {pl.tracks.length.toString().padStart(3, '0')}
                   </span>
                   {pl.id !== 'all-tracks' && renamingPlaylistId !== pl.id && (
+                    <>
+                    {/* Category quick assign badge / popover */}
+                    <div className="relative" onClick={e => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveCategoryMenuPlaylistId(prev => prev === pl.id ? null : pl.id);
+                        }}
+                        className={`hover:opacity-80 transition-opacity p-0.5 rounded-[1px] flex items-center gap-0.5 ${pl.category ? 'opacity-90' : 'opacity-0 group-hover:opacity-80'}`}
+                        style={{
+                          color: pl.category ? 'var(--theme-accent)' : 'var(--theme-list-textDim)',
+                          backgroundColor: pl.category ? 'var(--theme-accentMuted)' : 'transparent',
+                        }}
+                        title={pl.category ? `カテゴリー: ${pl.category} (クリックで移動・変更)` : "カテゴリーを設定 (MOVE TO CATEGORY)"}
+                      >
+                        <Bookmark size={8.5} fill={pl.category ? 'currentColor' : 'none'} />
+                        {pl.category && sidebarCategoryMode === 'dropdown' && (
+                          <span className="text-[7.5px] font-mono truncate max-w-[44px]">{pl.category}</span>
+                        )}
+                      </button>
+
+                      {activeCategoryMenuPlaylistId === pl.id && (
+                        <div
+                          className="absolute right-0 top-full mt-1 w-36 z-50 border rounded-[2px] shadow-2xl py-1 flex flex-col font-mono text-[9px]"
+                          style={{
+                            backgroundColor: 'var(--theme-surface)',
+                            borderColor: 'var(--theme-border)',
+                            color: 'var(--theme-textMain)'
+                          }}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <div className="px-2 py-0.5 text-[8px] uppercase tracking-wider border-b font-semibold" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)' }}>
+                            MOVE TO CATEGORY
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleMovePlaylistToCategory(pl.id, undefined)}
+                            className="text-left px-2 py-1 hover:opacity-80 flex items-center justify-between transition-colors"
+                            style={{ backgroundColor: !pl.category ? 'var(--theme-accentMuted)' : 'transparent' }}
+                          >
+                            <span>UNCATEGORIZED (未分類)</span>
+                            {!pl.category && <Check size={9} style={{ color: 'var(--theme-accent)' }} />}
+                          </button>
+                          {categories.map(cat => (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => handleMovePlaylistToCategory(pl.id, cat)}
+                              className="text-left px-2 py-1 hover:opacity-80 flex items-center justify-between truncate transition-colors"
+                              style={{ backgroundColor: pl.category === cat ? 'var(--theme-accentMuted)' : 'transparent' }}
+                            >
+                              <span className="truncate flex items-center gap-1">
+                                <Bookmark size={9} style={{ color: 'var(--theme-accent)' }} />
+                                {cat}
+                              </span>
+                              {pl.category === cat && <Check size={9} style={{ color: 'var(--theme-accent)' }} />}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCreatingCategory(true);
+                              setActiveCategoryMenuPlaylistId(null);
+                            }}
+                            className="text-left px-2 py-1 border-t hover:opacity-80 flex items-center gap-1 font-semibold"
+                            style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-accent)' }}
+                          >
+                            <Plus size={8} />
+                            <span>+ NEW CATEGORY</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <div className={`flex items-center space-x-0.5 transition-opacity ${confirmDeletePlaylistId === pl.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                       {confirmDeletePlaylistId === pl.id ? (
                         <div className="flex items-center gap-1 px-1 py-0.5 border rounded-[2px]" style={{ backgroundColor: 'var(--theme-list-surface)', borderColor: 'var(--theme-list-borderActive)' }} onClick={e => e.stopPropagation()}>
@@ -5018,6 +5859,7 @@ export default function App() {
                         </>
                       )}
                     </div>
+                    </>
                   )}
                 </div>
               </div>
@@ -5341,7 +6183,7 @@ export default function App() {
                   })}
                 </div>
               )}
-              
+
               {/* Inline Create Playlist Input right after ALL TRACKS */}
               {plIdx === 0 && isCreatingPlaylist && (
                  <div className="flex flex-col gap-2 p-2 border-b" style={{ borderColor: 'var(--theme-list-border)', backgroundColor: 'var(--theme-list-surface)' }}>
@@ -5361,8 +6203,277 @@ export default function App() {
                  </div>
               )}
               </React.Fragment>
+            );
+          };
+
+          // Mode 1: DROPDOWN (案1)
+              if (sidebarCategoryMode === 'dropdown') {
+                const filteredPlaylists = playlists.filter(pl => {
+                  if (pl.id === 'all-tracks') return true;
+                  if (selectedCategoryFilter === '__ALL__') return true;
+                  if (selectedCategoryFilter === '__UNCATEGORIZED__') return !pl.category;
+                  return pl.category === selectedCategoryFilter;
+                });
+
+                return (
+                  <>
+                    {filteredPlaylists.map((pl, idx) => renderPlaylistItem(pl, idx, false))}
+                    {filteredPlaylists.length === 1 && (
+                      <div className="p-4 text-center font-mono text-[9px] tracking-wide" style={{ color: 'var(--theme-list-textDim)' }}>
+                        NO PLAYLISTS IN THIS CATEGORY.<br />
+                        DROP AUDIO BELOW TO ADD.
+                      </div>
+                    )}
+                  </>
+                );
+              }
+
+              // Mode 2: TREE (案2)
+              const uncategorizedPlaylists = playlists.filter(p => p.id !== 'all-tracks' && !p.category);
+
+              return (
+                <>
+                  {/* 1. ALL TRACKS Master Playlist */}
+                  {playlists[0] && renderPlaylistItem(playlists[0], 0, false)}
+
+                  {/* 2. CATEGORY FOLDERS */}
+                  {categories.map((cat) => {
+                    const catPlaylists = playlists.filter(p => p.id !== 'all-tracks' && p.category === cat);
+                    const isExpanded = expandedCategoryNames.has(cat);
+                    const isDragOver = dragOverCategoryTarget === cat;
+                    const isRenaming = renamingCategoryName === cat;
+
+                    return (
+                      <div key={cat} className="flex flex-col border-b last:border-b-0" style={{ borderColor: 'var(--theme-list-border)' }}>
+                        {/* Category Folder Row */}
+                        <div
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.dataTransfer.dropEffect = 'copy';
+                            if (dragOverCategoryTarget !== cat) setDragOverCategoryTarget(cat);
+                          }}
+                          onDragLeave={(e) => {
+                            e.stopPropagation();
+                            if (dragOverCategoryTarget === cat) setDragOverCategoryTarget(null);
+                          }}
+                          onDrop={(e) => handleCategoryFolderDrop(e, cat)}
+                          onClick={() => toggleCategoryExpand(cat)}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setRenamingCategoryName(cat);
+                            setEditCategoryNameInput(cat);
+                          }}
+                          className="flex items-center justify-between px-2.5 py-1.5 cursor-pointer select-none transition-colors group"
+                          style={{
+                            backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : 'var(--theme-listHeader-bg)',
+                            borderLeft: isDragOver ? '3px solid var(--theme-accent)' : '3px solid transparent',
+                            color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-listHeader-text)'
+                          }}
+                          title={`${cat} (${catPlaylists.length} lists) - クリックで開閉 / ダブルクリックで名前変更 / リストや音源をD&Dで所属`}
+                        >
+                          <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
+                            <span className="text-[10px] shrink-0" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
+                              {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                            </span>
+                            <Bookmark size={12} className="shrink-0" style={{ color: isExpanded ? 'var(--theme-accent)' : 'var(--theme-listHeader-textMuted)' }} fill={isExpanded ? 'currentColor' : 'none'} />
+                            
+                            {isRenaming ? (
+                              <div className="flex items-center gap-1 flex-1 min-w-0" onClick={e => e.stopPropagation()}>
+                                <input
+                                  autoFocus
+                                  type="text"
+                                  value={editCategoryNameInput}
+                                  onChange={e => setEditCategoryNameInput(e.target.value)}
+                                  onBlur={() => handleRenameCategory(cat, editCategoryNameInput)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') handleRenameCategory(cat, editCategoryNameInput);
+                                    else if (e.key === 'Escape') setRenamingCategoryName(null);
+                                  }}
+                                  className="w-full bg-transparent border-b outline-none font-mono px-1"
+                                  style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-textMain)', fontSize: 'var(--list-font-size)' }}
+                                />
+                                <button onClick={() => handleRenameCategory(cat, editCategoryNameInput)} className="p-0.5 hover:opacity-80">
+                                  <Check size={10} style={{ color: 'var(--theme-accent)' }} />
+                                </button>
+                                <button onClick={() => setRenamingCategoryName(null)} className="p-0.5 hover:opacity-80">
+                                  <X size={10} style={{ color: 'var(--theme-textDim)' }} />
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="font-mono font-semibold tracking-wider uppercase truncate" style={{ fontSize: 'var(--list-font-size)' }}>
+                                {cat}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            {isDragOver ? (
+                              <span className="text-[7.5px] font-mono px-1 border rounded-[1px]" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
+                                ↳ DROP INTO
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-mono" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
+                                {catPlaylists.length.toString().padStart(2, '0')}
+                              </span>
+                            )}
+
+                            {!isRenaming && (
+                              <div className="hidden group-hover:flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRenamingCategoryName(cat);
+                                    setEditCategoryNameInput(cat);
+                                  }}
+                                  className="p-0.5 hover:opacity-80"
+                                  title="カテゴリー名を変更"
+                                  style={{ color: 'var(--theme-listHeader-textMuted)' }}
+                                >
+                                  <Edit2 size={9} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCategory(cat)}
+                                  className="p-0.5 hover:opacity-80"
+                                  title="カテゴリーを削除 (所属リストは未分類に戻ります)"
+                                  style={{ color: 'var(--theme-listHeader-textMuted)' }}
+                                >
+                                  <Trash2 size={9} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Playlists in this category when expanded */}
+                        {isExpanded && (
+                          <div className="flex flex-col border-l ml-1" style={{ borderColor: 'var(--theme-list-border)' }}>
+                            {catPlaylists.length === 0 ? (
+                              <div
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (dragOverCategoryTarget !== cat) setDragOverCategoryTarget(cat);
+                                }}
+                                onDrop={(e) => handleCategoryFolderDrop(e, cat)}
+                                className="px-3 py-1.5 text-[8.5px] font-mono italic tracking-wide"
+                                style={{ color: 'var(--theme-list-textDim)' }}
+                              >
+                                EMPTY (リストまたは音源をD&Dで追加)
+                              </div>
+                            ) : (
+                              catPlaylists.map((pl, idx) => renderPlaylistItem(pl, idx + 1, true))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* 3. UNCATEGORIZED FOLDER */}
+                  {(() => {
+                    if (uncategorizedPlaylists.length === 0 && categories.length === 0) return null;
+                    const isExpanded = expandedCategoryNames.has('__UNCATEGORIZED__');
+                    const isDragOver = dragOverCategoryTarget === '__UNCATEGORIZED__';
+
+                    return (
+                      <div className="flex flex-col border-b last:border-b-0" style={{ borderColor: 'var(--theme-list-border)' }}>
+                        <div
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.dataTransfer.dropEffect = 'copy';
+                            if (dragOverCategoryTarget !== '__UNCATEGORIZED__') setDragOverCategoryTarget('__UNCATEGORIZED__');
+                          }}
+                          onDragLeave={(e) => {
+                            e.stopPropagation();
+                            if (dragOverCategoryTarget === '__UNCATEGORIZED__') setDragOverCategoryTarget(null);
+                          }}
+                          onDrop={(e) => handleCategoryFolderDrop(e, undefined)}
+                          onClick={() => toggleCategoryExpand('__UNCATEGORIZED__')}
+                          className="flex items-center justify-between px-2.5 py-1.5 cursor-pointer select-none transition-colors group"
+                          style={{
+                            backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : 'var(--theme-listHeader-bg)',
+                            borderLeft: isDragOver ? '3px solid var(--theme-accent)' : '3px solid transparent',
+                            color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-listHeader-textMuted)'
+                          }}
+                          title="UNCATEGORIZED (未分類) - クリックで開閉 / ドロップで未分類に移動"
+                        >
+                          <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
+                            <span className="text-[10px] shrink-0" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
+                              {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                            </span>
+                            <Bookmark size={12} className="shrink-0" style={{ color: 'var(--theme-listHeader-textMuted)' }} strokeDasharray="2 2" />
+                            <span className="font-mono tracking-wider uppercase truncate" style={{ fontSize: 'var(--list-font-size)' }}>
+                              UNCATEGORIZED
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {isDragOver ? (
+                              <span className="text-[7.5px] font-mono px-1 border rounded-[1px]" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
+                                ↳ TO UNCATEGORIZED
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-mono" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
+                                {uncategorizedPlaylists.length.toString().padStart(2, '0')}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="flex flex-col border-l ml-1" style={{ borderColor: 'var(--theme-list-border)' }}>
+                            {uncategorizedPlaylists.length === 0 ? (
+                              <div className="px-3 py-1.5 text-[8.5px] font-mono italic" style={{ color: 'var(--theme-list-textDim)' }}>
+                                NO UNCATEGORIZED LISTS
+                              </div>
+                            ) : (
+                              uncategorizedPlaylists.map((pl, idx) => renderPlaylistItem(pl, idx + 1, true))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </>
               );
-            })}
+            })()}
+
+            {/* Dedicated Industrial Drag & Drop Zone Box at bottom of list */}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = 'copy';
+              }}
+              onDrop={(e) => {
+                const targetCat = sidebarCategoryMode === 'dropdown' && selectedCategoryFilter !== '__ALL__' && selectedCategoryFilter !== '__UNCATEGORIZED__'
+                  ? selectedCategoryFilter
+                  : undefined;
+                handleDrop(e, targetCat);
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              className="m-2 p-2.5 border border-dashed rounded-[2px] flex flex-col items-center justify-center gap-1 transition-all cursor-pointer select-none hover:opacity-90 active:scale-[0.99]"
+              style={{
+                borderColor: 'var(--theme-listHeader-border)',
+                backgroundColor: 'var(--theme-list-surface)',
+                color: 'var(--theme-list-textMuted)'
+              }}
+              title="クリックまたはドラッグ＆ドロップで音楽フォルダ・音源ファイルを追加"
+            >
+              <FolderPlus size={14} style={{ color: 'var(--theme-accent)' }} />
+              <span className="text-[9px] font-mono tracking-wider font-semibold" style={{ color: 'var(--theme-list-textMain)' }}>
+                + DROP AUDIO FOLDERS / FILES
+              </span>
+              <span className="text-[7.5px] font-mono text-center leading-tight" style={{ color: 'var(--theme-list-textDim)' }}>
+                {sidebarCategoryMode === 'tree'
+                  ? 'ここにD&Dで新規リスト作成 (上の各カテゴリー枠へ直接D&Dも可能)'
+                  : (selectedCategoryFilter === '__ALL__' || selectedCategoryFilter === '__UNCATEGORIZED__'
+                    ? 'ここにD&Dで新規リスト作成'
+                    : `「${selectedCategoryFilter}」カテゴリーに追加`)}
+              </span>
+            </div>
           </div>
           {/* Resize Handle */}
           <div
@@ -5832,6 +6943,7 @@ export default function App() {
               onDeleteAlbum={(album) => handleDeleteAlbum(album, activePlaylistId)}
               onDeleteAlbums={(albumsToDelete) => handleDeleteMultipleAlbums(albumsToDelete, activePlaylistId)}
               onRenameAlbum={(album, newName) => handleRenameAlbum(album, newName, activePlaylistId)}
+              focusedAlbumId={focusedAlbumId}
               currentTrackId={currentTrack?.id}
               isPlaying={isPlaying}
             />
@@ -6050,6 +7162,70 @@ export default function App() {
       </footer>
 
       </div>
+
+      {/* Batch Move to Category Modal */}
+      {showBatchMoveCategoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 font-mono select-none" onClick={() => setShowBatchMoveCategoryModal(false)}>
+          <div className="w-full max-w-sm flex flex-col border shadow-2xl" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }} onClick={e => e.stopPropagation()}>
+            <div className="px-3 py-2 border-b flex justify-between items-center" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-border)' }}>
+              <div className="flex items-center gap-1.5">
+                <Move size={12} style={{ color: 'var(--theme-accent)' }} />
+                <span className="text-[11px] font-bold tracking-wider" style={{ color: 'var(--theme-textMain)' }}>
+                  MOVE {selectedPlaylistIds.size} LISTS TO CATEGORY
+                </span>
+              </div>
+              <button onClick={() => setShowBatchMoveCategoryModal(false)} className="hover:opacity-80 p-0.5" style={{ color: 'var(--theme-textMuted)' }}>
+                <X size={12} />
+              </button>
+            </div>
+
+            <div className="p-3 flex flex-col gap-2">
+              <p className="text-[9.5px] leading-relaxed" style={{ color: 'var(--theme-textMuted)' }}>
+                選択した {selectedPlaylistIds.size} 件のプレイリストの移動先カテゴリーを選択してください:
+              </p>
+
+              <div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1">
+                <button
+                  type="button"
+                  onClick={() => moveSelectedPlaylistsToCategory(undefined)}
+                  className="text-left px-2.5 py-1.5 border rounded-[2px] text-[10px] tracking-wider transition-colors hover:opacity-80 flex items-center justify-between"
+                  style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-bg)', color: 'var(--theme-textMain)' }}
+                >
+                  <span>UNCATEGORIZED (未分類に戻す)</span>
+                </button>
+                {categories.map(cat => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => moveSelectedPlaylistsToCategory(cat)}
+                    className="text-left px-2.5 py-1.5 border rounded-[2px] text-[10px] tracking-wider transition-colors hover:opacity-80 flex items-center justify-between"
+                    style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-bg)', color: 'var(--theme-textMain)' }}
+                  >
+                    <span className="truncate flex items-center gap-1.5">
+                      <Bookmark size={10} style={{ color: 'var(--theme-accent)' }} />
+                      {cat}
+                    </span>
+                    <span className="text-[8.5px] shrink-0 font-mono" style={{ color: 'var(--theme-textDim)' }}>
+                      ({playlists.filter(p => p.id !== 'all-tracks' && p.category === cat).length} lists)
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="px-3 py-2 border-t flex justify-end gap-2" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-border)' }}>
+              <button
+                type="button"
+                onClick={() => setShowBatchMoveCategoryModal(false)}
+                className="px-3 py-1 border rounded-[2px] text-[9.5px] font-mono tracking-wider hover:opacity-80 transition-colors"
+                style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', backgroundColor: 'var(--theme-bg)' }}
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Duplicate Modal */}
       {showDuplicatesModal && (
