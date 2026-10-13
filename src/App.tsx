@@ -270,7 +270,7 @@ const COL_LABELS: Record<string, string> = {
 const PanelBlock = ({ title, children, className = "", styleVars }: { title: string, children: React.ReactNode, className?: string, styleVars?: React.CSSProperties }) => (
   <div className={`border flex flex-col relative ${className}`} style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)', ...styleVars }}>
     {title && (
-      <div className="absolute -top-2 left-2 px-1 z-50" style={{ backgroundColor: 'var(--theme-surface)' }}>
+      <div className="absolute -top-2 left-2 px-1 z-10" style={{ backgroundColor: 'var(--theme-surface)' }}>
          <span className="text-[10px] tracking-widest uppercase" style={{ color: 'var(--theme-textMuted)' }}>{title}</span>
       </div>
     )}
@@ -3780,7 +3780,7 @@ export default function App() {
       <div className={`flex flex-col h-full w-full p-4 gap-6 box-border transition-opacity duration-300 ${viewMode !== 'full' ? 'opacity-0 pointer-events-none absolute' : 'opacity-100 relative'}`}>
 
       {/* Top Header Row */}
-      <header className="flex justify-between items-center px-1">
+      <header className="flex justify-between items-center px-1 relative z-50">
         <div className="flex items-center gap-3">
           <Activity size={18} style={{ color: 'var(--theme-accent)' }} />
           <h1 className="text-xl font-bold tracking-widest uppercase">SOLID AUDIO MUSIC PLAYER</h1>
@@ -3836,7 +3836,7 @@ export default function App() {
             {/* Dropdown Menu Popup matching screenshot */}
             {isFontMenuOpen && (
               <div 
-                className="absolute right-0 top-full mt-1 z-50 w-32 border shadow-2xl rounded-[1px] py-1 select-none animate-fade-in"
+                className="absolute right-0 top-full mt-1 z-[100] w-32 border shadow-2xl rounded-[1px] py-1 select-none animate-fade-in"
                 style={{
                   backgroundColor: 'var(--theme-surfaceLighter)',
                   borderColor: 'var(--theme-borderActive)',
@@ -3934,7 +3934,7 @@ export default function App() {
             {/* Dropdown Menu Popup */}
             {isThemeMenuOpen && (
               <div 
-                className="absolute right-0 top-full mt-1 z-50 w-44 border shadow-2xl rounded-[1px] py-1 select-none animate-fade-in"
+                className="absolute right-0 top-full mt-1 z-[100] w-44 border shadow-2xl rounded-[1px] py-1 select-none animate-fade-in"
                 style={{
                   backgroundColor: 'var(--theme-surfaceLighter)',
                   borderColor: 'var(--theme-borderActive)',
