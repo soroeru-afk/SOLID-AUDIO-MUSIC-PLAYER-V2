@@ -2416,21 +2416,31 @@ export default function App() {
   const toggleTrackSelection = (e: React.MouseEvent, trackId: string, index?: number) => {
       e.stopPropagation();
       const isShift = e.shiftKey;
+      const currentList = drillDownAlbum ? drillDownTracks : displayTracks;
       
       if (isShift) {
         e.preventDefault();
         window.getSelection()?.removeAllRanges();
 
-        const currentIndex = index !== undefined ? index : displayTracks.findIndex(t => t.id === trackId);
-        let anchorIndex = 0;
+        const currentIndex = index !== undefined && index >= 0 && index < currentList.length && currentList[index].id === trackId
+          ? index 
+          : currentList.findIndex(t => t.id === trackId);
+
+        let anchorIndex = -1;
         if (lastSelectedTrackIdRef.current) {
-          const found = displayTracks.findIndex(t => t.id === lastSelectedTrackIdRef.current);
+          const found = currentList.findIndex(t => t.id === lastSelectedTrackIdRef.current);
           if (found !== -1) anchorIndex = found;
-        } else if (currentTrackIndex >= 0 && currentTrackIndex < displayTracks.length) {
-          anchorIndex = currentTrackIndex;
+        }
+        if (anchorIndex === -1) {
+          const firstSelected = currentList.findIndex(t => selectedTrackIds.has(t.id));
+          if (firstSelected !== -1) {
+            anchorIndex = firstSelected;
+          } else {
+            anchorIndex = currentIndex !== -1 ? currentIndex : 0;
+          }
         }
 
-        if (currentIndex !== -1) {
+        if (currentIndex !== -1 && anchorIndex !== -1) {
           const start = Math.min(anchorIndex, currentIndex);
           const end = Math.max(anchorIndex, currentIndex);
           const rangeIds = new Set<string>();
@@ -2438,7 +2448,9 @@ export default function App() {
             selectedTrackIds.forEach(id => rangeIds.add(id));
           }
           for (let i = start; i <= end; i++) {
-            rangeIds.add(displayTracks[i].id);
+            if (currentList[i]) {
+              rangeIds.add(currentList[i].id);
+            }
           }
           setSelectedTrackIds(rangeIds);
           // Keep anchor so subsequent Shift-clicks adjust from original anchor
@@ -3102,6 +3114,10 @@ export default function App() {
         });
       }
       return;
+    }
+
+    if (activePlaylistId === 'all-tracks') {
+      setLibrary(prev => applyDirection(prev));
     }
 
     setPlaylists(prev => {
@@ -3950,38 +3966,66 @@ export default function App() {
                 </>
               )}
             <button 
-              onClick={(e) => moveTrack(e, idx, 0)} 
-              title={activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '先頭へ移動'} 
-              className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20" 
+              onClick={(e) => {
+                if (selectedTrackIds.size > 1 && selectedTrackIds.has(track.id)) {
+                  e.stopPropagation();
+                  moveSelectedTracks('top');
+                } else {
+                  moveTrack(e, idx, 0);
+                }
+              }} 
+              title={selectedTrackIds.size > 1 && selectedTrackIds.has(track.id) ? `選択した${selectedTrackIds.size}曲を先頭へ移動` : (activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '先頭へ移動')} 
+              className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
               disabled={idx === 0 || activeSortConfig.key !== 'none'} 
-              style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: listIconColor }}
+              style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
             >
               <ChevronsUp size={10} />
             </button>
             <button 
-              onClick={(e) => moveTrack(e, idx, idx - 1)} 
-              title={activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '一つ上へ移動'} 
-              className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20" 
+              onClick={(e) => {
+                if (selectedTrackIds.size > 1 && selectedTrackIds.has(track.id)) {
+                  e.stopPropagation();
+                  moveSelectedTracks('up');
+                } else {
+                  moveTrack(e, idx, idx - 1);
+                }
+              }} 
+              title={selectedTrackIds.size > 1 && selectedTrackIds.has(track.id) ? `選択した${selectedTrackIds.size}曲を一つ上へ移動` : (activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '一つ上へ移動')} 
+              className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
               disabled={idx === 0 || activeSortConfig.key !== 'none'} 
-              style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: listIconColor }}
+              style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
             >
               <ChevronUp size={10} />
             </button>
             <button 
-              onClick={(e) => moveTrack(e, idx, idx + 1)} 
-              title={activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '一つ下へ移動'} 
-              className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20" 
-              disabled={idx === displayTracks.length - 1 || activeSortConfig.key !== 'none'} 
-              style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: listIconColor }}
+              onClick={(e) => {
+                if (selectedTrackIds.size > 1 && selectedTrackIds.has(track.id)) {
+                  e.stopPropagation();
+                  moveSelectedTracks('down');
+                } else {
+                  moveTrack(e, idx, idx + 1);
+                }
+              }} 
+              title={selectedTrackIds.size > 1 && selectedTrackIds.has(track.id) ? `選択した${selectedTrackIds.size}曲を一つ下へ移動` : (activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '一つ下へ移動')} 
+              className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
+              disabled={idx === tracksToRender.length - 1 || activeSortConfig.key !== 'none'} 
+              style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
             >
               <ChevronDown size={10} />
             </button>
             <button 
-              onClick={(e) => moveTrack(e, idx, tracksToRender.length - 1)} 
-              title={activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '末尾へ移動'} 
-              className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20" 
+              onClick={(e) => {
+                if (selectedTrackIds.size > 1 && selectedTrackIds.has(track.id)) {
+                  e.stopPropagation();
+                  moveSelectedTracks('bottom');
+                } else {
+                  moveTrack(e, idx, tracksToRender.length - 1);
+                }
+              }} 
+              title={selectedTrackIds.size > 1 && selectedTrackIds.has(track.id) ? `選択した${selectedTrackIds.size}曲を末尾へ移動` : (activeSortConfig.key !== 'none' ? 'ソートを解除すると並べ替えできます' : '末尾へ移動')} 
+              className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
               disabled={idx === tracksToRender.length - 1 || activeSortConfig.key !== 'none'} 
-              style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: listIconColor }}
+              style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
             >
               <ChevronsDown size={10} />
             </button>
@@ -6729,6 +6773,49 @@ export default function App() {
                     </button>
                     {selectedTrackIds.size > 0 && (
                       <div className="flex items-center gap-3">
+                        {/* Batch Move / Reorder Buttons for Selected Tracks */}
+                        <div className="flex items-center gap-1 border-r pr-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
+                          <span className="text-[9px] font-mono font-semibold px-1 py-0.5 border rounded-[1px] shrink-0" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
+                            {selectedTrackIds.size} 選択中
+                          </span>
+                          <button 
+                            type="button"
+                            onClick={() => moveSelectedTracks('top')}
+                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                            style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                            title={`選択した${selectedTrackIds.size}曲を一番上へ移動 (TOP)`}
+                          >
+                            <ChevronsUp size={11} />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => moveSelectedTracks('up')}
+                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                            style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                            title={`選択した${selectedTrackIds.size}曲を一つ上へ移動 (UP)`}
+                          >
+                            <ChevronUp size={11} />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => moveSelectedTracks('down')}
+                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                            style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                            title={`選択した${selectedTrackIds.size}曲を一つ下へ移動 (DOWN)`}
+                          >
+                            <ChevronDown size={11} />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => moveSelectedTracks('bottom')}
+                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                            style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
+                            title={`選択した${selectedTrackIds.size}曲を一番下へ移動 (BOTTOM)`}
+                          >
+                            <ChevronsDown size={11} />
+                          </button>
+                        </div>
+
                         {/* Batch Clean Filename to Title tool */}
                         <div className="flex items-center gap-1 border-r pr-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
                           <button
