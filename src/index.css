@@ -1,15 +1,35 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&family=Zen+Maru+Gothic:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
+:root {
+  --app-font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: var(--app-font-family);
+  --font-mono: var(--app-font-family);
 }
 
 @layer base {
   body {
-    @apply bg-[#0B0C0D] text-[#E1E4EA] font-sans overflow-hidden antialiased;
+    @apply bg-[#0B0C0D] text-[#E1E4EA] overflow-hidden antialiased;
+    font-family: var(--app-font-family);
+    font-variant-numeric: tabular-nums;
   }
+
+  button, input, select, textarea {
+    font-family: var(--app-font-family);
+  }
+}
+
+.font-mono {
+  font-family: var(--app-font-family) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.font-sans {
+  font-family: var(--app-font-family) !important;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Custom Scrollbar for the technical look */

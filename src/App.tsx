@@ -216,6 +216,29 @@ const DEFAULT_WINDOW_SIZES: Record<'full' | 'mini' | 'slim', { width: number; he
   slim: { width: 720, height: 160 }
 };
 
+export const FONT_OPTIONS = [
+  { 
+    id: 'GOTHIC', 
+    label: 'GOTHIC', 
+    fontFamily: "'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', Meiryo, sans-serif" 
+  },
+  { 
+    id: 'MARU', 
+    label: 'MARU', 
+    fontFamily: "'Zen Maru Gothic', 'Hiragino Maru Gothic ProN', 'Kosugi Maru', sans-serif" 
+  },
+  { 
+    id: 'MEIRYO', 
+    label: 'MEIRYO', 
+    fontFamily: "'Meiryo', 'メイリオ', 'BIZ UDPGothic', sans-serif" 
+  },
+  { 
+    id: 'MONO', 
+    label: 'MONO', 
+    fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, monospace" 
+  },
+] as const;
+
 // --- Utils ---
 const formatTime = (seconds: number) => {
   if (isNaN(seconds)) return '0:00';
@@ -327,6 +350,28 @@ export default function App() {
   });
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
   const themeMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Font Selection State (GOTHIC, MARU, MEIRYO, MONO)
+  const [fontFamilyId, setFontFamilyId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solidFontFamily');
+      if (saved && FONT_OPTIONS.some(f => f.id === saved)) return saved;
+    } catch {}
+    return 'MONO';
+  });
+  const [isFontMenuOpen, setIsFontMenuOpen] = useState(false);
+  const fontMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const activeFont = useMemo(() => {
+    return FONT_OPTIONS.find(f => f.id === fontFamilyId) || FONT_OPTIONS[3];
+  }, [fontFamilyId]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--app-font-family', activeFont.fontFamily);
+    try {
+      localStorage.setItem('v2_solidFontFamily', fontFamilyId);
+    } catch {}
+  }, [fontFamilyId, activeFont]);
 
   // 04 DATA BANKS View Mode ('tracks' | 'card' | 'list' | 'album'), Card Size, Grouping, Drill-down, and Sidebar Collapse
   const [bankViewMode, setBankViewMode] = useState<'tracks' | 'card' | 'list' | 'album'>(() => {
@@ -679,6 +724,10 @@ export default function App() {
         } else if (savedThemeIndex !== undefined && savedThemeIndex < THEMES.length) {
           setThemeIndex(savedThemeIndex);
         }
+        const savedFontFamily = await get('v2_solidFontFamily');
+        if (savedFontFamily && FONT_OPTIONS.some(f => f.id === savedFontFamily)) {
+          setFontFamilyId(savedFontFamily);
+        }
         
         if (savedLibrary && savedPlaylists) {
           const libraryMap = new Map<string, Track>();
@@ -740,6 +789,7 @@ export default function App() {
         set('v2_solidColVisibility', colVisibility).catch(console.error);
         set('v2_solidColOrder', colOrder).catch(console.error);
         set('v2_solidThemeIndex', themeIndex).catch(console.error);
+        set('v2_solidFontFamily', fontFamilyId).catch(console.error);
         set('v2_solidListFontSize', listFontSize).catch(console.error);
         set('v2_solidActivePlaylistId', activePlaylistId).catch(console.error);
         set('v2_solidPlayingPlaylistId', playingPlaylistId).catch(console.error);
@@ -749,7 +799,7 @@ export default function App() {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [library, playlists, sidebarWidth, colWidths, colVisibility, colOrder, themeIndex, listFontSize, activePlaylistId, playingPlaylistId, playbackQueue, currentTrackIndex, isInitialized]);
+  }, [library, playlists, sidebarWidth, colWidths, colVisibility, colOrder, themeIndex, fontFamilyId, listFontSize, activePlaylistId, playingPlaylistId, playbackQueue, currentTrackIndex, isInitialized]);
 
   // Close theme menu on outside click or Escape key
   useEffect(() => {
@@ -769,6 +819,25 @@ export default function App() {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isThemeMenuOpen]);
+
+  // Close font menu on outside click or Escape key
+  useEffect(() => {
+    if (!isFontMenuOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (fontMenuRef.current && !fontMenuRef.current.contains(e.target as Node)) {
+        setIsFontMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsFontMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFontMenuOpen]);
 
 
   // (Moved player state)
@@ -3240,6 +3309,7 @@ export default function App() {
     '--theme-list-textDim': (theme as any).listTextDim || theme.textDim,
     '--theme-list-accent': (theme as any).listAccent || theme.accent,
     '--theme-list-accentMuted': (theme as any).listAccentMuted || theme.accentMuted,
+    '--app-font-family': activeFont.fontFamily,
     '--list-font-size': `${listFontSize}px`,
     '--list-font-size-sm': `${Math.max(8, listFontSize - 1)}px`,
     '--list-font-size-xs': `${Math.max(8, listFontSize - 2)}px`,
@@ -3741,6 +3811,75 @@ export default function App() {
               className="w-20 sq-slider"
             />
             <span className="text-[9px] uppercase tracking-wider font-mono" style={{ color: 'var(--theme-accent)', width: '24px', textAlign: 'right' }}>{listFontSize}PX</span>
+          </div>
+
+          {/* Font Control: Dropdown (GOTHIC, MARU, MEIRYO, MONO) */}
+          <div className="relative flex items-center" ref={fontMenuRef}>
+            <div 
+              className="flex items-center h-6 border rounded-[1px] select-none pl-2.5 pr-2 gap-2 cursor-pointer transition-colors"
+              style={{
+                borderColor: isFontMenuOpen ? 'var(--theme-accent)' : 'var(--theme-border)',
+                backgroundColor: 'var(--theme-surface)',
+              }}
+              onClick={() => setIsFontMenuOpen(prev => !prev)}
+              title="フォント切り替え"
+            >
+              <span className="text-[9px] uppercase tracking-wider font-bold" style={{ color: 'var(--theme-textMuted)' }}>FONT:</span>
+              <div className="flex items-center gap-1.5 min-w-[56px] justify-between">
+                <span className="text-[10px] font-bold tracking-wider" style={{ color: 'var(--theme-textMain)', fontFamily: activeFont.fontFamily }}>
+                  {activeFont.label}
+                </span>
+                <ChevronDown size={11} className={`transition-transform duration-150 ${isFontMenuOpen ? 'rotate-180' : ''}`} style={{ color: isFontMenuOpen ? 'var(--theme-accent)' : 'var(--theme-textMuted)' }} />
+              </div>
+            </div>
+
+            {/* Dropdown Menu Popup matching screenshot */}
+            {isFontMenuOpen && (
+              <div 
+                className="absolute right-0 top-full mt-1 z-50 w-32 border shadow-2xl rounded-[1px] py-1 select-none animate-fade-in"
+                style={{
+                  backgroundColor: 'var(--theme-surfaceLighter)',
+                  borderColor: 'var(--theme-borderActive)',
+                  color: 'var(--theme-textMain)',
+                }}
+              >
+                <div className="flex flex-col">
+                  {FONT_OPTIONS.map((f) => {
+                    const isSelected = f.id === fontFamilyId;
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => {
+                          setFontFamilyId(f.id);
+                          setIsFontMenuOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-bold tracking-wider text-left transition-colors cursor-pointer"
+                        style={{
+                          backgroundColor: isSelected ? 'var(--theme-accent, #2563eb)' : 'transparent',
+                          color: isSelected ? '#ffffff' : 'var(--theme-textMain)',
+                          fontFamily: f.fontFamily,
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'var(--theme-surface)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }
+                        }}
+                      >
+                        <span>{f.label}</span>
+                        {isSelected && (
+                          <Check size={11} style={{ color: '#ffffff' }} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Theme Control: Split Button (Click name = Cycle next theme, Click arrow = Dropdown list) */}
