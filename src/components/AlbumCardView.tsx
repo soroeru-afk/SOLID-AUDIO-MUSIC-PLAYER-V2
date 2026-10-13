@@ -35,6 +35,7 @@ interface AlbumCardViewProps {
   onReorderAlbum?: (draggedAlbumId: string, targetAlbumId: string) => void;
   onMoveTracksToAlbum?: (trackIds: string[], targetAlbum: AlbumGroup) => void;
   onDeleteAlbum?: (album: AlbumGroup) => void;
+  onDeleteAlbums?: (albums: AlbumGroup[]) => void;
   onRenameAlbum?: (album: AlbumGroup, newName: string) => void;
   currentTrackId?: string;
   isPlaying?: boolean;
@@ -68,6 +69,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   onReorderAlbum,
   onMoveTracksToAlbum,
   onDeleteAlbum,
+  onDeleteAlbums,
   onRenameAlbum,
   currentTrackId,
   isPlaying,
@@ -83,6 +85,10 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   const [confirmDeleteAlbumId, setConfirmDeleteAlbumId] = useState<string | null>(null);
   const [renamingAlbumId, setRenamingAlbumId] = useState<string | null>(null);
   const [renamingAlbumValue, setRenamingAlbumValue] = useState<string>('');
+  // Multi-selection state for batch album actions
+  const [selectedAlbumIds, setSelectedAlbumIds] = useState<Set<string>>(new Set());
+  const [confirmDeleteSelected, setConfirmDeleteSelected] = useState<boolean>(false);
+
   // Modal state for moving 1 track or an entire separated album into another album (no clipping!)
   const [moveTargetModal, setMoveTargetModal] = useState<{
     trackIds: string[];
@@ -90,18 +96,150 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     label: string;
   } | null>(null);
 
-  // Reset manual zoom override when switching sidebar playlists or display modes so that:
-  // - In ALBUM mode on a sidebar artist/folder list (not ALL TRACKS), the top album is automatically enlarged at the top
-  // - In CARDS or LIST mode (or ALL TRACKS), it starts in normal unzoomed tile/list layout until a jacket is clicked
+  // Reset manual zoom override and selection when switching sidebar playlists or display modes
   const firstAlbumId = albums[0]?.id || null;
   useEffect(() => {
     setZoomedAlbumId(null);
     setConfirmDeleteAlbumId(null);
     setRenamingAlbumId(null);
+    setSelectedAlbumIds(new Set());
+    setConfirmDeleteSelected(false);
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({ top: 0 });
     }
   }, [activePlaylistId, displayMode, firstAlbumId]);
+
+  const toggleSelectAlbum = (albumId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedAlbumIds(prev => {
+      const next = new Set(prev);
+      if (next.has(albumId)) next.delete(albumId);
+      else next.add(albumId);
+      return next;
+    });
+  };
+
+  const selectAllAlbums = () => {
+    setSelectedAlbumIds(new Set(albums.map(a => a.id)));
+  };
+
+  const clearSelectedAlbums = () => {
+    setSelectedAlbumIds(new Set());
+    setConfirmDeleteSelected(false);
+  };
+
+  const handleDeleteSelectedAlbums = () => {
+    const albumsToDelete = albums.filter(a => selectedAlbumIds.has(a.id));
+    if (albumsToDelete.length === 0) return;
+    if (onDeleteAlbums) {
+      onDeleteAlbums(albumsToDelete);
+    } else if (onDeleteAlbum) {
+      albumsToDelete.forEach(a => onDeleteAlbum(a));
+    }
+    setSelectedAlbumIds(new Set());
+    setConfirmDeleteSelected(false);
+  };
+
+  const renderSelectionBanner = () => {
+    if (selectedAlbumIds.size === 0) return null;
+    const selectedAlbums = albums.filter(a => selectedAlbumIds.has(a.id));
+    const totalSelectedTracks = selectedAlbums.reduce((sum, a) => sum + (a.tracks?.length || 0), 0);
+
+    return (
+      <div 
+        className="mb-3 px-3 py-2 border rounded-[2px] flex items-center justify-between gap-3 animate-fade-in shadow-md flex-wrap"
+        style={{
+          backgroundColor: 'var(--theme-list-surfaceLighter)',
+          borderColor: 'var(--theme-accent)',
+        }}
+      >
+        <div className="flex items-center gap-2.5">
+          <span className="w-2 h-2 rounded-full bg-[var(--theme-accent)] animate-pulse" />
+          <span className="text-[10px] font-mono font-bold tracking-wider" style={{ color: 'var(--theme-list-textMain)' }}>
+            {selectedAlbumIds.size} 件のアルバムを選択中
+          </span>
+          <span className="text-[9px] font-mono" style={{ color: 'var(--theme-list-textDim)' }}>
+            (計 {totalSelectedTracks} 曲)
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={selectAllAlbums}
+            className="px-2 py-1 text-[9px] font-mono font-bold border rounded-[1px] transition-colors hover:opacity-80 cursor-pointer"
+            style={{
+              backgroundColor: 'var(--theme-list-bg)',
+              borderColor: 'var(--theme-list-border)',
+              color: 'var(--theme-list-textMain)',
+            }}
+          >
+            全選択 ({albums.length})
+          </button>
+          <button
+            type="button"
+            onClick={clearSelectedAlbums}
+            className="px-2 py-1 text-[9px] font-mono font-bold border rounded-[1px] transition-colors hover:opacity-80 cursor-pointer"
+            style={{
+              backgroundColor: 'var(--theme-list-bg)',
+              borderColor: 'var(--theme-list-border)',
+              color: 'var(--theme-list-textDim)',
+            }}
+          >
+            選択解除
+          </button>
+
+          {confirmDeleteSelected ? (
+            <div 
+              className="flex items-center gap-1.5 px-2 py-0.5 border rounded-[1px]"
+              style={{
+                backgroundColor: 'var(--theme-list-bg)',
+                borderColor: 'var(--theme-accent)',
+              }}
+            >
+              <span className="text-[9px] font-mono font-bold" style={{ color: 'var(--theme-accent)' }}>
+                選択した{selectedAlbumIds.size}件を削除しますか？
+              </span>
+              <button
+                type="button"
+                onClick={handleDeleteSelectedAlbums}
+                className="px-2 py-0.5 text-[9px] font-mono font-bold rounded-[1px] hover:opacity-90 transition-opacity cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--theme-accent)',
+                  color: '#ffffff',
+                }}
+              >
+                削除を実行
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteSelected(false)}
+                className="px-1.5 py-0.5 text-[9px] font-mono hover:opacity-80 cursor-pointer"
+                style={{ color: 'var(--theme-list-textDim)' }}
+              >
+                キャンセル
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmDeleteSelected(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-[9px] font-mono font-bold border rounded-[1px] transition-colors hover:opacity-90 active:scale-95 cursor-pointer"
+              style={{
+                backgroundColor: 'var(--theme-accentMuted)',
+                borderColor: 'var(--theme-accent)',
+                color: 'var(--theme-accent)',
+              }}
+              title="選択したアルバムを一括削除"
+            >
+              <Trash2 size={11} />
+              <span>選択したアルバムを削除 ({selectedAlbumIds.size})</span>
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const startRenameAlbum = (e: React.MouseEvent, album: AlbumGroup) => {
     e.stopPropagation();
@@ -562,6 +700,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
 
     const isExpanded = expandedCardIds.has(album.id);
     const isDragTarget = dragOverAlbumId === album.id;
+    const isSelected = selectedAlbumIds.has(album.id);
 
     return (
       <div
@@ -576,12 +715,12 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
           backgroundColor: isThisAlbumActive
             ? 'var(--theme-list-surfaceLighter)'
             : 'var(--theme-list-surface)',
-          borderColor: isDragTarget
+          borderColor: isDragTarget || isSelected
             ? 'var(--theme-accent)'
             : isThisAlbumActive
             ? 'var(--theme-accent)'
             : 'var(--theme-list-border)',
-          boxShadow: isDragTarget
+          boxShadow: isDragTarget || isSelected
             ? '0 0 0 2px var(--theme-accent)'
             : isThisAlbumActive
             ? '0 0 0 1px var(--theme-accent)'
@@ -596,12 +735,29 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
           onClick={(e) => toggleZoomAlbum(e, album.id)}
           title="ジャケットをクリックして最上部にアルバム拡大モードで表示"
         >
+          {/* Multi-Selection Checkbox */}
+          <div
+            className="absolute top-2 left-2 z-30"
+            onClick={(e) => toggleSelectAlbum(album.id, e)}
+            title={isSelected ? "選択を解除" : "アルバムを選択"}
+          >
+            <div 
+              className={`w-4 h-4 rounded-[2px] border flex items-center justify-center cursor-pointer transition-all shadow-md ${
+                isSelected 
+                  ? 'bg-[var(--theme-accent)] border-[var(--theme-accent)] text-white' 
+                  : 'bg-black/60 border-white/60 hover:border-white text-transparent hover:bg-black/80'
+              }`}
+            >
+              <Check size={11} strokeWidth={3} className={isSelected ? 'opacity-100' : 'opacity-0'} />
+            </div>
+          </div>
+
           {renderArtwork(album.coverUrl, album.album, isCompact)}
 
           {/* Top-left Artist badge */}
           {!isCompact && (
             <div
-              className="absolute top-2 left-2 px-1.5 py-0.5 text-[7px] font-mono font-bold tracking-wider uppercase border rounded-[1px] backdrop-blur-sm pointer-events-none truncate max-w-[75%]"
+              className="absolute top-2 left-7 px-1.5 py-0.5 text-[7px] font-mono font-bold tracking-wider uppercase border rounded-[1px] backdrop-blur-sm pointer-events-none truncate max-w-[65%]"
               style={{
                 backgroundColor: 'rgba(0,0,0,0.78)',
                 borderColor: 'rgba(255,255,255,0.2)',
@@ -830,6 +986,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
 
     const isExpanded = expandedListIds.has(album.id);
     const isDragTarget = dragOverAlbumId === album.id;
+    const isSelected = selectedAlbumIds.has(album.id);
 
     return (
       <div
@@ -855,19 +1012,37 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
           style={{
             backgroundColor: isThisAlbumActive
               ? 'var(--theme-list-accentMuted)'
+              : isSelected
+              ? 'var(--theme-list-surfaceLighter)'
               : 'transparent',
           }}
           onMouseEnter={(e) => {
-            if (!isThisAlbumActive) {
+            if (!isThisAlbumActive && !isSelected) {
               e.currentTarget.style.backgroundColor = 'var(--theme-list-surfaceLighter)';
             }
           }}
           onMouseLeave={(e) => {
-            if (!isThisAlbumActive) {
+            if (!isThisAlbumActive && !isSelected) {
               e.currentTarget.style.backgroundColor = 'transparent';
             }
           }}
         >
+          {/* Multi-Selection Checkbox */}
+          <div
+            className="mr-2 shrink-0 flex items-center cursor-pointer"
+            onClick={(e) => toggleSelectAlbum(album.id, e)}
+            title={isSelected ? "選択を解除" : "アルバムを選択"}
+          >
+            <div 
+              className={`w-3.5 h-3.5 rounded-[2px] border flex items-center justify-center transition-all ${
+                isSelected 
+                  ? 'bg-[var(--theme-accent)] border-[var(--theme-accent)] text-white' 
+                  : 'border-[var(--theme-list-border)] hover:border-[var(--theme-list-borderActive)] bg-[var(--theme-list-bg)]'
+              }`}
+            >
+              <Check size={10} strokeWidth={3} className={isSelected ? 'opacity-100' : 'opacity-0'} />
+            </div>
+          </div>
           {reorderHandler && (
             <GripVertical
               size={12}
@@ -1067,6 +1242,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
 
     const isZoomed = forceZoomed || effectiveZoomedAlbumId === album.id;
     const isDragTarget = dragOverAlbumId === album.id;
+    const isSelected = selectedAlbumIds.has(album.id);
 
     // When zoomed at the top, make the cover jacket significantly larger (320px~380px) and expand across the full width!
     const activeCoverWidthPx = isZoomed
@@ -1086,10 +1262,10 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
           backgroundColor: isThisAlbumActive
             ? 'var(--theme-list-surfaceLighter)'
             : 'var(--theme-list-surface)',
-          borderColor: isDragTarget
+          borderColor: isDragTarget || isSelected
             ? 'var(--theme-accent)'
             : 'var(--theme-list-border)',
-          boxShadow: isDragTarget
+          boxShadow: isDragTarget || isSelected
             ? '0 0 0 2px var(--theme-accent)'
             : 'none',
           opacity: draggedAlbumId === album.id ? 0.45 : 1,
@@ -1110,6 +1286,22 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
             onClick={(e) => toggleZoomAlbum(e, album.id)}
             title={isZoomed ? 'ジャケットをクリックして元の並び・元の表示に戻す' : 'ジャケットをクリックして一番上に拡大表示する'}
           >
+            {/* Multi-Selection Checkbox */}
+            <div
+              className="absolute top-2 left-2 z-30"
+              onClick={(e) => toggleSelectAlbum(album.id, e)}
+              title={isSelected ? "選択を解除" : "アルバムを選択"}
+            >
+              <div 
+                className={`w-4 h-4 rounded-[2px] border flex items-center justify-center cursor-pointer transition-all shadow-md ${
+                  isSelected 
+                    ? 'bg-[var(--theme-accent)] border-[var(--theme-accent)] text-white' 
+                    : 'bg-black/60 border-white/60 hover:border-white text-transparent hover:bg-black/80'
+                }`}
+              >
+                <Check size={11} strokeWidth={3} className={isSelected ? 'opacity-100' : 'opacity-0'} />
+              </div>
+            </div>
             {renderArtwork(album.coverUrl, album.album, activeCoverWidthPx < 110)}
 
             {/* Hover Zoom Indicator Overlay */}
@@ -1476,6 +1668,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     return (
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
         {renderMoveTargetModal()}
+        {renderSelectionBanner()}
         <div
           className="flex items-center justify-between pb-2 mb-3 border-b text-[9px] font-mono shrink-0"
           style={{
@@ -1490,6 +1683,18 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
             >
               {artists.length} ARTISTS • {albums.length} ALBUMS
             </span>
+            <button
+              onClick={selectAllAlbums}
+              className="px-2 py-0.5 border rounded-[1px] tracking-wider uppercase transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+              style={{
+                backgroundColor: 'var(--theme-list-surfaceLighter)',
+                borderColor: 'var(--theme-list-border)',
+                color: 'var(--theme-list-textMuted)',
+              }}
+              title="すべてのアルバムを選択"
+            >
+              全選択
+            </button>
             <span>•</span>
             <span className="tracking-widest">MULTI-COLUMN ARTIST TILE VIEW</span>
           </div>
@@ -1641,6 +1846,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     return (
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
         {renderMoveTargetModal()}
+        {renderSelectionBanner()}
         <div
           className="flex items-center justify-between pb-2 border-b text-[9px] font-mono shrink-0 mb-3"
           style={{
@@ -1655,6 +1861,18 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
             >
               {albums.length} ALBUMS
             </span>
+            <button
+              onClick={selectAllAlbums}
+              className="px-2 py-0.5 border rounded-[1px] tracking-wider uppercase transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+              style={{
+                backgroundColor: 'var(--theme-list-surfaceLighter)',
+                borderColor: 'var(--theme-list-border)',
+                color: 'var(--theme-list-textMuted)',
+              }}
+              title="すべてのアルバムを選択"
+            >
+              全選択
+            </button>
             <span>•</span>
             <span className="tracking-widest">LIST CATALOG</span>
           </div>
@@ -1687,6 +1905,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     return (
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
         {renderMoveTargetModal()}
+        {renderSelectionBanner()}
         <div
           className="flex items-center justify-between pb-2 border-b text-[9px] font-mono shrink-0 mb-3"
           style={{
@@ -1701,6 +1920,18 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
             >
               {albums.length} ALBUMS ({artists.length} ARTISTS)
             </span>
+            <button
+              onClick={selectAllAlbums}
+              className="px-2 py-0.5 border rounded-[1px] tracking-wider uppercase transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+              style={{
+                backgroundColor: 'var(--theme-list-surfaceLighter)',
+                borderColor: 'var(--theme-list-border)',
+                color: 'var(--theme-list-textMuted)',
+              }}
+              title="すべてのアルバムを選択"
+            >
+              全選択
+            </button>
             <span>•</span>
             <span className="tracking-widest">TILE GRID VIEW (COVER + TRACKS)</span>
           </div>
@@ -1724,6 +1955,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   return (
     <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
       {renderMoveTargetModal()}
+      {renderSelectionBanner()}
       <div
         className="flex items-center justify-between pb-2 border-b text-[9px] font-mono shrink-0 mb-3"
         style={{
@@ -1738,6 +1970,18 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
           >
             {albums.length} ALBUMS ({artists.length} ARTISTS)
           </span>
+          <button
+            onClick={selectAllAlbums}
+            className="px-2 py-0.5 border rounded-[1px] tracking-wider uppercase transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+            style={{
+              backgroundColor: 'var(--theme-list-surfaceLighter)',
+              borderColor: 'var(--theme-list-border)',
+              color: 'var(--theme-list-textMuted)',
+            }}
+            title="すべてのアルバムを選択"
+          >
+            全選択
+          </button>
           <span>•</span>
           <span className="tracking-widest">TILE GRID VIEW (CARDS)</span>
         </div>

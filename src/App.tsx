@@ -4,7 +4,8 @@ import {
   Folder, FolderOpen, ListMusic, Plus, Search, ChevronUp, ChevronDown, 
   ChevronsUp, ChevronsDown, Palette, Activity, Check, X, Trash2, ListPlus, AlertCircle,
   Minimize2, Maximize2, Layers, Minus, PanelTop, GripVertical, Type, Eye, EyeOff,
-  LayoutGrid, List, Disc, User, ChevronRight, ArrowLeft, PanelLeftClose, PanelLeftOpen, Edit2
+  LayoutGrid, List, Disc, User, ChevronRight, ArrowLeft, PanelLeftClose, PanelLeftOpen, Edit2,
+  ArrowLeftRight, FileText
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { get, set, del } from 'idb-keyval';
@@ -247,16 +248,113 @@ const formatTime = (seconds: number) => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
-const parseFilename = (filename: string): { title: string, artist: string } => {
-  const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
-  if (nameWithoutExt.includes('-')) {
+// Map Windows-1252 / Latin-1 byte signatures back to raw byte values
+const WINDOWS_1252_MAP: Record<string, number> = {
+  '\u20AC': 0x80, '\u201A': 0x82, '\u0192': 0x83, '\u201E': 0x84,
+  '\u2026': 0x85, '\u2020': 0x86, '\u2021': 0x87, '\u02C6': 0x88,
+  '\u2030': 0x89, '\u0160': 0x8A, '\u2039': 0x8B, '\u0152': 0x8C,
+  '\u017D': 0x8E, '\u2018': 0x91, '\u2019': 0x92, '\u201C': 0x93,
+  '\u201D': 0x94, '\u2022': 0x95, '\u2013': 0x96, '\u2014': 0x97,
+  '\u02DC': 0x98, '\u2122': 0x99, '\u0161': 0x9A, '\u203A': 0x9B,
+  '\u0153': 0x9C, '\u017E': 0x9E, '\u0178': 0x9F
+};
+
+// Convert full-width alphanumeric (全角英数) to standard half-width (半角英数) and normalize full-width spaces
+export const normalizeZenkakuAlphanumeric = (str: string | undefined): string => {
+  if (!str || typeof str !== 'string') return str || '';
+  return str
+    // Convert full-width ASCII chars (！-～ : \uFF01-\uFF5E) to standard ASCII (!-~ : \u0021-\u007E)
+    .replace(/[\uFF01-\uFF5E]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+    // Convert full-width space to standard space
+    .replace(/\u3000/g, ' ')
+    // Normalize repeated whitespace
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+};
+
+// Detect typical Latin-1/Windows-1252 Shift_JIS/UTF-8 mojibake signatures
+export const looksLikeMojibake = (text: string | undefined): boolean => {
+  if (!text || typeof text !== 'string') return false;
+  if (text.includes('\uFFFD')) return true;
+  const mojibakeCount = (text.match(/[\u0080-\u00FF\u0152\u0153\u0160\u0161\u017D\u017E\u0178\u0192\u02C6\u02DC\u2013\u2014\u2018\u2019\u201A\u201C\u201D\u201E\u2020\u2021\u2022\u2026\u2030\u2039\u203A\u20AC\u2122]/g) || []).length;
+  return mojibakeCount >= 2;
+};
+
+// Attempt to repair mojibake by converting characters back to raw bytes and decoding as Shift_JIS (CP932) or UTF-8
+export const repairMojibake = (text: string | undefined): string => {
+  if (!text || typeof text !== 'string') return text || '';
+  if (!looksLikeMojibake(text)) {
+    return normalizeZenkakuAlphanumeric(text);
+  }
+
+  // Extract raw byte array from Latin-1 / Windows-1252 misinterpreted string
+  const rawBytes = new Uint8Array(
+    [...text].map(c => {
+      if (WINDOWS_1252_MAP[c] !== undefined) return WINDOWS_1252_MAP[c];
+      return c.charCodeAt(0) & 0xFF;
+    })
+  );
+
+  // Attempt 1: Decode as Shift_JIS (CP932 / Windows-31J)
+  try {
+    const sjisDecoder = new TextDecoder('shift-jis', { fatal: false });
+    const decodedSjis = sjisDecoder.decode(rawBytes);
+    const hasJapanese = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(decodedSjis);
+    const replacementCount = (decodedSjis.match(/\uFFFD/g) || []).length;
+    if (hasJapanese && replacementCount === 0) {
+      return normalizeZenkakuAlphanumeric(decodedSjis);
+    }
+  } catch (e) {}
+
+  // Attempt 2: Decode as UTF-8 (when UTF-8 was misinterpreted as Latin-1)
+  try {
+    const utf8Decoder = new TextDecoder('utf-8', { fatal: false });
+    const decodedUtf8 = utf8Decoder.decode(rawBytes);
+    const hasJapanese = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(decodedUtf8);
+    const replacementCount = (decodedUtf8.match(/\uFFFD/g) || []).length;
+    if (hasJapanese && replacementCount === 0) {
+      return normalizeZenkakuAlphanumeric(decodedUtf8);
+    }
+  } catch (e) {}
+
+  return normalizeZenkakuAlphanumeric(text);
+};
+
+// Clean title/artist/album text: repairs mojibake + normalizes full-width English/numbers
+export const cleanAudioTag = (rawText: string | undefined): string => {
+  if (!rawText) return '';
+  const repaired = repairMojibake(rawText.trim());
+  return normalizeZenkakuAlphanumeric(repaired);
+};
+
+const parseFilename = (filename: string): { title: string, artist: string, trackNumber?: string } => {
+  let nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
+  nameWithoutExt = normalizeZenkakuAlphanumeric(nameWithoutExt);
+
+  // Strip leading track number prefixes (e.g. "01.", "01 - ", "01_", "01 ") so fallback titles don't keep track numbers
+  let trackNumber = '';
+  const numMatch = nameWithoutExt.match(/^(\d{1,3})[\s._-]+(.+)$/);
+  if (numMatch) {
+    trackNumber = numMatch[1];
+    nameWithoutExt = numMatch[2].trim();
+  }
+
+  if (nameWithoutExt.includes(' - ')) {
+    const parts = nameWithoutExt.split(' - ');
+    return {
+      artist: parts[0].trim() || 'Unknown Artist',
+      title: parts.slice(1).join(' - ').trim() || 'Unknown Title',
+      trackNumber
+    };
+  } else if (nameWithoutExt.includes('-')) {
     const parts = nameWithoutExt.split('-');
     return {
       artist: parts[0].trim() || 'Unknown Artist',
-      title: parts.slice(1).join('-').trim() || 'Unknown Title'
+      title: parts.slice(1).join('-').trim() || 'Unknown Title',
+      trackNumber
     };
   }
-  return { title: nameWithoutExt, artist: 'Unknown Artist' };
+  return { title: nameWithoutExt, artist: 'Unknown Artist', trackNumber };
 };
 
 const COL_LABELS: Record<string, string> = {
@@ -492,6 +590,7 @@ export default function App() {
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editArtist, setEditArtist] = useState('');
+  const [editFileName, setEditFileName] = useState('');
   
   // Playlist Rename & Delete State
   const [renamingPlaylistId, setRenamingPlaylistId] = useState<string | null>(null);
@@ -512,14 +611,6 @@ export default function App() {
   // Duplicates & Mini Mode State
   const [duplicateGroups, setDuplicateGroups] = useState<Track[][]>([]);
   const [showDuplicatesModal, setShowDuplicatesModal] = useState(false);
-  const [viewMode, setViewMode] = useState<'full' | 'mini' | 'slim'>(() => {
-    try {
-      const saved = localStorage.getItem('v2_solidViewMode');
-      if (saved === 'mini' || saved === 'slim' || saved === 'full') return saved;
-    } catch (e) {}
-    return 'full';
-  });
-
   const [windowSizes, setWindowSizes] = useState<Record<'full' | 'mini' | 'slim', { width: number; height: number }>>(() => {
     try {
       const saved = localStorage.getItem('v2_solidWindowSizes');
@@ -528,32 +619,61 @@ export default function App() {
         return {
           full: parsed.full && parsed.full.width ? parsed.full : DEFAULT_WINDOW_SIZES.full,
           mini: parsed.mini && parsed.mini.width ? parsed.mini : DEFAULT_WINDOW_SIZES.mini,
-          slim: parsed.slim && parsed.slim.width ? parsed.slim : DEFAULT_WINDOW_SIZES.slim,
+          slim: parsed.slim && parsed.slim.width ? parsed.slim : DEFAULT_WINDOW_SIZES.slim
         };
       }
     } catch (e) {}
     return DEFAULT_WINDOW_SIZES;
   });
 
-  // Track window resizing and persist custom dimensions per viewMode
+  const [viewMode, setViewMode] = useState<'full' | 'mini' | 'slim'>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solidViewMode');
+      if (saved === 'mini' || saved === 'slim' || saved === 'full') return saved;
+    } catch (e) {}
+    return 'full';
+  });
+
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  const playerRef = useRef<HTMLDivElement>(null);
+
+  // Resize window according to current viewMode
+  useEffect(() => {
+    try {
+      localStorage.setItem('v2_solidViewMode', viewMode);
+      set('v2_solidViewMode', viewMode).catch(() => {});
+    } catch (e) {}
+
+    const targetSize = windowSizes[viewMode];
+    if (targetSize && window.outerWidth && window.outerHeight) {
+      if (window.outerWidth !== targetSize.width || window.outerHeight !== targetSize.height) {
+        try {
+          window.resizeTo(targetSize.width, targetSize.height);
+        } catch (e) {
+          console.warn('Window resizing failed (likely restricted by browser):', e);
+        }
+      }
+    }
+  }, [viewMode, windowSizes]);
+
+  // Track window resizing manually by user and persist per viewMode
   useEffect(() => {
     let resizeTimer: any;
     const handleResize = () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        const w = window.outerWidth || window.innerWidth;
-        const h = window.outerHeight || window.innerHeight;
-        if (w > 100 && h > 100) {
+        if (window.outerWidth && window.outerHeight) {
           setWindowSizes(prev => {
-            const updated = {
+            const next = {
               ...prev,
-              [viewMode]: { width: w, height: h }
+              [viewMode]: { width: window.outerWidth, height: window.outerHeight }
             };
             try {
-              localStorage.setItem('v2_solidWindowSizes', JSON.stringify(updated));
-              set('v2_solidWindowSizes', updated).catch(() => {});
+              localStorage.setItem('v2_solidWindowSizes', JSON.stringify(next));
+              set('v2_solidWindowSizes', next).catch(() => {});
             } catch (e) {}
-            return updated;
+            return next;
           });
         }
       }, 300);
@@ -565,10 +685,6 @@ export default function App() {
       clearTimeout(resizeTimer);
     };
   }, [viewMode]);
-
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
-
-  const playerRef = useRef<HTMLDivElement>(null);
 
   // Dragging State for Mini/Slim modes
   const [playerOffset, setPlayerOffset] = useState({ x: 0, y: 0 });
@@ -643,25 +759,6 @@ export default function App() {
     setPlayerOffset({ x: 0, y: 0 });
   }, [viewMode]);
 
-  // Resize window according to current viewMode
-  useEffect(() => {
-    try {
-      localStorage.setItem('v2_solidViewMode', viewMode);
-      set('v2_solidViewMode', viewMode).catch(() => {});
-    } catch (e) {}
-
-    try {
-      if (typeof window !== 'undefined' && window.resizeTo) {
-        const target = windowSizes[viewMode] || DEFAULT_WINDOW_SIZES[viewMode];
-        if (target && target.width && target.height) {
-          window.resizeTo(target.width, target.height);
-        }
-      }
-    } catch (e) {
-      console.warn("window.resizeTo is restricted by browser context", e);
-    }
-  }, [viewMode, windowSizes]);
-
   // Load from IndexedDB
   useEffect(() => {
     const loadState = async () => {
@@ -683,15 +780,6 @@ export default function App() {
         const savedEqLow = await get('v2_solidEqLow');
         const savedEqMid = await get('v2_solidEqMid');
         const savedEqHigh = await get('v2_solidEqHigh');
-        const savedWindowSizes = await get('v2_solidWindowSizes');
-        
-        if (savedWindowSizes && typeof savedWindowSizes === 'object') {
-          setWindowSizes(prev => ({
-            full: savedWindowSizes.full && savedWindowSizes.full.width ? savedWindowSizes.full : prev.full,
-            mini: savedWindowSizes.mini && savedWindowSizes.mini.width ? savedWindowSizes.mini : prev.mini,
-            slim: savedWindowSizes.slim && savedWindowSizes.slim.width ? savedWindowSizes.slim : prev.slim,
-          }));
-        }
         
         if (savedVolume !== undefined && !isNaN(savedVolume) && savedVolume >= 0 && savedVolume <= 1) setVolume(savedVolume);
         if (savedIsMuted !== undefined) setIsMuted(!!savedIsMuted);
@@ -728,6 +816,16 @@ export default function App() {
         if (savedFontFamily && FONT_OPTIONS.some(f => f.id === savedFontFamily)) {
           setFontFamilyId(savedFontFamily);
         }
+
+        const savedWindowSizes = await get('v2_solidWindowSizes');
+
+        if (savedWindowSizes && typeof savedWindowSizes === 'object') {
+          setWindowSizes(prev => ({
+            full: savedWindowSizes.full && savedWindowSizes.full.width ? savedWindowSizes.full : prev.full,
+            mini: savedWindowSizes.mini && savedWindowSizes.mini.width ? savedWindowSizes.mini : prev.mini,
+            slim: savedWindowSizes.slim && savedWindowSizes.slim.width ? savedWindowSizes.slim : prev.slim,
+          }));
+        }
         
         if (savedLibrary && savedPlaylists) {
           const libraryMap = new Map<string, Track>();
@@ -744,6 +842,10 @@ export default function App() {
             // Clear the old blob URL from previous session
             t.url = '';
             t.missing = false; // We don't mark it missing yet until we try to play it
+            // Sanitize and clean tag text (repair mojibake & convert full-width English)
+            t.title = cleanAudioTag(t.title);
+            t.artist = cleanAudioTag(t.artist);
+            t.album = cleanAudioTag(t.album);
             libraryMap.set(t.id, t);
             return t;
           }));
@@ -1431,9 +1533,18 @@ export default function App() {
 
   // --- Handlers ---
   const saveTrackEdit = async (trackId: string) => {
+    const cleanTitle = normalizeZenkakuAlphanumeric(editTitle.trim());
+    const cleanArtist = normalizeZenkakuAlphanumeric(editArtist.trim());
+    const cleanFileName = normalizeZenkakuAlphanumeric(editFileName.trim());
+
     setLibrary(prev => prev.map(t => {
       if (t.id === trackId) {
-        return { ...t, title: editTitle || t.title, artist: editArtist || t.artist };
+        return { 
+          ...t, 
+          title: cleanTitle || t.title, 
+          artist: cleanArtist || t.artist,
+          fileName: cleanFileName || t.fileName,
+        };
       }
       return t;
     }));
@@ -1442,12 +1553,71 @@ export default function App() {
       ...p,
       tracks: p.tracks.map(t => {
         if (t.id === trackId) {
-           return { ...t, title: editTitle || t.title, artist: editArtist || t.artist };
+           return { 
+             ...t, 
+             title: cleanTitle || t.title, 
+             artist: cleanArtist || t.artist,
+             fileName: cleanFileName || t.fileName,
+           };
         }
         return t;
       })
     })));
+
+    setPlaybackQueue(prev => prev.map(t => {
+      if (t.id === trackId) {
+        return { 
+          ...t, 
+          title: cleanTitle || t.title, 
+          artist: cleanArtist || t.artist,
+          fileName: cleanFileName || t.fileName,
+        };
+      }
+      return t;
+    }));
+
     setEditingTrackId(null);
+  };
+
+  // Generate and apply clean title from file name for a single track
+  const handleApplyFilenameToTitle = (trackId: string) => {
+    const applyFilename = (t: Track): Track => {
+      if (t.id !== trackId) return t;
+      const parsed = parseFilename(t.fileName);
+      return {
+        ...t,
+        title: parsed.title,
+        ...(parsed.artist !== 'Unknown Artist' ? { artist: parsed.artist } : {}),
+      };
+    };
+
+    setLibrary(prev => prev.map(applyFilename));
+    setPlaylists(prev => prev.map(p => ({
+      ...p,
+      tracks: p.tracks.map(applyFilename)
+    })));
+    setPlaybackQueue(prev => prev.map(applyFilename));
+  };
+
+  // Batch generate clean Title from filename for all selected tracks
+  const handleBatchUseFilenameAsTitle = () => {
+    if (selectedTrackIds.size === 0) return;
+    const applyFilename = (t: Track): Track => {
+      if (!selectedTrackIds.has(t.id)) return t;
+      const parsed = parseFilename(t.fileName);
+      return {
+        ...t,
+        title: parsed.title,
+        ...(parsed.artist !== 'Unknown Artist' ? { artist: parsed.artist } : {}),
+      };
+    };
+
+    setLibrary(prev => prev.map(applyFilename));
+    setPlaylists(prev => prev.map(p => ({
+      ...p,
+      tracks: p.tracks.map(applyFilename)
+    })));
+    setPlaybackQueue(prev => prev.map(applyFilename));
   };
 
   const removeArtwork = (e: React.MouseEvent, trackId: string) => {
@@ -1623,6 +1793,7 @@ export default function App() {
     setEditingTrackId(track.id);
     setEditTitle(track.title);
     setEditArtist(track.artist);
+    setEditFileName(track.fileName);
   };
 
   const findDuplicates = () => {
@@ -1699,9 +1870,13 @@ export default function App() {
 
     try {
       const metadata = await mm.parseBlob(file, { skipCovers: false });
-      title = metadata.common.title || '';
-      artist = metadata.common.artist || metadata.common.albumartist || 'Unknown Artist';
-      album = metadata.common.album || 'Unknown Album';
+      const rawTitle = metadata.common.title || '';
+      const rawArtist = metadata.common.artist || metadata.common.albumartist || '';
+      const rawAlbum = metadata.common.album || '';
+
+      title = cleanAudioTag(rawTitle);
+      artist = cleanAudioTag(rawArtist) || 'Unknown Artist';
+      album = cleanAudioTag(rawAlbum) || 'Unknown Album';
       trackNumber = metadata.common.track?.no?.toString() || '';
       duration = metadata.format.duration || 0;
 
@@ -1718,11 +1893,21 @@ export default function App() {
       console.error("Error reading metadata:", file.name, err);
     }
 
-    if (!title) {
+    // If title was missing or still looks like garbled mojibake, safely fall back to the clean filename
+    if (!title || looksLikeMojibake(title)) {
       const parsed = parseFilename(file.name);
       title = parsed.title;
-      if (artist === 'Unknown Artist') artist = parsed.artist;
+      if (artist === 'Unknown Artist' && parsed.artist !== 'Unknown Artist') {
+        artist = parsed.artist;
+      }
+      if (!trackNumber && parsed.trackNumber) {
+        trackNumber = parsed.trackNumber;
+      }
+    } else {
+      title = normalizeZenkakuAlphanumeric(title);
     }
+    artist = normalizeZenkakuAlphanumeric(artist);
+    album = normalizeZenkakuAlphanumeric(album);
 
     // Deduce Album and Artist from Directory Structure (e.g. "Artist/Album/Song.mp3" or "Folder/Song.mp3")
     // Always prioritize the immediate folder name as the Album name so tracks in the same folder aren't split by varying MP3 album tags!
@@ -2078,14 +2263,15 @@ export default function App() {
   const deleteSelectedTracks = () => {
       if (selectedTrackIds.size === 0) return;
       
+      if (activePlaylistId === 'all-tracks') {
+        setLibrary(prev => prev.filter(t => !selectedTrackIds.has(t.id)));
+      }
+
       setPlaylists(prev => prev.map(p => {
           if (p.id === activePlaylistId) {
               return { ...p, tracks: p.tracks.filter(t => !selectedTrackIds.has(t.id)) };
           }
           if (activePlaylistId === 'all-tracks') {
-             // If we are deleting from all-tracks, should we delete from everywhere?
-             // The user just said "it deletes those placed in the playlist". 
-             // Let's just remove from all-tracks for now if active is all-tracks.
              return { ...p, tracks: p.tracks.filter(t => !selectedTrackIds.has(t.id)) };
           }
           return p;
@@ -3013,6 +3199,51 @@ export default function App() {
     setConfirmDeleteSubAlbumKey(null);
   };
 
+  // Delete multiple AlbumGroups from the target playlist (or everywhere if targetPlaylistId === 'all-tracks')
+  const handleDeleteMultipleAlbums = (albumsToDelete: AlbumGroup[], targetPlaylistId: string = activePlaylistId) => {
+    if (albumsToDelete.length === 0) return;
+    const allTrackIds = new Set<string>();
+    albumsToDelete.forEach(a => a.tracks.forEach(t => allTrackIds.add(t.id)));
+    if (allTrackIds.size === 0) return;
+
+    if (targetPlaylistId === 'all-tracks') {
+      setLibrary(prev => prev.filter(t => !allTrackIds.has(t.id)));
+      setPlaylists(prev => prev.map(p => ({
+        ...p,
+        tracks: p.tracks.filter(t => !allTrackIds.has(t.id)),
+      })));
+    } else {
+      setPlaylists(prev => prev.map(p => {
+        if (p.id !== targetPlaylistId) return p;
+        return {
+          ...p,
+          tracks: p.tracks.filter(t => !allTrackIds.has(t.id)),
+        };
+      }));
+    }
+
+    // Stop playback if the currently playing track belonged to any deleted album
+    const playingTrack = playbackQueue[currentTrackIndex];
+    if (playingTrack && allTrackIds.has(playingTrack.id) && (targetPlaylistId === 'all-tracks' || playingPlaylistId === targetPlaylistId)) {
+      setIsPlaying(false);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      setCurrentTrackIndex(-1);
+    }
+
+    if (drillDownAlbum && albumsToDelete.some(a => a.album.toLowerCase() === drillDownAlbum.album.toLowerCase())) {
+      setDrillDownAlbum(null);
+    }
+    setSelectedTrackIds(prev => {
+      const next = new Set(prev);
+      allTrackIds.forEach(id => next.delete(id));
+      return next;
+    });
+    setConfirmDeleteSubAlbumKey(null);
+  };
+
   // Rename a sidebar folder/playlist AND update single-folder album name if all tracks share one album
   const handleRenamePlaylist = (playlistId: string, rawNewName: string) => {
     const cleanNewName = rawNewName.trim();
@@ -3394,10 +3625,36 @@ export default function App() {
             <div className="flex-1 min-w-0 flex gap-2 pr-4 h-full items-center pl-3" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
               <input
                  type="text"
+                 value={editFileName}
+                 onChange={e => setEditFileName(e.target.value)}
+                 className="w-1/3 bg-transparent border-b outline-none font-mono"
+                 style={{ borderColor: 'var(--theme-list-borderActive)', color: 'var(--theme-list-textMuted)', fontSize: 'var(--list-font-size-sm)' }}
+                 placeholder="名前(ファイル名)"
+                 onKeyDown={e => { if (e.key === 'Enter') saveTrackEdit(track.id); }}
+              />
+              <button 
+                type="button"
+                onClick={() => {
+                  const parsed = parseFilename(editFileName);
+                  setEditTitle(parsed.title);
+                  if (parsed.artist !== 'Unknown Artist' && (!editArtist || editArtist === 'Unknown Artist')) {
+                    setEditArtist(parsed.artist);
+                  }
+                }}
+                className="px-1.5 py-0.5 border rounded-[1px] hover:opacity-80 transition-opacity flex items-center gap-1 text-[8px] font-mono shrink-0 cursor-pointer"
+                style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-borderActive)', color: 'var(--theme-accent)' }}
+                title="ファイル名から綺麗なタイトルを生成してタイトル欄に反映します"
+              >
+                <FileText size={10} />
+                <span>名前→タイトル</span>
+              </button>
+              <input
+                 type="text"
                  value={editTitle}
                  onChange={e => setEditTitle(e.target.value)}
                  className="flex-1 bg-transparent border-b outline-none font-mono"
                  style={{ borderColor: 'var(--theme-list-borderActive)', color: 'var(--theme-list-textMain)', fontSize: 'var(--list-font-size)' }}
+                 placeholder="タイトル"
                  autoFocus
                  onKeyDown={e => { if (e.key === 'Enter') saveTrackEdit(track.id); }}
               />
@@ -3407,11 +3664,12 @@ export default function App() {
                  onChange={e => setEditArtist(e.target.value)}
                  className="w-1/4 bg-transparent border-b outline-none font-mono"
                  style={{ borderColor: 'var(--theme-list-borderActive)', color: 'var(--theme-list-textMain)', fontSize: 'var(--list-font-size)' }}
+                 placeholder="アーティスト"
                  onKeyDown={e => { if (e.key === 'Enter') saveTrackEdit(track.id); }}
               />
-              <button onClick={() => saveTrackEdit(track.id)} className="px-1" title="Save" style={{ color: 'var(--theme-list-accent)' }}><Check size={12} /></button>
-              <button title="Remove Artwork" onClick={(e) => removeArtwork(e, track.id)} className="px-1" style={{ color: 'var(--theme-list-textDim)' }}><Trash2 size={12} /></button>
-              <button onClick={() => setEditingTrackId(null)} className="px-1" title="Cancel" style={{ color: 'var(--theme-list-textDim)' }}><X size={12} /></button>
+              <button onClick={() => saveTrackEdit(track.id)} className="px-1 cursor-pointer" title="保存" style={{ color: 'var(--theme-list-accent)' }}><Check size={12} /></button>
+              <button title="Remove Artwork" onClick={(e) => removeArtwork(e, track.id)} className="px-1 cursor-pointer" style={{ color: 'var(--theme-list-textDim)' }}><Trash2 size={12} /></button>
+              <button onClick={() => setEditingTrackId(null)} className="px-1 cursor-pointer" title="キャンセル" style={{ color: 'var(--theme-list-textDim)' }}><X size={12} /></button>
             </div>
           ) : (
             <div className="flex-1 min-w-0 flex items-center gap-3 pl-3 h-full">
@@ -3459,11 +3717,16 @@ export default function App() {
           )}
           {/* Explicit Reordering Tools */}
           {colVisibility.actions && (
-            <div className="w-24 flex-shrink-0 flex items-center justify-end gap-1 transition-opacity pr-2">
+            <div className="w-28 flex-shrink-0 flex items-center justify-end gap-1 transition-opacity pr-2">
               {editingTrackId !== track.id && (
-                  <button onClick={(e) => startEditTrack(e, track)} title="Edit Info" className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95" style={{ backgroundColor: 'var(--theme-list-accentMuted)', borderColor: 'var(--theme-list-borderActive)', color: listIconColor }}>
+                <>
+                  <button onClick={(e) => startEditTrack(e, track)} title="タイトル・名前(データ名)・アーティストを編集" className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 cursor-pointer" style={{ backgroundColor: 'var(--theme-list-accentMuted)', borderColor: 'var(--theme-list-borderActive)', color: listIconColor }}>
                     <Palette size={10} />
                   </button>
+                  <button onClick={(e) => { e.stopPropagation(); handleApplyFilenameToTitle(track.id); }} title="ファイル名から綺麗なタイトルを生成して反映" className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 cursor-pointer" style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)', color: listIconColor }}>
+                    <FileText size={10} />
+                  </button>
+                </>
               )}
             <button 
               onClick={(e) => moveTrack(e, idx, 0)} 
@@ -3506,7 +3769,7 @@ export default function App() {
         </div>
       );
     });
-  }, [tracksToRender, drillDownAlbum, drillDownTracks, displayTracks, activePlaylistId, playingPlaylistId, currentTrackIndex, currentTrack?.id, selectedTrackIds, editingTrackId, editTitle, editArtist, listIconColor, activeSortConfig.key, colWidths, colVisibility]);
+  }, [tracksToRender, drillDownAlbum, drillDownTracks, displayTracks, activePlaylistId, playingPlaylistId, currentTrackIndex, currentTrack?.id, selectedTrackIds, editingTrackId, editTitle, editArtist, editFileName, listIconColor, activeSortConfig.key, colWidths, colVisibility]);
 
   // Replace old PanelBlock definition location
   return (
@@ -5355,42 +5618,20 @@ export default function App() {
                     </button>
                     {selectedTrackIds.size > 0 && (
                       <div className="flex items-center gap-3">
-                        {/* Batch Track Move Buttons: Top, Up, Down, Bottom */}
-                        <div className="flex items-center gap-0.5 border-r pr-2" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
-                          <span className="text-[9px] font-mono tracking-wider mr-1" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
-                            MOVE ({selectedTrackIds.size}):
-                          </span>
-                          <button 
-                            onClick={() => moveSelectedTracks('top')}
-                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                            style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                            title="選択した曲を一番上へ移動 (Top)"
+                        {/* Batch Clean Filename to Title tool */}
+                        <div className="flex items-center gap-1 border-r pr-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
+                          <button
+                            onClick={handleBatchUseFilenameAsTitle}
+                            className="flex items-center gap-1 text-[8.5px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                            style={{
+                              backgroundColor: 'var(--theme-list-surfaceLighter)',
+                              borderColor: 'var(--theme-list-borderActive)',
+                              color: 'var(--theme-accent)',
+                            }}
+                            title="選択した曲のファイル名から不要な番号等を除去した綺麗な名前をタイトルに適用します"
                           >
-                            <ChevronsUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
-                          </button>
-                          <button 
-                            onClick={() => moveSelectedTracks('up')}
-                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                            style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                            title="選択した曲を上に移動 (Up)"
-                          >
-                            <ChevronUp size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
-                          </button>
-                          <button 
-                            onClick={() => moveSelectedTracks('down')}
-                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                            style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                            title="選択した曲を下に移動 (Down)"
-                          >
-                            <ChevronDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
-                          </button>
-                          <button 
-                            onClick={() => moveSelectedTracks('bottom')}
-                            className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95"
-                            style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
-                            title="選択した曲を一番下へ移動 (Bottom)"
-                          >
-                            <ChevronsDown size={11} style={{ color: 'var(--theme-listHeader-text)' }} />
+                            <FileText size={10} />
+                            <span>ファイル名からタイトル生成 ({selectedTrackIds.size})</span>
                           </button>
                         </div>
 
@@ -5589,6 +5830,7 @@ export default function App() {
               onReorderAlbum={(sourceId, targetId) => handleReorderAlbum(sourceId, targetId, activePlaylistId)}
               onMoveTracksToAlbum={handleMoveTracksToAlbum}
               onDeleteAlbum={(album) => handleDeleteAlbum(album, activePlaylistId)}
+              onDeleteAlbums={(albumsToDelete) => handleDeleteMultipleAlbums(albumsToDelete, activePlaylistId)}
               onRenameAlbum={(album, newName) => handleRenameAlbum(album, newName, activePlaylistId)}
               currentTrackId={currentTrack?.id}
               isPlaying={isPlaying}
