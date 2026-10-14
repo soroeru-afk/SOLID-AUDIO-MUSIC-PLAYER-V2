@@ -581,10 +581,10 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                   borderColor: 'var(--theme-accent)',
                   color: 'var(--theme-accent)',
                 }}
-                title="このアルバムの曲を別のアルバムへ移動（結合）する"
+                title={`このアルバムの全曲（${album.tracks.length}曲）を別のアルバムへまとめて結合・移動する`}
               >
                 <Folder size={isZoomed ? 11 : 8} />
-                {(!compactMode || isZoomed) && <span>他アルバムへ移動</span>}
+                {(!compactMode || isZoomed) && <span>全曲結合・移動</span>}
               </button>
             )}
             {onOpenAlbum && (

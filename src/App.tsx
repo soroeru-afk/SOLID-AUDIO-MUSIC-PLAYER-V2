@@ -6,7 +6,7 @@ import {
   Minimize2, Maximize2, Layers, Minus, PanelTop, GripVertical, Type, Eye, EyeOff,
   LayoutGrid, List, Disc, User, ChevronRight, ArrowLeft, PanelLeftClose, PanelLeftOpen, Edit2,
   ArrowLeftRight, FileText, FolderPlus, FolderTree, Tag, Move,
-  Bookmark, BookmarkPlus, BookmarkCheck
+  Bookmark, BookmarkPlus, BookmarkCheck, RotateCcw
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { get, set, del } from 'idb-keyval';
@@ -213,12 +213,6 @@ const THEMES = [
   }
 ];
 
-const DEFAULT_WINDOW_SIZES: Record<'full' | 'mini' | 'slim', { width: number; height: number }> = {
-  full: { width: 1700, height: 1200 },
-  mini: { width: 500, height: 720 },
-  slim: { width: 720, height: 160 }
-};
-
 export const FONT_OPTIONS = [
   { 
     id: 'GOTHIC', 
@@ -241,6 +235,12 @@ export const FONT_OPTIONS = [
     fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, monospace" 
   },
 ] as const;
+
+const DEFAULT_WINDOW_SIZES: Record<'full' | 'mini' | 'slim', { width: number; height: number }> = {
+  full: { width: 1700, height: 1200 },
+  mini: { width: 500, height: 720 },
+  slim: { width: 720, height: 160 }
+};
 
 // --- Utils ---
 const formatTime = (seconds: number) => {
@@ -332,83 +332,209 @@ export const cleanAudioTag = (rawText: string | undefined): string => {
 const parseFilename = (
   filename: string, 
   existingArtist?: string, 
-  existingAlbum?: string
+  existingAlbum?: string,
+  playlistName?: string
 ): { title: string, artist: string, trackNumber?: string } => {
-  let nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
-  nameWithoutExt = normalizeZenkakuAlphanumeric(nameWithoutExt);
+  let s = filename.replace(/\.[a-zA-Z0-9]{2,5}$/, "").trim();
+  s = normalizeZenkakuAlphanumeric(s);
 
-  // 1. Strip leading track number prefixes (e.g. "01.", "01 - ", "01_", "01 ", "01・")
+  // 1. Strip bracketed version/quality tags anywhere in the string
+  s = s.replace(/[\(\[\{【〔]\s*(?:(?:\d{4}\s*)?(?:Digital\s*)?Remaster(?:ed)?|リマスター(?:版)?|Live(?: Version)?|Instrumental|Off\s*Vocal|Karaoke|カラオケ|Demo|Official(?: Audio)?|Audio|Video|MV|PV|\d+k(?:bps)?|Hi-Res|ハイレゾ|HQ|HD|Bonus\s*Track|\d+kHz[/\s]*\d+bit|FLAC|MP3|WAV|AAC)\s*[\)\]\}】〕]/gi, '').trim();
+
+  // Strip trailing version suffixes (e.g. "- リマスター版", "- Remastered", "_128k")
+  s = s.replace(/[\s._-]+(リマスター版?|Remaster(?:ed)?|Digital Remaster|Live(?: Version)?|Instrumental|Off Vocal|Karaoke|Demo|Bonus Track)$/i, '').trim();
+  s = s.replace(/_\d+k(?:bps)?$/i, '').trim();
+
+  // 2. Extract track number & strip leading track/disc prefixes
   let trackNumber = '';
-  const numMatch = nameWithoutExt.match(/^(\d{1,4})[\s._・-]+(.+)$/);
-  if (numMatch) {
-    trackNumber = numMatch[1];
-    nameWithoutExt = numMatch[2].trim();
-  }
 
-  // 2. Strip common album / version suffixes (e.g. "- リマスター版", "- Remastered", "- Remaster", " (リマスター版)", " [Remaster]")
-  const versionRegex = /[\s._-]+(リマスター版?|Remaster(?:ed)?|Live|Instrumental|Off Vocal|Karaoke|Demo|Single Ver(?:sion)?|Album Ver(?:sion)?|Bonus Track)$/i;
-  nameWithoutExt = nameWithoutExt.replace(versionRegex, '').trim();
-
-  // If existingAlbum is provided and filename ends with " - " + album, strip that album suffix
-  if (existingAlbum && existingAlbum !== 'Unknown Album') {
-    const cleanAlb = normalizeZenkakuAlphanumeric(existingAlbum.replace(/^[■□◆◇●▲▼★☆\s]+/, '').trim());
-    if (cleanAlb && cleanAlb.length > 1 && nameWithoutExt.toLowerCase().endsWith(cleanAlb.toLowerCase())) {
-      nameWithoutExt = nameWithoutExt.substring(0, nameWithoutExt.length - cleanAlb.length).replace(/[\s._・-]+$/, '').trim();
-    }
-  }
-
-  // Candidate artist
-  let candidateArtist = (existingArtist && existingArtist !== 'Unknown Artist' && existingArtist !== 'Marcia') ? existingArtist.trim() : '';
-
-  // 3. Check for standard separators: " - "
-  if (nameWithoutExt.includes(' - ')) {
-    const parts = nameWithoutExt.split(' - ').map(p => p.trim()).filter(Boolean);
-    if (parts.length >= 2) {
-      // Check if second part is a known version tag like "リマスター版"
-      if (/^(リマスター版?|Remaster(?:ed)?|Live|Inst|Karaoke)$/i.test(parts[1])) {
-        nameWithoutExt = parts[0];
-      } else if (candidateArtist && parts[0].toLowerCase() === candidateArtist.toLowerCase()) {
-        return { artist: parts[0], title: parts.slice(1).join(' - ').trim(), trackNumber };
-      } else if (candidateArtist && parts[parts.length - 1].toLowerCase() === candidateArtist.toLowerCase()) {
-        return { artist: parts[parts.length - 1], title: parts.slice(0, -1).join(' - ').trim(), trackNumber };
+  // Case A: Disc-Track (e.g. "1-01", "1.01", "CD1-01", "Disc 1 - 01", "[01-01]")
+  const discMatch = s.match(/^[\(\[\<【〔]?(?:cd|disc)?\s*\d{1,2}[-_.:]\s*(\d{1,3})[\)\]\>】〕]?[\s._・-]*(.+)$/i);
+  if (discMatch) {
+    trackNumber = discMatch[1];
+    s = discMatch[2].trim();
+  } else {
+    // Case B: Bracketed number (e.g. "[01]", "(01)", "【01】", "〔01〕")
+    const bracketMatch = s.match(/^[\(\[\<【〔]\s*(\d{1,4})\s*[\)\]\>】〕][\s._・-]*(.+)$/);
+    if (bracketMatch) {
+      trackNumber = bracketMatch[1];
+      s = bracketMatch[2].trim();
+    } else {
+      // Case C: Vinyl / Track / Number prefix (e.g. "Track 01", "Trk 01", "#01", "No.01", "A1.", "B02")
+      const trkMatch = s.match(/^(?:track|trk|tr|side|[#№no]\.?|[a-dA-D]\.?)\s*([a-zA-Z]?\d{1,4})[\s._・-]*(.+)$/i);
+      if (trkMatch) {
+        trackNumber = trkMatch[1];
+        s = trkMatch[2].trim();
       } else {
-        // Default: first part is artist, rest is title
-        return { artist: parts[0], title: parts.slice(1).join(' - ').trim(), trackNumber };
+        // Case D: Standard leading numbers with delimiters (e.g. "04.", "04 - ", "04_", "04 ")
+        const numMatch = s.match(/^(\d{1,4})[\s._・-]+(.+)$/);
+        if (numMatch) {
+          trackNumber = numMatch[1];
+          s = numMatch[2].trim();
+        } else {
+          // Case E: Number directly followed by Japanese or text without space (e.g. "04スローモーション", "01飾りじゃないのよ涙は")
+          const attachMatch = s.match(/^(\d{1,3})([^\d\s].*)$/);
+          if (attachMatch) {
+            trackNumber = attachMatch[1];
+            s = attachMatch[2].trim();
+          } else {
+            // Case F: Number followed by whitespace (e.g. "04 スローモーション")
+            const spaceNumMatch = s.match(/^(\d{1,3})\s+(.+)$/);
+            if (spaceNumMatch) {
+              trackNumber = spaceNumMatch[1];
+              s = spaceNumMatch[2].trim();
+            }
+          }
+        }
       }
     }
   }
 
-  // 4. Check if artist name is embedded in nameWithoutExt (e.g. "スローモーション 中森明菜" or "中森明菜 ・ A型メランコリー")
-  let title = nameWithoutExt;
-  let artist = candidateArtist || 'Unknown Artist';
+  // 3. Collect artist candidates from existing metadata
+  const artistCandidates: string[] = [];
+  if (existingArtist && existingArtist !== 'Unknown Artist' && existingArtist !== 'Marcia') {
+    artistCandidates.push(existingArtist.trim());
+  }
 
-  // Pattern: "Title Artist" or "Title ・ Artist"
-  const suffixArtistMatch = nameWithoutExt.match(/^(.+?)[\s・_-]+(中森明菜|Marcia|[A-Za-z0-9぀-ゟ゠-ヿ一-龯]{2,15})$/);
-  // Pattern: "Artist ・ Title" or "Artist Title"
-  const prefixArtistMatch = nameWithoutExt.match(/^(中森明菜|[A-Za-z0-9぀-ゟ゠-ヿ一-龯]{2,15})[\s・_-]+(.+)$/);
-
-  if (prefixArtistMatch && !prefixArtistMatch[1].match(/^\d+$/)) {
-    if (nameWithoutExt.includes('・') || (candidateArtist && prefixArtistMatch[1].toLowerCase() === candidateArtist.toLowerCase())) {
-      artist = prefixArtistMatch[1].trim();
-      title = prefixArtistMatch[2].replace(/^[\s・_-]+/, '').trim();
-    }
-  } else if (suffixArtistMatch) {
-    const possibleTitle = suffixArtistMatch[1].trim();
-    const possibleArtist = suffixArtistMatch[2].trim();
-    if (candidateArtist && possibleArtist.toLowerCase() === candidateArtist.toLowerCase()) {
-      title = possibleTitle;
-      artist = possibleArtist;
-    } else if (possibleArtist === '中森明菜' || (existingAlbum && existingAlbum.includes(possibleArtist))) {
-      title = possibleTitle;
-      artist = possibleArtist;
+  for (const src of [existingAlbum, playlistName]) {
+    if (src && src !== 'Unknown Album') {
+      const cleanSrc = src.replace(/^[■□◆◇●▲▼★☆\s]+/, '').trim();
+      if (cleanSrc.includes(' - ')) {
+        artistCandidates.push(cleanSrc.split(' - ')[0].trim());
+      } else if (cleanSrc.includes(' / ')) {
+        artistCandidates.push(cleanSrc.split(' / ')[0].trim());
+      } else {
+        artistCandidates.push(cleanSrc);
+      }
     }
   }
 
-  // Clean trailing and leading punctuation from title
-  title = title.replace(/^[\s._・-]+|[\s._・-]+$/g, '').trim();
-  if (!title) title = nameWithoutExt;
+  // Also strip album suffix from filename if it ends with album name
+  for (const src of [existingAlbum, playlistName]) {
+    if (src && src !== 'Unknown Album') {
+      const cleanSrc = src.replace(/^[■□◆◇●▲▼★☆\s]+/, '').trim();
+      if (cleanSrc.includes(' - ')) {
+        const subPart = cleanSrc.split(' - ').pop()?.trim();
+        if (subPart && s.endsWith(subPart)) {
+          s = s.substring(0, s.length - subPart.length).replace(/[\s._・-]+$/, '').trim();
+        }
+      }
+      if (cleanSrc && s.toLowerCase().endsWith(cleanSrc.toLowerCase())) {
+        s = s.substring(0, s.length - cleanSrc.length).replace(/[\s._・-]+$/, '').trim();
+      }
+    }
+  }
 
-  return { title, artist, trackNumber };
+  // 4. Remove artist name from song title so ONLY the song title remains!
+  let matchedArtist = '';
+  const filteredCandidates = Array.from(new Set(artistCandidates.filter(a => a.length >= 2 && !a.startsWith('Track') && a !== 'Unknown Artist')));
+  filteredCandidates.sort((a, b) => b.length - a.length);
+
+  for (const cand of filteredCandidates) {
+    const escaped = cand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Case: "Artist - Title" or "Artist ・ Title" or "Artist / Title"
+    const prefixReg = new RegExp(`^${escaped}\\s*[\\s._・/-]+\\s*`, 'i');
+    if (prefixReg.test(s)) {
+      s = s.replace(prefixReg, '').trim();
+      matchedArtist = cand;
+      break;
+    }
+    // Case: "Title - Artist" or "Title Artist"
+    const suffixReg = new RegExp(`\\s*[\\s._・/-]+\\s*${escaped}$`, 'i');
+    if (suffixReg.test(s)) {
+      s = s.replace(suffixReg, '').trim();
+      matchedArtist = cand;
+      break;
+    }
+    // Case: "Title (Artist)"
+    const parenReg = new RegExp(`[\\(\\[]\\s*${escaped}\\s*[\\)\\]]`, 'i');
+    if (parenReg.test(s)) {
+      s = s.replace(parenReg, '').trim();
+      matchedArtist = cand;
+      break;
+    }
+  }
+
+  // 5. If " - " or " / " is still in string, check if one side is artist
+  if (s.includes(' - ')) {
+    const parts = s.split(' - ').map(p => p.trim()).filter(Boolean);
+    if (parts.length === 2) {
+      if (matchedArtist) {
+        if (parts[0].toLowerCase() === matchedArtist.toLowerCase()) s = parts[1];
+        else if (parts[1].toLowerCase() === matchedArtist.toLowerCase()) s = parts[0];
+      } else {
+        const p0Lower = parts[0].toLowerCase();
+        const p1Lower = parts[1].toLowerCase();
+        if (filteredCandidates.some(c => p0Lower.includes(c.toLowerCase()) || c.toLowerCase().includes(p0Lower))) {
+          s = parts[1];
+          matchedArtist = parts[0];
+        } else if (filteredCandidates.some(c => p1Lower.includes(c.toLowerCase()) || c.toLowerCase().includes(p1Lower))) {
+          s = parts[0];
+          matchedArtist = parts[1];
+        } else {
+          s = parts[1];
+          matchedArtist = parts[0];
+        }
+      }
+    }
+  }
+
+  // 6. After removing artist prefix, strip any newly exposed track numbers (e.g. "Artist - 01 - Title" -> "01 - Title" -> "Title")
+  const secondPassNum = s.match(/^(?:track|trk|tr|[#№no]\.?|\d{1,4})[\s._・-]+(.+)$/i);
+  if (secondPassNum) {
+    if (!trackNumber) trackNumber = secondPassNum[0].replace(/\D/g, '');
+    s = secondPassNum[1].trim();
+  }
+
+  // 7. Final cleanup of leading/trailing punctuation
+  s = s.replace(/^[\s._・\-–—/]+|[\s._・\-–—/]+$/g, '').trim();
+  if (!s) s = filename.replace(/\.[^/.]+$/, '').trim();
+
+  return {
+    title: s,
+    artist: matchedArtist || existingArtist || 'Unknown Artist',
+    trackNumber: trackNumber || undefined
+  };
+};
+
+// Comprehensive cleaner for Song Titles (cleans both existing track.title and track.fileName)
+export const cleanSongTitle = (
+  track: Track, 
+  currentPlName?: string
+): { title: string, artist?: string, trackNumber?: string } => {
+  let bestTitle = '';
+  let bestArtist = track.artist;
+  let bestTrackNumber = track.trackNumber;
+
+  // 1. Try cleaning the existing title (Request 9: already set as title with numbers/cruft)
+  if (track.title && track.title.trim()) {
+    const fromTitle = parseFilename(track.title.trim(), track.artist, track.album, currentPlName);
+    if (fromTitle.title && fromTitle.title.trim().length > 0) {
+      bestTitle = fromTitle.title.trim();
+      if (fromTitle.trackNumber && !bestTrackNumber) bestTrackNumber = fromTitle.trackNumber;
+      if (fromTitle.artist && fromTitle.artist !== 'Unknown Artist') bestArtist = fromTitle.artist;
+    }
+  }
+
+  // 2. Try cleaning from fileName (especially if title was empty or generic)
+  if (track.fileName && track.fileName.trim()) {
+    const fromFile = parseFilename(track.fileName.trim(), track.artist, track.album, currentPlName);
+    if (fromFile.title && fromFile.title.trim().length > 0) {
+      if (!bestTitle || bestTitle.toLowerCase().startsWith('track ') || /^\d+$/.test(bestTitle)) {
+        bestTitle = fromFile.title.trim();
+      }
+      if (fromFile.trackNumber && !bestTrackNumber) bestTrackNumber = fromFile.trackNumber;
+      if (fromFile.artist && fromFile.artist !== 'Unknown Artist' && (!bestArtist || bestArtist === 'Unknown Artist')) {
+        bestArtist = fromFile.artist;
+      }
+    }
+  }
+
+  return {
+    title: bestTitle || track.title || track.fileName.replace(/\.[a-zA-Z0-9]{2,5}$/, '').trim(),
+    artist: bestArtist,
+    trackNumber: bestTrackNumber
+  };
 };
 
 const COL_LABELS: Record<string, string> = {
@@ -639,6 +765,27 @@ export default function App() {
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
   const [showMoveToAlbum, setShowMoveToAlbum] = useState(false);
+  const [newAlbumInputName, setNewAlbumInputName] = useState('');
+
+  interface TitleUndoState {
+    tracks: {
+      id: string;
+      title: string;
+      artist: string;
+      trackNumber?: string;
+    }[];
+    timestamp: number;
+  }
+  const [titleUndoState, setTitleUndoState] = useState<TitleUndoState | null>(null);
+
+  // Auto-dismiss undo prompt after 20 seconds
+  useEffect(() => {
+    if (!titleUndoState) return;
+    const timer = setTimeout(() => {
+      setTitleUndoState(null);
+    }, 20000);
+    return () => clearTimeout(timer);
+  }, [titleUndoState]);
   const [showColMenu, setShowColMenu] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
@@ -859,21 +1006,6 @@ export default function App() {
   // Duplicates & Mini Mode State
   const [duplicateGroups, setDuplicateGroups] = useState<Track[][]>([]);
   const [showDuplicatesModal, setShowDuplicatesModal] = useState(false);
-  const [windowSizes, setWindowSizes] = useState<Record<'full' | 'mini' | 'slim', { width: number; height: number }>>(() => {
-    try {
-      const saved = localStorage.getItem('v2_solidWindowSizes');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return {
-          full: parsed.full && parsed.full.width ? parsed.full : DEFAULT_WINDOW_SIZES.full,
-          mini: parsed.mini && parsed.mini.width ? parsed.mini : DEFAULT_WINDOW_SIZES.mini,
-          slim: parsed.slim && parsed.slim.width ? parsed.slim : DEFAULT_WINDOW_SIZES.slim
-        };
-      }
-    } catch (e) {}
-    return DEFAULT_WINDOW_SIZES;
-  });
-
   const [viewMode, setViewMode] = useState<'full' | 'mini' | 'slim'>(() => {
     try {
       const saved = localStorage.getItem('v2_solidViewMode');
@@ -882,33 +1014,22 @@ export default function App() {
     return 'full';
   });
 
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
-
-  const playerRef = useRef<HTMLDivElement>(null);
-
-  // Resize window according to current viewMode
-  useEffect(() => {
+  const [windowSizes, setWindowSizes] = useState<Record<'full' | 'mini' | 'slim', { width: number; height: number }>>(() => {
     try {
-      localStorage.setItem('v2_solidViewMode', viewMode);
-      set('v2_solidViewMode', viewMode).catch(() => {});
-    } catch (e) {}
-
-    // Skip window.resizeTo if currently in fullscreen to prevent OS window frame restoration
-    if (typeof document !== 'undefined' && document.fullscreenElement) return;
-
-    try {
-      if (typeof window !== 'undefined' && window.resizeTo) {
-        const target = windowSizes[viewMode] || DEFAULT_WINDOW_SIZES[viewMode];
-        if (target && target.width && target.height) {
-          window.resizeTo(target.width, target.height);
-        }
+      const saved = localStorage.getItem('v2_solidWindowSizes');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          full: parsed.full && parsed.full.width ? parsed.full : DEFAULT_WINDOW_SIZES.full,
+          mini: parsed.mini && parsed.mini.width ? parsed.mini : DEFAULT_WINDOW_SIZES.mini,
+          slim: parsed.slim && parsed.slim.width ? parsed.slim : DEFAULT_WINDOW_SIZES.slim,
+        };
       }
-    } catch (e) {
-      console.warn("window.resizeTo is restricted by browser context", e);
-    }
-  }, [viewMode, windowSizes]);
+    } catch (e) {}
+    return DEFAULT_WINDOW_SIZES;
+  });
 
-  // Track window resizing manually by user and persist per viewMode
+  // Track window resizing and persist custom dimensions per viewMode
   useEffect(() => {
     let resizeTimer: any;
     const handleResize = () => {
@@ -917,17 +1038,17 @@ export default function App() {
         if (typeof document !== 'undefined' && document.fullscreenElement) return;
         const w = window.outerWidth || window.innerWidth;
         const h = window.outerHeight || window.innerHeight;
-        if (w && h) {
+        if (w > 100 && h > 100) {
           setWindowSizes(prev => {
-            const next = {
+            const updated = {
               ...prev,
               [viewMode]: { width: w, height: h }
             };
             try {
-              localStorage.setItem('v2_solidWindowSizes', JSON.stringify(next));
-              set('v2_solidWindowSizes', next).catch(() => {});
+              localStorage.setItem('v2_solidWindowSizes', JSON.stringify(updated));
+              set('v2_solidWindowSizes', updated).catch(() => {});
             } catch (e) {}
-            return next;
+            return updated;
           });
         }
       }, 300);
@@ -939,6 +1060,10 @@ export default function App() {
       clearTimeout(resizeTimer);
     };
   }, [viewMode]);
+
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  const playerRef = useRef<HTMLDivElement>(null);
 
   // Dragging State for Mini/Slim modes
   const [playerOffset, setPlayerOffset] = useState({ x: 0, y: 0 });
@@ -1012,6 +1137,28 @@ export default function App() {
   useEffect(() => {
     setPlayerOffset({ x: 0, y: 0 });
   }, [viewMode]);
+
+  // Resize window according to current viewMode
+  useEffect(() => {
+    try {
+      localStorage.setItem('v2_solidViewMode', viewMode);
+      set('v2_solidViewMode', viewMode).catch(() => {});
+    } catch (e) {}
+
+    // Skip window.resizeTo if currently in fullscreen to prevent OS window frame restoration
+    if (typeof document !== 'undefined' && document.fullscreenElement) return;
+
+    try {
+      if (typeof window !== 'undefined' && window.resizeTo) {
+        const target = windowSizes[viewMode] || DEFAULT_WINDOW_SIZES[viewMode];
+        if (target && target.width && target.height) {
+          window.resizeTo(target.width, target.height);
+        }
+      }
+    } catch (e) {
+      console.warn("window.resizeTo is restricted by browser context", e);
+    }
+  }, [viewMode, windowSizes]);
 
   // Fullscreen state and handler
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1097,6 +1244,15 @@ export default function App() {
         const savedEqLow = await get('v2_solidEqLow');
         const savedEqMid = await get('v2_solidEqMid');
         const savedEqHigh = await get('v2_solidEqHigh');
+        const savedWindowSizes = await get('v2_solidWindowSizes');
+        
+        if (savedWindowSizes && typeof savedWindowSizes === 'object') {
+          setWindowSizes(prev => ({
+            full: savedWindowSizes.full && savedWindowSizes.full.width ? savedWindowSizes.full : prev.full,
+            mini: savedWindowSizes.mini && savedWindowSizes.mini.width ? savedWindowSizes.mini : prev.mini,
+            slim: savedWindowSizes.slim && savedWindowSizes.slim.width ? savedWindowSizes.slim : prev.slim,
+          }));
+        }
         
         if (savedVolume !== undefined && !isNaN(savedVolume) && savedVolume >= 0 && savedVolume <= 1) setVolume(savedVolume);
         if (savedIsMuted !== undefined) setIsMuted(!!savedIsMuted);
@@ -1132,16 +1288,6 @@ export default function App() {
         const savedFontFamily = await get('v2_solidFontFamily');
         if (savedFontFamily && FONT_OPTIONS.some(f => f.id === savedFontFamily)) {
           setFontFamilyId(savedFontFamily);
-        }
-
-        const savedWindowSizes = await get('v2_solidWindowSizes');
-
-        if (savedWindowSizes && typeof savedWindowSizes === 'object') {
-          setWindowSizes(prev => ({
-            full: savedWindowSizes.full && savedWindowSizes.full.width ? savedWindowSizes.full : prev.full,
-            mini: savedWindowSizes.mini && savedWindowSizes.mini.width ? savedWindowSizes.mini : prev.mini,
-            slim: savedWindowSizes.slim && savedWindowSizes.slim.width ? savedWindowSizes.slim : prev.slim,
-          }));
         }
         
         if (savedLibrary && savedPlaylists) {
@@ -1557,25 +1703,25 @@ export default function App() {
       ? currentPlaylist
       : playlists.find(p => p.id !== 'all-tracks' && p.tracks.some(pt => pt.id === track.id));
 
+    // If track already has an explicit, valid album name assigned (e.g. moved by user or parsed), respect that track.album!
+    const hasExplicitAlbum = Boolean(albumName && albumName !== 'Unknown Album');
+
     if (track.folderPath) {
       const parts = track.folderPath.split('/').filter(Boolean);
       // Case 1: Inside a subfolder of a dropped parent folder (e.g. "■ - T-SQUARE ベストアルバム集 / T-SQUARE - BLUE IN RED / song.mp3")
       if (parts.length >= 3) {
         const subFolderName = parts[parts.length - 2];
         const parentFolderName = parts[parts.length - 3];
-        // Always unify tracks in the same subfolder under that subfolder's name as the Album!
-        albumName = subFolderName;
+        if (!hasExplicitAlbum) {
+          albumName = subFolderName;
+        }
         if (!artistName || artistName === 'Unknown Artist') {
           artistName = parentFolderName;
         }
       } else if (parts.length === 2) {
-        // Case 2: Direct file inside a single dropped folder (e.g. "■ - @ささきいさお _ Best Collection / song.mp3")
+        // Case 2: Direct file inside a single dropped folder
         const rootFolderName = parts[0];
-        // Check if this playlist has any 3+ level subfolders; if it's a single flat folder, unify all tracks under the folder name!
-        const hasNestedSubfolders = ownerPlaylist
-          ? ownerPlaylist.tracks.some(pt => (pt.folderPath?.split('/').filter(Boolean).length || 0) >= 3)
-          : false;
-        if (!hasNestedSubfolders || !albumName || albumName === 'Unknown Album') {
+        if (!hasExplicitAlbum) {
           albumName = ownerPlaylist?.name || rootFolderName;
         }
         if (!artistName || artistName === 'Unknown Artist') {
@@ -1583,12 +1729,8 @@ export default function App() {
         }
       }
     } else if (ownerPlaylist && ownerPlaylist.name) {
-      // Case 3: Already-imported playlist without folderPath (loaded before folderPath was added)
-      // If none of the tracks in this playlist have nested subfolders, unify them into 1 album named after the playlist/folder!
-      const hasNestedSubfolders = ownerPlaylist.tracks.some(
-        pt => (pt.folderPath?.split('/').filter(Boolean).length || 0) >= 3
-      );
-      if (!hasNestedSubfolders) {
+      // Case 3: Already-imported playlist without folderPath
+      if (!hasExplicitAlbum) {
         if (ownerPlaylist.name.includes(' / ')) {
           const [plArtist, plAlbum] = ownerPlaylist.name.split(' / ').map(s => s.trim());
           albumName = plAlbum || ownerPlaylist.name;
@@ -2010,11 +2152,25 @@ export default function App() {
     setEditingTrackId(null);
   };
 
-  // Generate and apply clean title from file name for a single track
+  // Generate and apply clean title from file name / existing title for a single track
   const handleApplyFilenameToTitle = (trackId: string) => {
+    const track = displayTracks.find(t => t.id === trackId);
+    if (track) {
+      setTitleUndoState({
+        tracks: [{
+          id: track.id,
+          title: track.title,
+          artist: track.artist,
+          trackNumber: track.trackNumber,
+        }],
+        timestamp: Date.now(),
+      });
+    }
+
+    const currentPlName = activePlaylist?.name;
     const applyFilename = (t: Track): Track => {
       if (t.id !== trackId) return t;
-      const parsed = parseFilename(t.fileName, t.artist, t.album);
+      const parsed = cleanSongTitle(t, currentPlName);
       return {
         ...t,
         title: parsed.title || t.title,
@@ -2031,12 +2187,27 @@ export default function App() {
     setPlaybackQueue(prev => prev.map(applyFilename));
   };
 
-  // Batch generate clean Title from filename for all selected tracks
+  // Batch generate clean Title from filename & existing title for all selected tracks (Pure Song Title Extraction)
   const handleBatchUseFilenameAsTitle = () => {
     if (selectedTrackIds.size === 0) return;
+    const selectedTracks = displayTracks.filter(t => selectedTrackIds.has(t.id));
+    if (selectedTracks.length === 0) return;
+
+    // Save undo history before applying clean title
+    setTitleUndoState({
+      tracks: selectedTracks.map(t => ({
+        id: t.id,
+        title: t.title,
+        artist: t.artist,
+        trackNumber: t.trackNumber,
+      })),
+      timestamp: Date.now(),
+    });
+
+    const currentPlName = activePlaylist?.name;
     const applyFilename = (t: Track): Track => {
       if (!selectedTrackIds.has(t.id)) return t;
-      const parsed = parseFilename(t.fileName, t.artist, t.album);
+      const parsed = cleanSongTitle(t, currentPlName);
       return {
         ...t,
         title: parsed.title || t.title,
@@ -2051,6 +2222,71 @@ export default function App() {
       tracks: p.tracks.map(applyFilename)
     })));
     setPlaybackQueue(prev => prev.map(applyFilename));
+    setSelectedTrackIds(new Set());
+    lastSelectedTrackIdRef.current = null;
+  };
+
+  // Undo the last Title Clean / Title Modification operation
+  const handleUndoTitleClean = () => {
+    if (!titleUndoState || titleUndoState.tracks.length === 0) return;
+    const undoMap = new Map<string, { id: string; title: string; artist: string; trackNumber?: string }>(
+      titleUndoState.tracks.map(t => [t.id, t])
+    );
+
+    const revertTrack = (t: Track): Track => {
+      const prev = undoMap.get(t.id);
+      if (!prev) return t;
+      return {
+        ...t,
+        title: prev.title,
+        artist: prev.artist,
+        trackNumber: prev.trackNumber,
+      };
+    };
+
+    setLibrary(prev => prev.map(revertTrack));
+    setPlaylists(prev => prev.map(p => ({
+      ...p,
+      tracks: p.tracks.map(revertTrack),
+    })));
+    setPlaybackQueue(prev => prev.map(revertTrack));
+    setTitleUndoState(null);
+  };
+
+  // Reset selected tracks' titles directly back to their raw file name (without extension)
+  const handleBatchResetToFilename = () => {
+    if (selectedTrackIds.size === 0) return;
+    const selectedTracks = displayTracks.filter(t => selectedTrackIds.has(t.id));
+    if (selectedTracks.length === 0) return;
+
+    // Save undo history first
+    setTitleUndoState({
+      tracks: selectedTracks.map(t => ({
+        id: t.id,
+        title: t.title,
+        artist: t.artist,
+        trackNumber: t.trackNumber,
+      })),
+      timestamp: Date.now(),
+    });
+
+    const resetToFilename = (t: Track): Track => {
+      if (!selectedTrackIds.has(t.id)) return t;
+      const rawName = t.fileName.replace(/\.[a-zA-Z0-9]{2,5}$/, '').trim();
+      return {
+        ...t,
+        title: rawName || t.title,
+      };
+    };
+
+    setLibrary(prev => prev.map(resetToFilename));
+    setPlaylists(prev => prev.map(p => ({
+      ...p,
+      tracks: p.tracks.map(resetToFilename),
+    })));
+    setPlaybackQueue(prev => prev.map(resetToFilename));
+    setSelectedTrackIds(new Set());
+    lastSelectedTrackIdRef.current = null;
   };
 
   const removeArtwork = (e: React.MouseEvent, trackId: string) => {
@@ -2790,6 +3026,7 @@ export default function App() {
       }));
       setShowAddToPlaylist(false);
       setSelectedTrackIds(new Set());
+      lastSelectedTrackIdRef.current = null;
   };
 
   const toggleTrackSelection = (e: React.MouseEvent, trackId: string, index?: number) => {
@@ -3161,11 +3398,16 @@ export default function App() {
   const handleMovePlaylistToCategory = (playlistId: string, targetCat: string | undefined) => {
     setPlaylists(prev => prev.map(p => p.id === playlistId ? { ...p, category: targetCat } : p));
     setActiveCategoryMenuPlaylistId(null);
+    setSelectedPlaylistIds(new Set());
+    setIsPlaylistSelectionMode(false);
+    lastSelectedPlaylistIdRef.current = null;
   };
 
   const moveSelectedPlaylistsToCategory = (targetCat: string | undefined) => {
     if (selectedPlaylistIds.size === 0) return;
     setPlaylists(prev => prev.map(p => selectedPlaylistIds.has(p.id) ? { ...p, category: targetCat } : p));
+    setSelectedPlaylistIds(new Set());
+    lastSelectedPlaylistIdRef.current = null;
     setShowBatchMoveCategoryModal(false);
   };
 
@@ -3194,11 +3436,13 @@ export default function App() {
     if (!draggedPlaylistId || draggedPlaylistId === 'all-tracks') return;
 
     setPlaylists(prev => prev.map(p => {
-      if (p.id === draggedPlaylistId) {
+      if (p.id === draggedPlaylistId || selectedPlaylistIds.has(p.id)) {
         return { ...p, category: targetCategory };
       }
       return p;
     }));
+    setSelectedPlaylistIds(new Set());
+    lastSelectedPlaylistIdRef.current = null;
     setDraggedPlaylistId(null);
   };
 
@@ -3599,6 +3843,9 @@ export default function App() {
           return newQueue;
         });
       }
+      // Deselect after move
+      setSelectedTrackIds(new Set());
+      lastSelectedTrackIdRef.current = null;
       return;
     }
 
@@ -3633,6 +3880,9 @@ export default function App() {
         return newQueue;
       });
     }
+    // Deselect after move
+    setSelectedTrackIds(new Set());
+    lastSelectedTrackIdRef.current = null;
   };
 
   // --- Album Ordering (Top, Up, Down, Bottom & Drag-and-Drop) ---
@@ -3817,14 +4067,15 @@ export default function App() {
   };
 
   // Move one or more tracks into a specific target AlbumGroup within the current playlist/library
-  const handleMoveTracksToAlbum = (trackIds: string[], targetAlbum: AlbumGroup) => {
+  const handleMoveTracksToAlbum = (trackIds: string[], targetAlbum: AlbumGroup | { album: string; artist?: string; coverUrl?: string }) => {
     if (trackIds.length === 0 || !targetAlbum) return;
     const targetSet = new Set(trackIds);
     const newAlbumName = targetAlbum.album.trim();
     const newArtistName = targetAlbum.artist?.trim();
 
     // Derive target folderPath prefix from an existing track in the target album so getTrackAlbumArtist groups it seamlessly
-    const refTrack = targetAlbum.tracks.find(t => !targetSet.has(t.id)) || targetAlbum.tracks[0];
+    const existingTargetTracks = (targetAlbum as AlbumGroup).tracks || [];
+    const refTrack = existingTargetTracks.find(t => !targetSet.has(t.id)) || existingTargetTracks[0];
     let refFolderPrefix: string | null = null;
     if (refTrack && refTrack.folderPath) {
       const parts = refTrack.folderPath.split('/').filter(Boolean);
@@ -3860,6 +4111,7 @@ export default function App() {
     setPlaybackQueue(prev => prev.map(updateTrackToTargetAlbum));
     setShowMoveToAlbum(false);
     setSelectedTrackIds(new Set());
+    lastSelectedTrackIdRef.current = null;
   };
 
   // One-click unify all tracks in the currently active playlist into a single album named after the folder/playlist
@@ -8287,17 +8539,17 @@ export default function App() {
                         </button>
                         {showAddToPlaylist && (
                           <div 
-                            className="absolute bottom-full right-0 mb-1.5 w-64 max-h-72 overflow-y-auto border z-50 flex flex-col p-1.5 rounded-[2px]" 
+                            className="absolute bottom-full right-0 mb-1.5 w-72 max-w-[calc(100vw-32px)] border z-50 flex flex-col rounded-[2px] overflow-hidden shadow-2xl font-mono" 
                             style={{ 
                               backgroundColor: 'var(--theme-surface)', 
                               borderColor: 'var(--theme-border)',
-                              boxShadow: 'none'
                             }}
                           >
-                            <div className="px-2 py-1 text-[8.5px] font-mono uppercase tracking-wider border-b mb-1 shrink-0" style={{ color: 'var(--theme-textMuted)', borderColor: 'var(--theme-border)' }}>
-                              {activePlaylistId === 'all-tracks' ? '追加先のリストを選択' : '移動先のリストを選択'} ({selectedTrackIds.size}曲)
+                            <div className="px-3 py-1.5 text-[9px] uppercase tracking-wider border-b shrink-0 flex items-center justify-between" style={{ color: 'var(--theme-textMuted)', borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surfaceLighter)' }}>
+                              <span>{activePlaylistId === 'all-tracks' ? '追加先のリストを選択' : '移動先のリストを選択'}</span>
+                              <span className="font-bold" style={{ color: 'var(--theme-accent)' }}>{selectedTrackIds.size}曲</span>
                             </div>
-                            <div className="flex flex-col gap-0.5 overflow-y-auto w-full">
+                            <div className="flex flex-col overflow-y-auto max-h-60 w-full divide-y" style={{ borderColor: 'var(--theme-border)' }}>
                               {playlists.filter(p => p.id !== 'all-tracks' && p.id !== activePlaylistId).map(p => (
                                 <button 
                                   key={p.id}
@@ -8305,90 +8557,124 @@ export default function App() {
                                     handleAddSelectedToPlaylist(p.id);
                                     setShowAddToPlaylist(false);
                                   }}
-                                  className="text-left px-2.5 py-1.5 text-[10px] font-mono shrink-0 min-h-[28px] flex items-center leading-normal border-b last:border-b-0 hover:opacity-80 transition-colors truncate w-full cursor-pointer"
+                                  className="text-left px-3 py-2 text-[10px] font-mono shrink-0 flex items-center gap-2 hover:opacity-80 transition-colors w-full cursor-pointer whitespace-nowrap min-h-[32px]"
                                   style={{ 
                                     color: 'var(--theme-textMain)',
-                                    borderColor: 'var(--theme-border)',
                                     backgroundColor: 'transparent'
                                   }}
                                   onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'}
                                   onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                                   title={activePlaylistId === 'all-tracks' ? `ADD TO ${p.name}` : `MOVE TO ${p.name}`}
                                 >
-                                  <Bookmark size={10} className="mr-1.5 shrink-0 opacity-70" style={{ color: 'var(--theme-accent)' }} />
-                                  <span className="truncate">{p.name}</span>
+                                  <Bookmark size={11} className="shrink-0" style={{ color: 'var(--theme-accent)' }} />
+                                  <span className="truncate flex-1 min-w-0 font-medium block whitespace-nowrap">{p.name}</span>
                                 </button>
                               ))}
                               {playlists.filter(p => p.id !== 'all-tracks' && p.id !== activePlaylistId).length === 0 && (
-                                <div className="px-2 py-2 text-[9px] uppercase tracking-wider opacity-50 text-center shrink-0" style={{ color: 'var(--theme-textMuted)' }}>NO OTHER VIEWS</div>
+                                <div className="px-3 py-3 text-[9px] uppercase tracking-wider opacity-50 text-center shrink-0" style={{ color: 'var(--theme-textMuted)' }}>NO OTHER VIEWS</div>
                               )}
                             </div>
                           </div>
                         )}
                       </div>
 
-                      {/* Move to another Album Popover */}
-                      {albumGroups.length > 1 && (
-                        <div className="relative">
-                          <button
-                            onClick={() => {
-                              setShowMoveToAlbum(!showMoveToAlbum);
-                              setShowAddToPlaylist(false);
+                      {/* Move to another Album Popover (Always available when tracks are selected, with Create New Album support) */}
+                      <div className="relative">
+                        <button
+                          onClick={() => {
+                            setShowMoveToAlbum(!showMoveToAlbum);
+                            setShowAddToPlaylist(false);
+                          }}
+                          className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                          style={{
+                            backgroundColor: showMoveToAlbum ? 'var(--theme-accentMuted)' : 'var(--theme-bg)',
+                            borderColor: showMoveToAlbum ? 'var(--theme-accent)' : 'var(--theme-border)',
+                            color: 'var(--theme-textMain)',
+                          }}
+                          title="選択した曲を別のアルバムへ移動、または新規アルバムを作成して分離"
+                        >
+                          <Disc size={12} style={{ color: 'var(--theme-accent)' }} />
+                        </button>
+                        {showMoveToAlbum && (
+                          <div
+                            className="absolute bottom-full right-0 mb-1.5 w-80 max-w-[calc(100vw-32px)] border z-50 flex flex-col rounded-[2px] overflow-hidden shadow-2xl font-mono"
+                            style={{ 
+                              backgroundColor: 'var(--theme-surface)', 
+                              borderColor: 'var(--theme-border)',
                             }}
-                            className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
-                            style={{
-                              backgroundColor: showMoveToAlbum ? 'var(--theme-accentMuted)' : 'var(--theme-bg)',
-                              borderColor: showMoveToAlbum ? 'var(--theme-accent)' : 'var(--theme-border)',
-                              color: 'var(--theme-textMain)',
-                            }}
-                            title="選択した曲を別のアルバムへ移動してまとめる"
                           >
-                            <Disc size={12} style={{ color: 'var(--theme-accent)' }} />
-                          </button>
-                          {showMoveToAlbum && (
-                            <div
-                              className="absolute bottom-full right-0 mb-1.5 w-72 max-h-72 overflow-y-auto border z-50 flex flex-col p-1.5 rounded-[2px]"
-                              style={{ 
-                                backgroundColor: 'var(--theme-surface)', 
-                                borderColor: 'var(--theme-border)',
-                                boxShadow: 'none'
-                              }}
-                            >
-                              <div className="px-2 py-1 text-[8.5px] font-mono uppercase tracking-wider border-b mb-1 shrink-0" style={{ color: 'var(--theme-textMuted)', borderColor: 'var(--theme-border)' }}>
-                                移動先のアルバムを選択 ({selectedTrackIds.size}曲)
-                              </div>
-                              <div className="flex flex-col gap-0.5 overflow-y-auto w-full">
-                                {albumGroups
-                                  .filter(a => !drillDownAlbum || a.album.toLowerCase() !== drillDownAlbum.album.toLowerCase())
-                                  .map(alb => (
-                                    <button
-                                      key={alb.id}
-                                      onClick={() => {
-                                        handleMoveTracksToAlbum(Array.from(selectedTrackIds), alb);
-                                        setShowMoveToAlbum(false);
-                                      }}
-                                      className="text-left px-2.5 py-1.5 text-[10px] font-mono shrink-0 min-h-[28px] flex items-center justify-between gap-2 leading-normal border-b last:border-b-0 hover:opacity-80 transition-colors w-full cursor-pointer"
-                                      style={{ 
-                                        color: 'var(--theme-textMain)',
-                                        borderColor: 'var(--theme-border)',
-                                        backgroundColor: 'transparent'
-                                      }}
-                                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'}
-                                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                                      title={`「${alb.album}」へ移動`}
-                                    >
-                                      <span className="truncate font-bold flex items-center gap-1.5">
-                                        <Disc size={10} className="shrink-0 opacity-70" style={{ color: 'var(--theme-accent)' }} />
-                                        <span className="truncate">{alb.album}</span>
-                                      </span>
-                                      <span className="text-[8.5px] shrink-0 opacity-70 font-mono">{alb.tracks.length}曲</span>
-                                    </button>
-                                  ))}
-                              </div>
+                            <div className="px-3 py-1.5 text-[9px] uppercase tracking-wider border-b shrink-0 flex items-center justify-between" style={{ color: 'var(--theme-textMuted)', borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surfaceLighter)' }}>
+                              <span>移動先のアルバムを選択</span>
+                              <span className="font-bold" style={{ color: 'var(--theme-accent)' }}>{selectedTrackIds.size}曲</span>
                             </div>
-                          )}
-                        </div>
-                      )}
+
+                            {/* Option to create a new album and move selected tracks into it */}
+                            <div className="p-2 border-b flex items-center gap-1.5 shrink-0" style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-bg)' }}>
+                              <input
+                                type="text"
+                                placeholder="新規アルバム名を作成して移動..."
+                                value={newAlbumInputName}
+                                onChange={e => setNewAlbumInputName(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' && newAlbumInputName.trim()) {
+                                    handleMoveTracksToAlbum(Array.from(selectedTrackIds), { album: newAlbumInputName.trim() });
+                                    setNewAlbumInputName('');
+                                  }
+                                }}
+                                className="flex-1 min-w-0 text-[10px] font-mono px-2 py-1 border rounded-[1px] outline-none"
+                                style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                              />
+                              <button
+                                type="button"
+                                disabled={!newAlbumInputName.trim()}
+                                onClick={() => {
+                                  if (!newAlbumInputName.trim()) return;
+                                  handleMoveTracksToAlbum(Array.from(selectedTrackIds), { album: newAlbumInputName.trim() });
+                                  setNewAlbumInputName('');
+                                }}
+                                className="px-2 py-1 text-[9px] font-mono font-bold border rounded-[1px] hover:opacity-80 active:scale-95 disabled:opacity-40 transition-colors shrink-0"
+                                style={{ backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }}
+                                title="新しいアルバムを作成して選択曲を移動"
+                              >
+                                作成・移動
+                              </button>
+                            </div>
+
+                            {/* Existing albums list */}
+                            <div className="flex flex-col overflow-y-auto max-h-60 w-full divide-y" style={{ borderColor: 'var(--theme-border)' }}>
+                              {albumGroups
+                                .filter(a => !drillDownAlbum || a.album.toLowerCase() !== drillDownAlbum.album.toLowerCase())
+                                .map(alb => (
+                                  <button
+                                    key={alb.id}
+                                    onClick={() => {
+                                      handleMoveTracksToAlbum(Array.from(selectedTrackIds), alb);
+                                    }}
+                                    className="text-left px-3 py-2 text-[10px] font-mono shrink-0 flex items-center justify-between gap-2.5 hover:opacity-80 transition-colors w-full cursor-pointer whitespace-nowrap min-h-[32px]"
+                                    style={{ 
+                                      color: 'var(--theme-textMain)',
+                                      backgroundColor: 'transparent'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'}
+                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    title={`「${alb.album}」へ移動`}
+                                  >
+                                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                                      <Disc size={11} className="shrink-0 opacity-70" style={{ color: 'var(--theme-accent)' }} />
+                                      <span className="truncate block font-bold font-mono whitespace-nowrap">{alb.album}</span>
+                                    </div>
+                                    <span className="text-[8.5px] shrink-0 opacity-70 font-mono whitespace-nowrap" style={{ color: 'var(--theme-textDim)' }}>{alb.tracks.length}曲</span>
+                                  </button>
+                                ))}
+                              {albumGroups.filter(a => !drillDownAlbum || a.album.toLowerCase() !== drillDownAlbum.album.toLowerCase()).length === 0 && (
+                                <div className="px-3 py-3 text-[9px] uppercase tracking-wider opacity-50 text-center shrink-0" style={{ color: 'var(--theme-textMuted)' }}>
+                                  既存の別アルバムはありません。上の入力欄から新規アルバムを作成できます。
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
                       {/* Clean Filename to Title Tool */}
                       <button
@@ -8399,9 +8685,23 @@ export default function App() {
                           borderColor: 'var(--theme-border)',
                           color: 'var(--theme-textMain)',
                         }}
-                        title="選択した曲のファイル名から不要な番号等を除去した綺麗な名前をタイトルに適用"
+                        title="選択した曲のファイル名・既存タイトルから不要な番号等を除去した綺麗な曲名に整形 (CLEAN TITLE)"
                       >
                         <FileText size={12} style={{ color: 'var(--theme-accent)' }} />
+                      </button>
+
+                      {/* Reset Title to Raw Filename Tool */}
+                      <button
+                        onClick={handleBatchResetToFilename}
+                        className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                        style={{
+                          backgroundColor: 'var(--theme-bg)',
+                          borderColor: 'var(--theme-border)',
+                          color: 'var(--theme-textMain)',
+                        }}
+                        title="選択した曲のタイトルを元のファイル名そのままに復元 (RESET TO FILENAME)"
+                      >
+                        <RotateCcw size={12} style={{ color: 'var(--theme-textMuted)' }} />
                       </button>
 
                       {/* Delete Selected Tracks */}
@@ -8560,6 +8860,46 @@ export default function App() {
                </div>
             </div>
          </div>
+      )}
+
+      {/* Title Clean / Modify Undo Notification Bar */}
+      {titleUndoState && (
+        <div 
+          className="fixed bottom-3 right-4 z-50 flex items-center gap-2.5 px-3 py-1.5 border font-mono text-[10px] select-none shadow-2xl"
+          style={{ 
+            backgroundColor: 'var(--theme-surface)', 
+            borderColor: 'var(--theme-accent)', 
+            color: 'var(--theme-textMain)',
+          }}
+        >
+          <div className="flex items-center gap-1.5">
+            <FileText size={11} style={{ color: 'var(--theme-accent)' }} />
+            <span>{titleUndoState.tracks.length}曲のタイトルを変更しました</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleUndoTitleClean}
+            className="px-2 py-0.5 border rounded-[1px] font-bold hover:opacity-80 active:scale-95 transition-colors flex items-center gap-1 cursor-pointer"
+            style={{ 
+              backgroundColor: 'var(--theme-accentMuted)', 
+              borderColor: 'var(--theme-accent)', 
+              color: 'var(--theme-accent)' 
+            }}
+            title="直前のタイトル変更を取り消して元のタイトル・アーティストに戻す"
+          >
+            <RotateCcw size={10} />
+            <span>元に戻す (UNDO)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTitleUndoState(null)}
+            className="p-0.5 hover:opacity-80 cursor-pointer"
+            style={{ color: 'var(--theme-textMuted)' }}
+            title="通知を閉じる"
+          >
+            <X size={11} />
+          </button>
+        </div>
       )}
 
       {/* Clear Confirmation Modal */}
