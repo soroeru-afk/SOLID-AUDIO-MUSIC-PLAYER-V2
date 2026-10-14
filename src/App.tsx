@@ -653,6 +653,7 @@ export default function App() {
   const [editCategoryNameInput, setEditCategoryNameInput] = useState('');
   const [confirmDeleteCategoryName, setConfirmDeleteCategoryName] = useState<string | null>(null);
   const [dragOverCategoryTarget, setDragOverCategoryTarget] = useState<string | null>(null);
+  const dragCounterRef = useRef(0);
   const [draggedCategoryName, setDraggedCategoryName] = useState<string | null>(null);
   const [dragOverCategoryReorderTarget, setDragOverCategoryReorderTarget] = useState<string | null>(null);
   const [categoryDropPosition, setCategoryDropPosition] = useState<'above' | 'below' | null>(null);
@@ -2527,6 +2528,7 @@ export default function App() {
   const handleDrop = async (e: React.DragEvent, dropTargetCategory?: string) => {
     e.preventDefault();
     e.stopPropagation();
+    dragCounterRef.current = 0;
     setIsDragOver(false);
     setDragOverCategoryTarget(null);
 
@@ -2619,15 +2621,34 @@ export default function App() {
     }
   };
 
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current += 1;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragOver(true);
+    }
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragOver(true);
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+    if (!isDragOver) {
+      setIsDragOver(true);
+    }
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragOver(false);
+    e.stopPropagation();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setIsDragOver(false);
+    }
   };
 
   const clearActivePlaylist = () => {
@@ -5303,9 +5324,14 @@ export default function App() {
             borderColor: isDragOver ? 'var(--theme-accent)' : 'var(--theme-border)',
             boxShadow: isDragOver ? 'inset 0 0 0 2px var(--theme-accent)' : 'none'
           }}
+          onDragEnter={handleDragEnter}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          onDrop={(e) => {
+            dragCounterRef.current = 0;
+            setIsDragOver(false);
+            handleDrop(e);
+          }}
         >
           {isSidebarCollapsed ? (
             <div className="flex flex-col items-center py-2 h-full justify-between" style={{ backgroundColor: 'var(--theme-listHeader-bg)' }}>
@@ -7486,32 +7512,35 @@ export default function App() {
 
             {/* Dedicated Industrial Drag & Drop Zone Box at bottom of list */}
             <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                e.dataTransfer.dropEffect = 'copy';
-              }}
+              onDragEnter={handleDragEnter}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
               onDrop={(e) => {
+                dragCounterRef.current = 0;
+                setIsDragOver(false);
                 const targetCat = sidebarCategoryMode === 'dropdown' && selectedCategoryFilter !== '__ALL__' && selectedCategoryFilter !== '__UNCATEGORIZED__'
                   ? selectedCategoryFilter
                   : undefined;
                 handleDrop(e, targetCat);
               }}
               onClick={() => fileInputRef.current?.click()}
-              className="m-2 p-2.5 border border-dashed rounded-[2px] flex flex-col items-center justify-center gap-1 transition-all cursor-pointer select-none hover:opacity-90 active:scale-[0.99]"
+              className="m-2 p-3 border-2 border-dashed rounded-[2px] flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer select-none relative overflow-hidden"
               style={{
-                borderColor: 'var(--theme-listHeader-border)',
-                backgroundColor: 'var(--theme-list-surface)',
-                color: 'var(--theme-list-textMuted)'
+                borderColor: isDragOver ? 'var(--theme-accent)' : 'var(--theme-listHeader-border)',
+                backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : 'var(--theme-list-surface)',
+                color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-list-textMuted)',
+                boxShadow: isDragOver ? '0 0 12px rgba(0, 0, 0, 0.2), inset 0 0 8px var(--theme-accentMuted)' : 'none'
               }}
               title="クリックまたはドラッグ＆ドロップで音楽フォルダ・音源ファイルを追加"
             >
-              <FolderPlus size={14} style={{ color: 'var(--theme-accent)' }} />
-              <span className="text-[9px] font-mono tracking-wider font-semibold" style={{ color: 'var(--theme-list-textMain)' }}>
-                + DROP AUDIO FOLDERS / FILES
+              <FolderPlus size={isDragOver ? 18 : 14} className={`transition-transform ${isDragOver ? 'scale-110 animate-bounce' : ''}`} style={{ color: 'var(--theme-accent)' }} />
+              <span className="text-[9.5px] font-mono tracking-wider font-bold uppercase text-center" style={{ color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-list-textMain)' }}>
+                {isDragOver ? '■ RELEASE TO IMPORT AUDIO' : '+ DROP AUDIO FOLDERS / FILES'}
               </span>
-              <span className="text-[7.5px] font-mono text-center leading-tight" style={{ color: 'var(--theme-list-textDim)' }}>
-                {sidebarCategoryMode === 'tree'
+              <span className="text-[8px] font-mono text-center leading-tight font-medium" style={{ color: isDragOver ? 'var(--theme-textMain)' : 'var(--theme-list-textDim)' }}>
+                {isDragOver 
+                  ? 'ここにドロップして音源フォルダ・ファイルを読み込み'
+                  : sidebarCategoryMode === 'tree'
                   ? 'ここにD&Dで新規リスト作成 (上の各カテゴリー枠へ直接D&Dも可能)'
                   : (selectedCategoryFilter === '__ALL__' || selectedCategoryFilter === '__UNCATEGORIZED__'
                     ? 'ここにD&Dで新規リスト作成'
@@ -7539,10 +7568,44 @@ export default function App() {
              borderColor: isDragOver ? 'var(--theme-accent)' : 'var(--theme-border)',
              boxShadow: isDragOver ? 'inset 0 0 0 2px var(--theme-accent)' : 'none'
            }}
+           onDragEnter={handleDragEnter}
            onDragOver={handleDragOver}
            onDragLeave={handleDragLeave}
-           onDrop={handleDrop}
+           onDrop={(e) => {
+             dragCounterRef.current = 0;
+             setIsDragOver(false);
+             handleDrop(e);
+           }}
         >
+          {/* Drag & Drop Industrial Visual Overlay Guide */}
+          {isDragOver && (
+            <div 
+              className="absolute inset-2 border-2 border-dashed z-50 flex flex-col items-center justify-center gap-3 backdrop-blur-[2px] transition-all pointer-events-none rounded-[2px]"
+              style={{
+                borderColor: 'var(--theme-accent)',
+                backgroundColor: 'var(--theme-surface)',
+                boxShadow: '0 0 24px rgba(0,0,0,0.5), inset 0 0 15px var(--theme-accentMuted)'
+              }}
+            >
+              <div 
+                className="w-14 h-14 border-2 border-dashed rounded-full flex items-center justify-center transition-transform animate-pulse"
+                style={{ borderColor: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}
+              >
+                <FolderPlus size={28} style={{ color: 'var(--theme-accent)' }} />
+              </div>
+              <div className="text-center font-mono flex flex-col gap-1 px-4">
+                <div className="text-xs font-bold tracking-widest uppercase" style={{ color: 'var(--theme-accent)' }}>
+                  ■ RELEASE TO IMPORT AUDIO FOLDERS / FILES
+                </div>
+                <div className="text-[10px] tracking-wider font-semibold" style={{ color: 'var(--theme-textMain)' }}>
+                  音源フォルダ・音楽ファイルをここにドロップしてください
+                </div>
+                <div className="text-[9px] tracking-wider opacity-70 mt-1" style={{ color: 'var(--theme-textMuted)' }}>
+                  [ ALL MP3 / WAV / FLAC / M4A / AAC FILES SUPPORTED ]
+                </div>
+              </div>
+            </div>
+          )}
           <div className="border-b px-3 py-1 flex items-center min-h-[32px] justify-between shrink-0 relative z-30 flex-wrap gap-y-1" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-listHeader-border)' }}>
              <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
                <div className="flex items-center gap-1.5 shrink-0">
