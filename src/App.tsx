@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
-  Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, VolumeX,
+  Play, CheckSquare, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, VolumeX,
   Folder, FolderOpen, ListMusic, Plus, Search, ChevronUp, ChevronDown, 
   ChevronsUp, ChevronsDown, Palette, Activity, Check, X, Trash2, ListPlus, AlertCircle,
   Minimize2, Maximize2, Layers, Minus, PanelTop, GripVertical, Type, Eye, EyeOff,
@@ -329,34 +329,86 @@ export const cleanAudioTag = (rawText: string | undefined): string => {
   return normalizeZenkakuAlphanumeric(repaired);
 };
 
-const parseFilename = (filename: string): { title: string, artist: string, trackNumber?: string } => {
+const parseFilename = (
+  filename: string, 
+  existingArtist?: string, 
+  existingAlbum?: string
+): { title: string, artist: string, trackNumber?: string } => {
   let nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
   nameWithoutExt = normalizeZenkakuAlphanumeric(nameWithoutExt);
 
-  // Strip leading track number prefixes (e.g. "01.", "01 - ", "01_", "01 ") so fallback titles don't keep track numbers
+  // 1. Strip leading track number prefixes (e.g. "01.", "01 - ", "01_", "01 ", "01・")
   let trackNumber = '';
-  const numMatch = nameWithoutExt.match(/^(\d{1,3})[\s._-]+(.+)$/);
+  const numMatch = nameWithoutExt.match(/^(\d{1,4})[\s._・-]+(.+)$/);
   if (numMatch) {
     trackNumber = numMatch[1];
     nameWithoutExt = numMatch[2].trim();
   }
 
-  if (nameWithoutExt.includes(' - ')) {
-    const parts = nameWithoutExt.split(' - ');
-    return {
-      artist: parts[0].trim() || 'Unknown Artist',
-      title: parts.slice(1).join(' - ').trim() || 'Unknown Title',
-      trackNumber
-    };
-  } else if (nameWithoutExt.includes('-')) {
-    const parts = nameWithoutExt.split('-');
-    return {
-      artist: parts[0].trim() || 'Unknown Artist',
-      title: parts.slice(1).join('-').trim() || 'Unknown Title',
-      trackNumber
-    };
+  // 2. Strip common album / version suffixes (e.g. "- リマスター版", "- Remastered", "- Remaster", " (リマスター版)", " [Remaster]")
+  const versionRegex = /[\s._-]+(リマスター版?|Remaster(?:ed)?|Live|Instrumental|Off Vocal|Karaoke|Demo|Single Ver(?:sion)?|Album Ver(?:sion)?|Bonus Track)$/i;
+  nameWithoutExt = nameWithoutExt.replace(versionRegex, '').trim();
+
+  // If existingAlbum is provided and filename ends with " - " + album, strip that album suffix
+  if (existingAlbum && existingAlbum !== 'Unknown Album') {
+    const cleanAlb = normalizeZenkakuAlphanumeric(existingAlbum.replace(/^[■□◆◇●▲▼★☆\s]+/, '').trim());
+    if (cleanAlb && cleanAlb.length > 1 && nameWithoutExt.toLowerCase().endsWith(cleanAlb.toLowerCase())) {
+      nameWithoutExt = nameWithoutExt.substring(0, nameWithoutExt.length - cleanAlb.length).replace(/[\s._・-]+$/, '').trim();
+    }
   }
-  return { title: nameWithoutExt, artist: 'Unknown Artist', trackNumber };
+
+  // Candidate artist
+  let candidateArtist = (existingArtist && existingArtist !== 'Unknown Artist' && existingArtist !== 'Marcia') ? existingArtist.trim() : '';
+
+  // 3. Check for standard separators: " - "
+  if (nameWithoutExt.includes(' - ')) {
+    const parts = nameWithoutExt.split(' - ').map(p => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      // Check if second part is a known version tag like "リマスター版"
+      if (/^(リマスター版?|Remaster(?:ed)?|Live|Inst|Karaoke)$/i.test(parts[1])) {
+        nameWithoutExt = parts[0];
+      } else if (candidateArtist && parts[0].toLowerCase() === candidateArtist.toLowerCase()) {
+        return { artist: parts[0], title: parts.slice(1).join(' - ').trim(), trackNumber };
+      } else if (candidateArtist && parts[parts.length - 1].toLowerCase() === candidateArtist.toLowerCase()) {
+        return { artist: parts[parts.length - 1], title: parts.slice(0, -1).join(' - ').trim(), trackNumber };
+      } else {
+        // Default: first part is artist, rest is title
+        return { artist: parts[0], title: parts.slice(1).join(' - ').trim(), trackNumber };
+      }
+    }
+  }
+
+  // 4. Check if artist name is embedded in nameWithoutExt (e.g. "スローモーション 中森明菜" or "中森明菜 ・ A型メランコリー")
+  let title = nameWithoutExt;
+  let artist = candidateArtist || 'Unknown Artist';
+
+  // Pattern: "Title Artist" or "Title ・ Artist"
+  const suffixArtistMatch = nameWithoutExt.match(/^(.+?)[\s・_-]+(中森明菜|Marcia|[A-Za-z0-9぀-ゟ゠-ヿ一-龯]{2,15})$/);
+  // Pattern: "Artist ・ Title" or "Artist Title"
+  const prefixArtistMatch = nameWithoutExt.match(/^(中森明菜|[A-Za-z0-9぀-ゟ゠-ヿ一-龯]{2,15})[\s・_-]+(.+)$/);
+
+  if (prefixArtistMatch && !prefixArtistMatch[1].match(/^\d+$/)) {
+    if (nameWithoutExt.includes('・') || (candidateArtist && prefixArtistMatch[1].toLowerCase() === candidateArtist.toLowerCase())) {
+      artist = prefixArtistMatch[1].trim();
+      title = prefixArtistMatch[2].replace(/^[\s・_-]+/, '').trim();
+    }
+  } else if (suffixArtistMatch) {
+    const possibleTitle = suffixArtistMatch[1].trim();
+    const possibleArtist = suffixArtistMatch[2].trim();
+    if (candidateArtist && possibleArtist.toLowerCase() === candidateArtist.toLowerCase()) {
+      title = possibleTitle;
+      artist = possibleArtist;
+    } else if (possibleArtist === '中森明菜' || (existingAlbum && existingAlbum.includes(possibleArtist))) {
+      title = possibleTitle;
+      artist = possibleArtist;
+    }
+  }
+
+  // Clean trailing and leading punctuation from title
+  title = title.replace(/^[\s._・-]+|[\s._・-]+$/g, '').trim();
+  if (!title) title = nameWithoutExt;
+
+  return { title, artist, trackNumber };
 };
 
 const COL_LABELS: Record<string, string> = {
@@ -1962,11 +2014,12 @@ export default function App() {
   const handleApplyFilenameToTitle = (trackId: string) => {
     const applyFilename = (t: Track): Track => {
       if (t.id !== trackId) return t;
-      const parsed = parseFilename(t.fileName);
+      const parsed = parseFilename(t.fileName, t.artist, t.album);
       return {
         ...t,
-        title: parsed.title,
-        ...(parsed.artist !== 'Unknown Artist' ? { artist: parsed.artist } : {}),
+        title: parsed.title || t.title,
+        ...(parsed.artist && parsed.artist !== 'Unknown Artist' ? { artist: parsed.artist } : {}),
+        ...(parsed.trackNumber ? { trackNumber: parsed.trackNumber } : {}),
       };
     };
 
@@ -1983,11 +2036,12 @@ export default function App() {
     if (selectedTrackIds.size === 0) return;
     const applyFilename = (t: Track): Track => {
       if (!selectedTrackIds.has(t.id)) return t;
-      const parsed = parseFilename(t.fileName);
+      const parsed = parseFilename(t.fileName, t.artist, t.album);
       return {
         ...t,
-        title: parsed.title,
-        ...(parsed.artist !== 'Unknown Artist' ? { artist: parsed.artist } : {}),
+        title: parsed.title || t.title,
+        ...(parsed.artist && parsed.artist !== 'Unknown Artist' ? { artist: parsed.artist } : {}),
+        ...(parsed.trackNumber ? { trackNumber: parsed.trackNumber } : {}),
       };
     };
 
@@ -8042,7 +8096,30 @@ export default function App() {
                 {/* List Header */}
                 <div className="flex items-center uppercase tracking-normal px-2 h-8 border-b shrink-0 sticky top-0 z-20 text-[10px] w-full" style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMuted)' }}>
                   <div className="relative flex-shrink-0 flex items-center h-full" style={{ width: colWidths.index }}>
-                    <div className="w-8 flex-shrink-0 flex items-center justify-center"></div>
+                    <div className="w-8 flex-shrink-0 flex items-center justify-center">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const allSelected = tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id));
+                          if (allSelected) {
+                            setSelectedTrackIds(new Set());
+                            lastSelectedTrackIdRef.current = null;
+                          } else {
+                            setSelectedTrackIds(new Set(tracksToRender.map(t => t.id)));
+                          }
+                        }}
+                        className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center hover:opacity-80 active:scale-95 transition-all cursor-pointer"
+                        style={{
+                          borderColor: (tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id))) || tracksToRender.some(t => selectedTrackIds.has(t.id)) ? 'var(--theme-accent)' : 'var(--theme-list-border)',
+                          backgroundColor: (tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id))) ? 'var(--theme-accent)' : (tracksToRender.some(t => selectedTrackIds.has(t.id)) ? 'var(--theme-accentMuted)' : 'transparent'),
+                        }}
+                        title={tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id)) ? "全選択を解除" : "表示中の全曲を一括選択 (全選択)"}
+                      >
+                        {tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id)) && <Check size={10} style={{ color: '#ffffff' }} strokeWidth={3} />}
+                        {tracksToRender.some(t => selectedTrackIds.has(t.id)) && !tracksToRender.every(t => selectedTrackIds.has(t.id)) && <Minus size={9} style={{ color: 'var(--theme-accent)' }} strokeWidth={3} />}
+                      </button>
+                    </div>
                     <div className="w-8 flex-shrink-0 flex items-center justify-center" style={{ color: 'var(--theme-list-textDim)' }}>
                       #
                     </div>
@@ -8100,8 +8177,8 @@ export default function App() {
                       borderColor: 'var(--theme-border)',
                     }}
                   >
-                    {/* Left: Selection Counter & Clear Button */}
-                    <div className="flex items-center gap-2 min-w-0 shrink-0">
+                    {/* Left: Selection Counter, Select All & Clear Button */}
+                    <div className="flex items-center gap-1.5 min-w-0 shrink-0">
                       <span
                         className="text-[10px] font-bold px-2 py-0.5 border rounded-[2px] flex items-center gap-1 shrink-0"
                         style={{
@@ -8113,6 +8190,22 @@ export default function App() {
                         <Check size={10} />
                         <span>{selectedTrackIds.size}曲 選択中</span>
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTrackIds(new Set(tracksToRender.map(t => t.id)));
+                        }}
+                        className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[2px] hover:opacity-80 active:scale-95 transition-all cursor-pointer font-medium"
+                        style={{
+                          backgroundColor: 'var(--theme-bg)',
+                          borderColor: 'var(--theme-border)',
+                          color: 'var(--theme-textMain)',
+                        }}
+                        title="表示中の全曲を一括選択 (全選択)"
+                      >
+                        <CheckSquare size={10} style={{ color: 'var(--theme-accent)' }} />
+                        <span>全選択</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => { setSelectedTrackIds(new Set()); lastSelectedTrackIdRef.current = null; }}
@@ -8193,29 +8286,43 @@ export default function App() {
                           <ListPlus size={12} style={{ color: 'var(--theme-accent)' }} />
                         </button>
                         {showAddToPlaylist && (
-                          <div className="absolute bottom-full right-0 mb-1.5 w-56 max-h-60 overflow-y-auto border z-50 flex flex-col p-1" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }}>
-                            <div className="px-2 py-1 text-[8px] font-mono uppercase tracking-wider border-b mb-1" style={{ color: 'var(--theme-textMuted)', borderColor: 'var(--theme-border)' }}>
+                          <div 
+                            className="absolute bottom-full right-0 mb-1.5 w-64 max-h-72 overflow-y-auto border z-50 flex flex-col p-1.5 rounded-[2px]" 
+                            style={{ 
+                              backgroundColor: 'var(--theme-surface)', 
+                              borderColor: 'var(--theme-border)',
+                              boxShadow: 'none'
+                            }}
+                          >
+                            <div className="px-2 py-1 text-[8.5px] font-mono uppercase tracking-wider border-b mb-1 shrink-0" style={{ color: 'var(--theme-textMuted)', borderColor: 'var(--theme-border)' }}>
                               {activePlaylistId === 'all-tracks' ? '追加先のリストを選択' : '移動先のリストを選択'} ({selectedTrackIds.size}曲)
                             </div>
-                            {playlists.filter(p => p.id !== 'all-tracks' && p.id !== activePlaylistId).map(p => (
-                              <button 
-                                key={p.id}
-                                onClick={() => {
-                                  handleAddSelectedToPlaylist(p.id);
-                                  setShowAddToPlaylist(false);
-                                }}
-                                className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider hover:opacity-80 transition-colors truncate"
-                                style={{ color: 'var(--theme-textMain)' }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                                title={activePlaylistId === 'all-tracks' ? `ADD TO ${p.name}` : `MOVE TO ${p.name}`}
-                              >
-                                {p.name}
-                              </button>
-                            ))}
-                            {playlists.filter(p => p.id !== 'all-tracks' && p.id !== activePlaylistId).length === 0 && (
-                              <div className="px-2 py-1 text-[9px] uppercase tracking-wider opacity-50 text-center" style={{ color: 'var(--theme-textMuted)' }}>NO OTHER VIEWS</div>
-                            )}
+                            <div className="flex flex-col gap-0.5 overflow-y-auto w-full">
+                              {playlists.filter(p => p.id !== 'all-tracks' && p.id !== activePlaylistId).map(p => (
+                                <button 
+                                  key={p.id}
+                                  onClick={() => {
+                                    handleAddSelectedToPlaylist(p.id);
+                                    setShowAddToPlaylist(false);
+                                  }}
+                                  className="text-left px-2.5 py-1.5 text-[10px] font-mono shrink-0 min-h-[28px] flex items-center leading-normal border-b last:border-b-0 hover:opacity-80 transition-colors truncate w-full cursor-pointer"
+                                  style={{ 
+                                    color: 'var(--theme-textMain)',
+                                    borderColor: 'var(--theme-border)',
+                                    backgroundColor: 'transparent'
+                                  }}
+                                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'}
+                                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                  title={activePlaylistId === 'all-tracks' ? `ADD TO ${p.name}` : `MOVE TO ${p.name}`}
+                                >
+                                  <Bookmark size={10} className="mr-1.5 shrink-0 opacity-70" style={{ color: 'var(--theme-accent)' }} />
+                                  <span className="truncate">{p.name}</span>
+                                </button>
+                              ))}
+                              {playlists.filter(p => p.id !== 'all-tracks' && p.id !== activePlaylistId).length === 0 && (
+                                <div className="px-2 py-2 text-[9px] uppercase tracking-wider opacity-50 text-center shrink-0" style={{ color: 'var(--theme-textMuted)' }}>NO OTHER VIEWS</div>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -8240,31 +8347,44 @@ export default function App() {
                           </button>
                           {showMoveToAlbum && (
                             <div
-                              className="absolute bottom-full right-0 mb-1.5 w-64 max-h-64 overflow-y-auto border z-50 flex flex-col p-1"
-                              style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }}
+                              className="absolute bottom-full right-0 mb-1.5 w-72 max-h-72 overflow-y-auto border z-50 flex flex-col p-1.5 rounded-[2px]"
+                              style={{ 
+                                backgroundColor: 'var(--theme-surface)', 
+                                borderColor: 'var(--theme-border)',
+                                boxShadow: 'none'
+                              }}
                             >
-                              <div className="px-2 py-1 text-[8px] font-mono uppercase tracking-wider border-b mb-1" style={{ color: 'var(--theme-textMuted)', borderColor: 'var(--theme-border)' }}>
+                              <div className="px-2 py-1 text-[8.5px] font-mono uppercase tracking-wider border-b mb-1 shrink-0" style={{ color: 'var(--theme-textMuted)', borderColor: 'var(--theme-border)' }}>
                                 移動先のアルバムを選択 ({selectedTrackIds.size}曲)
                               </div>
-                              {albumGroups
-                                .filter(a => !drillDownAlbum || a.album.toLowerCase() !== drillDownAlbum.album.toLowerCase())
-                                .map(alb => (
-                                  <button
-                                    key={alb.id}
-                                    onClick={() => {
-                                      handleMoveTracksToAlbum(Array.from(selectedTrackIds), alb);
-                                      setShowMoveToAlbum(false);
-                                    }}
-                                    className="text-left px-2 py-1.5 text-[9.5px] font-mono hover:opacity-80 transition-colors flex items-center justify-between gap-2"
-                                    style={{ color: 'var(--theme-textMain)' }}
-                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'}
-                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                                    title={`「${alb.album}」へ移動`}
-                                  >
-                                    <span className="truncate font-bold">{alb.album}</span>
-                                    <span className="text-[8px] shrink-0 opacity-70">{alb.tracks.length}曲</span>
-                                  </button>
-                                ))}
+                              <div className="flex flex-col gap-0.5 overflow-y-auto w-full">
+                                {albumGroups
+                                  .filter(a => !drillDownAlbum || a.album.toLowerCase() !== drillDownAlbum.album.toLowerCase())
+                                  .map(alb => (
+                                    <button
+                                      key={alb.id}
+                                      onClick={() => {
+                                        handleMoveTracksToAlbum(Array.from(selectedTrackIds), alb);
+                                        setShowMoveToAlbum(false);
+                                      }}
+                                      className="text-left px-2.5 py-1.5 text-[10px] font-mono shrink-0 min-h-[28px] flex items-center justify-between gap-2 leading-normal border-b last:border-b-0 hover:opacity-80 transition-colors w-full cursor-pointer"
+                                      style={{ 
+                                        color: 'var(--theme-textMain)',
+                                        borderColor: 'var(--theme-border)',
+                                        backgroundColor: 'transparent'
+                                      }}
+                                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'}
+                                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                      title={`「${alb.album}」へ移動`}
+                                    >
+                                      <span className="truncate font-bold flex items-center gap-1.5">
+                                        <Disc size={10} className="shrink-0 opacity-70" style={{ color: 'var(--theme-accent)' }} />
+                                        <span className="truncate">{alb.album}</span>
+                                      </span>
+                                      <span className="text-[8.5px] shrink-0 opacity-70 font-mono">{alb.tracks.length}曲</span>
+                                    </button>
+                                  ))}
+                              </div>
                             </div>
                           )}
                         </div>
