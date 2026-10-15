@@ -340,14 +340,37 @@ const parseFilename = (
 
   // 1. Strip bracketed version/quality tags anywhere in the string
   s = s.replace(/[\(\[\{【〔]\s*(?:(?:\d{4}\s*)?(?:Digital\s*)?Remaster(?:ed)?|リマスター(?:版)?|Live(?: Version)?|Instrumental|Off\s*Vocal|Karaoke|カラオケ|Demo|Official(?: Audio)?|Audio|Video|MV|PV|\d+k(?:bps)?|Hi-Res|ハイレゾ|HQ|HD|Bonus\s*Track|\d+kHz[/\s]*\d+bit|FLAC|MP3|WAV|AAC)\s*[\)\]\}】〕]/gi, '').trim();
-
   // Strip trailing version suffixes (e.g. "- リマスター版", "- Remastered", "_128k")
   s = s.replace(/[\s._-]+(リマスター版?|Remaster(?:ed)?|Digital Remaster|Live(?: Version)?|Instrumental|Off Vocal|Karaoke|Demo|Bonus Track)$/i, '').trim();
   s = s.replace(/_\d+k(?:bps)?$/i, '').trim();
 
+  // 1b. Strip trailing duplicate copy counters added by OS/downloaders (e.g. " 1", " (1)", " [1]", "_1")
+  // PROTECT: 3+ digit numbers like "1990", "1991", "2000" (e.g. COMPLEX - 1990)
+  // PROTECT: Series/Parts/Volumes like "Part 1", "Pt. 1", "Vol 1", "No 1", "Take 1", "Track 1"
+  // PROTECT: Alphanumeric words like "21c", "AKB48", "B'z", "'90"
+  
+  // Rule A: Bracketed single/double-digit copy suffix, e.g. "Song (1)", "Song [1]" (NOT "(Part 1)", "(1990)")
+  const bracketNumMatch = s.match(/^(.*?)\s*[\(\[\{]\s*(\d{1,2})\s*[\)\]\}]$/);
+  if (bracketNumMatch) {
+    const base = bracketNumMatch[1].trim();
+    if (base.length >= 2 && !/(?:^|[\s._・\-])(?:part|pt|vol|volume|no|number|track|trk|cd|disc|take|act|op|suite|movement)[\s.]*$/i.test(base)) {
+      s = base;
+    }
+  }
+
+  // Rule B: Space or underscore followed by single-digit copy number (e.g. "美・来 1", "Song_1", "Song 2")
+  // Only 1 digit (1-9) or 01-09. NEVER matches 1990, 1991, 2000, 100, etc.
+  const trailingCopyMatch = s.match(/^(.*?)(?:[\s_]+)(?:0?[1-9])$/);
+  if (trailingCopyMatch) {
+    const base = trailingCopyMatch[1].trim();
+    // Only strip if base has at least 2 characters, and does NOT end with a series/number word
+    if (base.length >= 2 && !/(?:^|[\s._・\-])(?:part|pt|vol|volume|no|number|track|trk|cd|disc|take|act|op|suite|movement|phase|session|section)[\s.]*$/i.test(base)) {
+      s = base;
+    }
+  }
+
   // 2. Extract track number & strip leading track/disc prefixes
   let trackNumber = '';
-
   // Case A: Disc-Track (e.g. "1-01", "1.01", "CD1-01", "Disc 1 - 01", "[01-01]")
   const discMatch = s.match(/^[\(\[\<【〔]?(?:cd|disc)?\s*\d{1,2}[-_.:]\s*(\d{1,3})[\)\]\>】〕]?[\s._・-]*(.+)$/i);
   if (discMatch) {
@@ -395,15 +418,18 @@ const parseFilename = (
   if (existingArtist && existingArtist !== 'Unknown Artist' && existingArtist !== 'Marcia') {
     artistCandidates.push(existingArtist.trim());
   }
-
   for (const src of [existingAlbum, playlistName]) {
     if (src && src !== 'Unknown Album') {
-      const cleanSrc = src.replace(/^[■□◆◇●▲▼★☆\s]+/, '').trim();
+      const cleanSrc = src.replace(/^[■□◆◇●▲▼★☆\s\-_・/]+/, '').trim();
       if (cleanSrc.includes(' - ')) {
         artistCandidates.push(cleanSrc.split(' - ')[0].trim());
       } else if (cleanSrc.includes(' / ')) {
         artistCandidates.push(cleanSrc.split(' / ')[0].trim());
       } else {
+        const strippedDesc = cleanSrc.replace(/\s*(?:ベスト|ベストアルバム|best|album|collection|シングル|ライヴ|live|全曲集|complete).*$/i, '').trim();
+        if (strippedDesc && strippedDesc.length >= 2) {
+          artistCandidates.push(strippedDesc);
+        }
         artistCandidates.push(cleanSrc);
       }
     }
@@ -412,7 +438,7 @@ const parseFilename = (
   // Also strip album suffix from filename if it ends with album name
   for (const src of [existingAlbum, playlistName]) {
     if (src && src !== 'Unknown Album') {
-      const cleanSrc = src.replace(/^[■□◆◇●▲▼★☆\s]+/, '').trim();
+      const cleanSrc = src.replace(/^[■□◆◇●▲▼★☆\s\-_・/]+/, '').trim();
       if (cleanSrc.includes(' - ')) {
         const subPart = cleanSrc.split(' - ').pop()?.trim();
         if (subPart && s.endsWith(subPart)) {
@@ -425,32 +451,42 @@ const parseFilename = (
     }
   }
 
-  // 4. Remove artist name from song title so ONLY the song title remains!
+  // 3b. Extract leading bracketed artist tag, e.g. "[T-SQUARE] TRUTH - THE SQUARE"
   let matchedArtist = '';
+  const leadingBracketArtist = s.match(/^\[([a-zA-Z0-9\s._・\-–—&]+)\]\s*(.+)$/);
+  if (leadingBracketArtist) {
+    const candArtist = leadingBracketArtist[1].trim();
+    if (candArtist.length >= 2 && !/^\d+$/.test(candArtist)) {
+      matchedArtist = candArtist;
+      artistCandidates.push(candArtist);
+      s = leadingBracketArtist[2].trim();
+    }
+  }
+
+  // 4. Remove artist name from song title so ONLY the song title remains!
   const filteredCandidates = Array.from(new Set(artistCandidates.filter(a => a.length >= 2 && !a.startsWith('Track') && a !== 'Unknown Artist')));
   filteredCandidates.sort((a, b) => b.length - a.length);
-
   for (const cand of filteredCandidates) {
     const escaped = cand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // Case: "Artist - Title" or "Artist ・ Title" or "Artist / Title"
     const prefixReg = new RegExp(`^${escaped}\\s*[\\s._・/-]+\\s*`, 'i');
     if (prefixReg.test(s)) {
       s = s.replace(prefixReg, '').trim();
-      matchedArtist = cand;
+      if (!matchedArtist) matchedArtist = cand;
       break;
     }
     // Case: "Title - Artist" or "Title Artist"
     const suffixReg = new RegExp(`\\s*[\\s._・/-]+\\s*${escaped}$`, 'i');
     if (suffixReg.test(s)) {
       s = s.replace(suffixReg, '').trim();
-      matchedArtist = cand;
+      if (!matchedArtist) matchedArtist = cand;
       break;
     }
     // Case: "Title (Artist)"
     const parenReg = new RegExp(`[\\(\\[]\\s*${escaped}\\s*[\\)\\]]`, 'i');
     if (parenReg.test(s)) {
       s = s.replace(parenReg, '').trim();
-      matchedArtist = cand;
+      if (!matchedArtist) matchedArtist = cand;
       break;
     }
   }
@@ -459,21 +495,27 @@ const parseFilename = (
   if (s.includes(' - ')) {
     const parts = s.split(' - ').map(p => p.trim()).filter(Boolean);
     if (parts.length === 2) {
-      if (matchedArtist) {
-        if (parts[0].toLowerCase() === matchedArtist.toLowerCase()) s = parts[1];
-        else if (parts[1].toLowerCase() === matchedArtist.toLowerCase()) s = parts[0];
-      } else {
-        const p0Lower = parts[0].toLowerCase();
-        const p1Lower = parts[1].toLowerCase();
-        if (filteredCandidates.some(c => p0Lower.includes(c.toLowerCase()) || c.toLowerCase().includes(p0Lower))) {
-          s = parts[1];
-          matchedArtist = parts[0];
-        } else if (filteredCandidates.some(c => p1Lower.includes(c.toLowerCase()) || c.toLowerCase().includes(p1Lower))) {
-          s = parts[0];
-          matchedArtist = parts[1];
-        } else {
-          s = parts[1];
-          matchedArtist = parts[0];
+      const p0 = parts[0];
+      const p1 = parts[1];
+      const p0Lower = p0.toLowerCase();
+      const p1Lower = p1.toLowerCase();
+
+      // Check for exact candidate match first
+      const p0IsArtist = filteredCandidates.some(c => c.toLowerCase() === p0Lower) || (matchedArtist && matchedArtist.toLowerCase() === p0Lower);
+      const p1IsArtist = filteredCandidates.some(c => c.toLowerCase() === p1Lower) || (matchedArtist && matchedArtist.toLowerCase() === p1Lower);
+
+      if (p0IsArtist && !p1IsArtist) {
+        s = p1;
+        if (!matchedArtist) matchedArtist = p0;
+      } else if (p1IsArtist && !p0IsArtist) {
+        s = p0;
+        if (!matchedArtist) matchedArtist = p1;
+      } else if (matchedArtist) {
+        // One side is artist variant (e.g. THE SQUARE vs T-SQUARE)
+        if (p1Lower.includes('square') || p1Lower.includes(matchedArtist.toLowerCase())) {
+          s = p0;
+        } else if (p0Lower.includes('square') || p0Lower.includes(matchedArtist.toLowerCase())) {
+          s = p1;
         }
       }
     }
@@ -486,10 +528,19 @@ const parseFilename = (
     s = secondPassNum[1].trim();
   }
 
-  // 7. Final cleanup of leading/trailing punctuation
+  // 7. Final cleanup of leading/trailing punctuation and trailing duplicate counters
   s = s.replace(/^[\s._・\-–—/]+|[\s._・\-–—/]+$/g, '').trim();
-  if (!s) s = filename.replace(/\.[^/.]+$/, '').trim();
+  
+  // Re-check trailing copy counter after all strippings (e.g. if something exposed "美・来 1")
+  const finalCopyMatch = s.match(/^(.*?)(?:[\s_]+)(?:0?[1-9])$/);
+  if (finalCopyMatch) {
+    const base = finalCopyMatch[1].trim();
+    if (base.length >= 2 && !/(?:^|[\s._・\-])(?:part|pt|vol|volume|no|number|track|trk|cd|disc|take|act|op|suite|movement|phase|session|section)[\s.]*$/i.test(base)) {
+      s = base;
+    }
+  }
 
+  if (!s) s = filename.replace(/\.[^/.]+$/, '').trim();
   return {
     title: s,
     artist: matchedArtist || existingArtist || 'Unknown Artist',
@@ -545,11 +596,16 @@ const COL_LABELS: Record<string, string> = {
   album: 'アルバム'
 };
 
-const PanelBlock = ({ title, children, className = "", styleVars }: { title: string, children: React.ReactNode, className?: string, styleVars?: React.CSSProperties }) => (
+const PanelBlock = ({ title, children, className = "", styleVars, action }: { title: string, children: React.ReactNode, className?: string, styleVars?: React.CSSProperties, action?: React.ReactNode }) => (
   <div className={`border flex flex-col relative ${className}`} style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)', ...styleVars }}>
     {title && (
       <div className="absolute -top-2 left-2 px-1 z-10" style={{ backgroundColor: 'var(--theme-surface)' }}>
          <span className="text-[10px] tracking-widest uppercase" style={{ color: 'var(--theme-textMuted)' }}>{title}</span>
+      </div>
+    )}
+    {action && (
+      <div className="absolute -top-2.5 right-2 px-1 z-10 flex items-center" style={{ backgroundColor: 'var(--theme-bg)' }}>
+        {action}
       </div>
     )}
     <div className={`flex-1 overflow-hidden ${title ? 'pt-4' : ''}`}>
@@ -1995,6 +2051,69 @@ export default function App() {
   }, [playlists]);
 
   const currentTrack = playbackQueue[currentTrackIndex] || null;
+
+  // Jump to currently playing track's album / playlist in the bottom bank
+  const handleLocateCurrentTrack = React.useCallback(() => {
+    if (!currentTrack) return;
+
+    // 1. Identify target playlist
+    let targetPl = playlists.find(p => p.id === playingPlaylistId && p.tracks.some(t => t.id === currentTrack.id));
+    if (!targetPl) {
+      targetPl = playlists.find(p => p.id !== 'all-tracks' && p.tracks.some(t => t.id === currentTrack.id));
+    }
+    if (!targetPl) {
+      targetPl = playlists.find(p => p.tracks.some(t => t.id === currentTrack.id)) || playlists.find(p => p.id === 'all-tracks');
+    }
+    if (!targetPl) return;
+
+    // 2. Set active playlist
+    setActivePlaylistId(targetPl.id);
+
+    // 3. Expand category and sidebar folder if applicable
+    if (targetPl.category) {
+      setExpandedCategoryNames(prev => new Set([...prev, targetPl.category!]));
+      if (selectedCategoryFilter && selectedCategoryFilter !== targetPl.category) {
+        setSelectedCategoryFilter(null);
+      }
+    }
+    setExpandedSidebarFolderIds(prev => new Set([...prev, targetPl.id]));
+
+    // 4. Drill down to specific album or focus album
+    const subAlbums = playlistAlbumsMap[targetPl.id] || [];
+    const targetAlbumName = (currentTrack.album || '').trim().toLowerCase();
+    
+    // Check if there is a matching sub-album in this playlist
+    const matchedSub = subAlbums.find(a => 
+      (targetAlbumName && targetAlbumName !== 'unknown album' && a.album.toLowerCase() === targetAlbumName) ||
+      a.tracks.some(t => t.id === currentTrack.id)
+    );
+
+    if (matchedSub && subAlbums.length > 1) {
+      // If playlist has multiple albums (like "T-SQUARE ベストアルバム集"), drill down to the exact sub-album
+      setDrillDownAlbum({ artist: matchedSub.artist, album: matchedSub.album });
+      setFocusedAlbumId(matchedSub.album);
+    } else if (matchedSub) {
+      setFocusedAlbumId(matchedSub.album);
+      setDrillDownAlbum(null);
+    } else if (currentTrack.album && currentTrack.album !== 'Unknown Album') {
+      setFocusedAlbumId(currentTrack.album);
+    } else {
+      setDrillDownAlbum(null);
+      setFocusedAlbumId(null);
+    }
+
+    // 5. Select the track
+    setSelectedTrackIds(new Set([currentTrack.id]));
+    lastSelectedTrackIdRef.current = currentTrack.id;
+
+    // 6. Scroll into view
+    setTimeout(() => {
+      const el = document.getElementById(`track-row-${currentTrack.id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 150);
+  }, [currentTrack, playingPlaylistId, playlists, playlistAlbumsMap, selectedCategoryFilter]);
 
   useEffect(() => {
     const track = playbackQueue[currentTrackIndex];
@@ -4541,6 +4660,7 @@ export default function App() {
       return (
         <div
           key={`${track.id}-${idx}`}
+          id={`track-row-${track.id}`}
           onClick={(e) => {
             if (editingTrackId === track.id) return;
             if (e.shiftKey) {
@@ -5328,7 +5448,26 @@ export default function App() {
       <div className="grid grid-cols-12 gap-4 h-[200px] shrink-0">
         
         {/* 01 TRACK INFO */}
-        <PanelBlock title="01 TRACK INFO" className="col-span-4 p-4 relative">
+        <PanelBlock 
+          title="01 TRACK INFO" 
+          className="col-span-4 p-4 relative"
+          action={currentTrack ? (
+            <button
+              type="button"
+              onClick={handleLocateCurrentTrack}
+              className="flex items-center gap-1 px-1.5 py-0.5 border text-[9px] font-mono tracking-wider transition-all hover:opacity-80 active:scale-95 cursor-pointer shadow-sm group rounded-[1px]"
+              style={{
+                backgroundColor: 'var(--theme-surface)',
+                borderColor: 'var(--theme-border)',
+                color: 'var(--theme-textMain)',
+              }}
+              title="現在再生中の曲のアルバム／歌手の場所へ移動 (LOCATE PLAYING TRACK)"
+            >
+              <Disc size={11} className="group-hover:rotate-45 transition-transform shrink-0" style={{ color: 'var(--theme-accent)' }} />
+              <span className="text-[8.5px] font-mono uppercase" style={{ color: 'var(--theme-accent)' }}>LOCATE</span>
+            </button>
+          ) : undefined}
+        >
           {currentTrack ? (
             <div className="flex h-full gap-4 overflow-hidden relative">
               <div className="h-full aspect-square shrink-0 relative border shadow-inner" style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-bg)' }}>
