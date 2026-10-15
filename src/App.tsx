@@ -2935,13 +2935,28 @@ export default function App() {
   };
 
   const dragCounterRef = useRef(0);
+  const dragTimeoutRef = useRef<any>(null);
+
+  const resetDragOverState = () => {
+    if (dragTimeoutRef.current) {
+      clearTimeout(dragTimeoutRef.current);
+      dragTimeoutRef.current = null;
+    }
+    resetDragOverState();
+    setDragOverCategoryTarget(null);
+  };
+
+  const isExternalFileDrag = (e: React.DragEvent | DragEvent) => {
+    if (!e.dataTransfer) return false;
+    const types = e.dataTransfer.types;
+    if (!types) return false;
+    return Array.from(types).includes('Files') || Array.from(types).includes('application/x-moz-file');
+  };
 
   const handleDrop = async (e: React.DragEvent, dropTargetCategory?: string) => {
     e.preventDefault();
     e.stopPropagation();
-    dragCounterRef.current = 0;
-    setIsDragOver(false);
-    setDragOverCategoryTarget(null);
+    resetDragOverState();
 
     const targetCat = dropTargetCategory !== undefined
       ? dropTargetCategory
@@ -3035,34 +3050,92 @@ export default function App() {
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!isExternalFileDrag(e)) return;
+
     dragCounterRef.current += 1;
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-      setIsDragOver(true);
-    }
+    setIsDragOver(true);
+
+    if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
+    dragTimeoutRef.current = setTimeout(() => {
+      resetDragOverState();
+    }, 1500);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!isExternalFileDrag(e)) return;
+
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'copy';
     }
     if (!isDragOver) {
       setIsDragOver(true);
     }
+
+    if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
+    dragTimeoutRef.current = setTimeout(() => {
+      resetDragOverState();
+    }, 1500);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!isExternalFileDrag(e)) return;
+
     dragCounterRef.current -= 1;
     if (dragCounterRef.current <= 0) {
-      dragCounterRef.current = 0;
-      setIsDragOver(false);
+      resetDragOverState();
     }
   };
 
-  const clearActivePlaylist = () => {
+  // Global listeners to safely cancel drag & drop overlay when user drops outside, hits Esc, or cancels
+  useEffect(() => {
+    const handleGlobalDragEnd = () => {
+      resetDragOverState();
+    };
+
+    const handleGlobalDrop = () => {
+      resetDragOverState();
+    };
+
+    const handleGlobalDragLeave = (e: DragEvent) => {
+      // If pointer leaves the browser window
+      if (!e.relatedTarget && (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight)) {
+        resetDragOverState();
+      }
+    };
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        resetDragOverState();
+      }
+    };
+
+    const handleGlobalPointerDown = () => {
+      // If overlay is somehow stuck, dismiss it upon user click
+      if (isDragOver) {
+        resetDragOverState();
+      }
+    };
+
+    window.addEventListener('dragend', handleGlobalDragEnd);
+    window.addEventListener('drop', handleGlobalDrop);
+    window.addEventListener('dragleave', handleGlobalDragLeave);
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    window.addEventListener('pointerdown', handleGlobalPointerDown);
+
+    return () => {
+      window.removeEventListener('dragend', handleGlobalDragEnd);
+      window.removeEventListener('drop', handleGlobalDrop);
+      window.removeEventListener('dragleave', handleGlobalDragLeave);
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+      window.removeEventListener('pointerdown', handleGlobalPointerDown);
+    };
+  }, [isDragOver]);
+
+const clearActivePlaylist = () => {
      setShowClearConfirm(true);
   };
 
@@ -5774,8 +5847,7 @@ export default function App() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={(e) => {
-            dragCounterRef.current = 0;
-            setIsDragOver(false);
+            resetDragOverState();
             handleDrop(e);
           }}
         >
@@ -7936,8 +8008,7 @@ export default function App() {
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={(e) => {
-                dragCounterRef.current = 0;
-                setIsDragOver(false);
+                resetDragOverState();
                 const targetCat = sidebarCategoryMode === 'dropdown' && selectedCategoryFilter !== '__ALL__' && selectedCategoryFilter !== '__UNCATEGORIZED__'
                   ? selectedCategoryFilter
                   : undefined;
@@ -7992,20 +8063,26 @@ export default function App() {
            onDragOver={handleDragOver}
            onDragLeave={handleDragLeave}
            onDrop={(e) => {
-             dragCounterRef.current = 0;
-             setIsDragOver(false);
+             resetDragOverState();
              handleDrop(e);
            }}
         >
           {/* Drag & Drop Industrial Visual Overlay Guide */}
           {isDragOver && (
             <div 
-              className="absolute inset-2 border-2 border-dashed z-50 flex flex-col items-center justify-center gap-3 backdrop-blur-[2px] transition-all pointer-events-none rounded-[2px]"
+              onClick={() => resetDragOverState()}
+              onDragOver={handleDragOver}
+              onDrop={(e) => {
+                resetDragOverState();
+                handleDrop(e);
+              }}
+              className="absolute inset-2 border-2 border-dashed z-50 flex flex-col items-center justify-center gap-3 backdrop-blur-[2px] transition-all rounded-[2px] cursor-pointer"
               style={{
                 borderColor: 'var(--theme-accent)',
                 backgroundColor: 'var(--theme-surface)',
                 boxShadow: '0 0 24px rgba(0,0,0,0.5), inset 0 0 15px var(--theme-accentMuted)'
               }}
+              title="クリックまたはEscキーでドラッグ待機を解除"
             >
               <div 
                 className="w-14 h-14 border-2 border-dashed rounded-full flex items-center justify-center transition-transform animate-pulse"
@@ -8013,7 +8090,7 @@ export default function App() {
               >
                 <FolderPlus size={28} style={{ color: 'var(--theme-accent)' }} />
               </div>
-              <div className="text-center font-mono flex flex-col gap-1 px-4">
+              <div className="text-center font-mono flex flex-col gap-1 px-4 select-none">
                 <div className="text-xs font-bold tracking-widest uppercase" style={{ color: 'var(--theme-accent)' }}>
                   ■ RELEASE TO IMPORT AUDIO FOLDERS / FILES
                 </div>
@@ -8024,6 +8101,25 @@ export default function App() {
                   [ ALL MP3 / WAV / FLAC / M4A / AAC FILES SUPPORTED ]
                 </div>
               </div>
+
+              {/* Industrial Cancel Button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  resetDragOverState();
+                }}
+                className="mt-2 flex items-center gap-1.5 px-3 py-1 border rounded-[2px] text-[9.5px] font-mono tracking-widest uppercase transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--theme-bg)',
+                  borderColor: 'var(--theme-border)',
+                  color: 'var(--theme-textMain)'
+                }}
+                title="ドラッグ待機をキャンセルして戻る (Escキーまたは画面クリックでも可能)"
+              >
+                <X size={11} style={{ color: 'var(--theme-accent)' }} />
+                <span>CANCEL / RETURN [ESC]</span>
+              </button>
             </div>
           )}
           <div className="border-b px-3 py-1 flex items-center h-9 min-h-[36px] max-h-[36px] justify-between shrink-0 relative z-30 font-mono text-[9px] gap-2 overflow-hidden whitespace-nowrap" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-listHeader-border)' }}>
@@ -8299,19 +8395,42 @@ export default function App() {
               <span className="tracking-widest text-[10px] uppercase">READING FILES... {loadingProgress.done}/{loadingProgress.total}</span>
             </div>
           ) : displayTracks.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center gap-4" style={{ color: 'var(--theme-list-textDim)' }}>
-              <span className="tracking-widest text-[10px] uppercase">NO DATA STORES LINKED</span>
-              <span className="tracking-widest text-[9px] uppercase" style={{ color: 'var(--theme-list-textDim)', opacity: 0.6 }}>DRAG &amp; DROP FILES OR FOLDER HERE</span>
-              {activePlaylistId === 'all-tracks' && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 select-none" style={{ color: 'var(--theme-list-textDim)' }}>
+              <span className="tracking-widest text-[10px] uppercase font-mono">NO DATA STORES LINKED</span>
+              <span className="tracking-widest text-[9px] uppercase font-mono" style={{ color: 'var(--theme-list-textDim)', opacity: 0.6 }}>DRAG &amp; DROP FILES OR FOLDER HERE</span>
+              {activePlaylistId === 'all-tracks' ? (
                 <button 
                   onClick={handleSelectFolder}
-                  className="h-8 px-6 border transition-colors text-[10px] tracking-widest uppercase hover:opacity-80"
+                  className="h-8 px-6 border transition-colors text-[10px] tracking-widest uppercase hover:opacity-80 rounded-[1px] font-mono"
                   style={{ borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMuted)', backgroundColor: 'transparent' }}
                   onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--theme-list-surfaceLighter)'; e.currentTarget.style.color = 'var(--theme-list-textMain)'; }}
                   onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--theme-list-textMuted)'; }}
                 >
                   INITIALIZE FOLDER READ
                 </button>
+              ) : (
+                <div className="flex items-center gap-3 mt-1">
+                  <button 
+                    onClick={() => setActivePlaylistId('all-tracks')}
+                    className="flex items-center gap-1.5 h-8 px-4 border transition-colors text-[9.5px] font-mono tracking-widest uppercase hover:opacity-80 active:scale-95 rounded-[1px] cursor-pointer"
+                    style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}
+                    title="全曲リスト (ALL TRACKS) へ戻る"
+                  >
+                    <ArrowLeft size={11} />
+                    <span>RETURN TO ALL TRACKS</span>
+                  </button>
+                  <button 
+                    onClick={handleSelectFolder}
+                    className="flex items-center gap-1.5 h-8 px-4 border transition-colors text-[9.5px] font-mono tracking-widest uppercase hover:opacity-80 active:scale-95 rounded-[1px] cursor-pointer"
+                    style={{ borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMuted)', backgroundColor: 'transparent' }}
+                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--theme-list-surfaceLighter)'; e.currentTarget.style.color = 'var(--theme-list-textMain)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--theme-list-textMuted)'; }}
+                    title="音楽フォルダ・ファイルを追加"
+                  >
+                    <FolderOpen size={11} />
+                    <span>READ DIRECTORY</span>
+                  </button>
+                </div>
               )}
             </div>
           ) : bankViewMode !== 'tracks' ? (
