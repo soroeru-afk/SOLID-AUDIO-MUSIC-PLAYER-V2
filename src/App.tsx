@@ -4388,9 +4388,7 @@ export default function App() {
           return newQueue;
         });
       }
-      // Deselect after move
-      setSelectedTrackIds(new Set());
-      lastSelectedTrackIdRef.current = null;
+      // Keep selection active so bottom bar stays open and user can continue moving tracks
       return;
     }
 
@@ -4425,9 +4423,7 @@ export default function App() {
         return newQueue;
       });
     }
-    // Deselect after move
-    setSelectedTrackIds(new Set());
-    lastSelectedTrackIdRef.current = null;
+    // Keep selection active so bottom bar stays open and user can continuously reorder tracks
   };
 
   // --- Album Ordering (Top, Up, Down, Bottom & Drag-and-Drop) ---
@@ -9267,6 +9263,7 @@ export default function App() {
                 {/* Floating / Sticky Industrial Batch Action Bar at bottom */}
                 {selectedTrackIds.size > 0 && (
                   <div
+                    onClick={(e) => e.stopPropagation()}
                     className="sticky bottom-0 left-0 right-0 z-30 px-3 py-1.5 border-t flex items-center justify-between gap-2 font-mono shrink-0 select-none overflow-visible"
                     style={{
                       backgroundColor: 'var(--theme-surface)',
@@ -9350,7 +9347,10 @@ export default function App() {
                         <button
                           type="button"
                           disabled={!canMoveSelectedTop}
-                          onClick={() => moveSelectedTracks('top')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveSelectedTracks('top');
+                          }}
                           className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25 cursor-pointer"
                           style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
                           title={`選択した${selectedTrackIds.size}曲を一番上へ移動 (TOP)`}
@@ -9360,7 +9360,10 @@ export default function App() {
                         <button
                           type="button"
                           disabled={!canMoveSelectedUp}
-                          onClick={() => moveSelectedTracks('up')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveSelectedTracks('up');
+                          }}
                           className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25 cursor-pointer"
                           style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
                           title={`選択した${selectedTrackIds.size}曲を上へ移動 (UP)`}
@@ -9370,7 +9373,10 @@ export default function App() {
                         <button
                           type="button"
                           disabled={!canMoveSelectedDown}
-                          onClick={() => moveSelectedTracks('down')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveSelectedTracks('down');
+                          }}
                           className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25 cursor-pointer"
                           style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
                           title={`選択した${selectedTrackIds.size}曲を下へ移動 (DOWN)`}
@@ -9380,7 +9386,10 @@ export default function App() {
                         <button
                           type="button"
                           disabled={!canMoveSelectedBottom}
-                          onClick={() => moveSelectedTracks('bottom')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveSelectedTracks('bottom');
+                          }}
                           className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25 cursor-pointer"
                           style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
                           title={`選択した${selectedTrackIds.size}曲を一番下へ移動 (BOTTOM)`}
