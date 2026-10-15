@@ -2942,7 +2942,8 @@ export default function App() {
       clearTimeout(dragTimeoutRef.current);
       dragTimeoutRef.current = null;
     }
-    resetDragOverState();
+    dragCounterRef.current = 0;
+    setIsDragOver(false);
     setDragOverCategoryTarget(null);
   };
 
@@ -3108,30 +3109,33 @@ export default function App() {
     };
 
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' || e.key === 'Esc' || e.code === 'Escape') {
         resetDragOverState();
       }
     };
 
     const handleGlobalPointerDown = () => {
-      // If overlay is somehow stuck, dismiss it upon user click
       if (isDragOver) {
         resetDragOverState();
       }
     };
 
-    window.addEventListener('dragend', handleGlobalDragEnd);
-    window.addEventListener('drop', handleGlobalDrop);
+    window.addEventListener('dragend', handleGlobalDragEnd, true);
+    window.addEventListener('drop', handleGlobalDrop, true);
     window.addEventListener('dragleave', handleGlobalDragLeave);
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    window.addEventListener('pointerdown', handleGlobalPointerDown);
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    window.addEventListener('keyup', handleGlobalKeyDown, true);
+    window.addEventListener('pointerdown', handleGlobalPointerDown, true);
+    window.addEventListener('mousedown', handleGlobalPointerDown, true);
 
     return () => {
-      window.removeEventListener('dragend', handleGlobalDragEnd);
-      window.removeEventListener('drop', handleGlobalDrop);
+      window.removeEventListener('dragend', handleGlobalDragEnd, true);
+      window.removeEventListener('drop', handleGlobalDrop, true);
       window.removeEventListener('dragleave', handleGlobalDragLeave);
-      window.removeEventListener('keydown', handleGlobalKeyDown);
-      window.removeEventListener('pointerdown', handleGlobalPointerDown);
+      window.removeEventListener('keydown', handleGlobalKeyDown, true);
+      window.removeEventListener('keyup', handleGlobalKeyDown, true);
+      window.removeEventListener('pointerdown', handleGlobalPointerDown, true);
+      window.removeEventListener('mousedown', handleGlobalPointerDown, true);
     };
   }, [isDragOver]);
 
