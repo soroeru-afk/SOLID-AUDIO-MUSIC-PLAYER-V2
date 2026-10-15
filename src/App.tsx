@@ -6,7 +6,7 @@ import {
   Minimize2, Maximize2, Layers, Minus, PanelTop, GripVertical, Type, Eye, EyeOff,
   LayoutGrid, List, Disc, User, ChevronRight, ArrowLeft, PanelLeftClose, PanelLeftOpen, Edit2,
   ArrowLeftRight, FileText, FolderPlus, FolderTree, Tag, Move,
-  Bookmark, BookmarkPlus, BookmarkCheck, RotateCcw
+  Bookmark, BookmarkPlus, BookmarkCheck, RotateCcw, Star, Pin
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { get, set, del } from 'idb-keyval';
@@ -548,7 +548,6 @@ const parseFilename = (
   };
 };
 
-// Comprehensive cleaner for Song Titles (cleans both existing track.title and track.fileName)
 export const cleanSongTitle = (
   track: Track, 
   currentPlName?: string
@@ -604,13 +603,11 @@ const PanelBlock = ({ title, children, className = "", styleVars, action }: { ti
       </div>
     )}
     {action && (
-      <div className="absolute -top-2.5 right-2 px-1 z-10 flex items-center" style={{ backgroundColor: 'var(--theme-bg)' }}>
+      <div className="absolute -top-2.5 right-2 px-1 z-10 flex items-center" style={{ backgroundColor: 'var(--theme-surface)' }}>
         {action}
       </div>
     )}
-    <div className={`flex-1 overflow-hidden ${title ? 'pt-4' : ''}`}>
-      {children}
-    </div>
+    {children}
   </div>
 );
 
@@ -640,6 +637,26 @@ export default function App() {
   const [activePlaylistId, setActivePlaylistId] = useState<string>('all-tracks');
   const [playingPlaylistId, setPlayingPlaylistId] = useState<string>('all-tracks');
   
+  // Favorite Target Playlist (クイック登録先・★ミックス先プレイリスト)
+  const [favoriteTargetPlaylistId, setFavoriteTargetPlaylistId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('v2_solidFavoriteTargetPlaylistId') || null;
+    } catch {
+      return null;
+    }
+  });
+  const [favoriteToast, setFavoriteToast] = useState<{ id: string; message: string; isAdd?: boolean } | null>(null);
+  const favoriteToastTimerRef = useRef<any>(null);
+
+  const showFavoriteToast = (message: string, isAdd: boolean = true) => {
+    if (favoriteToastTimerRef.current) clearTimeout(favoriteToastTimerRef.current);
+    const id = uuidv4();
+    setFavoriteToast({ id, message, isAdd });
+    favoriteToastTimerRef.current = setTimeout(() => {
+      setFavoriteToast(null);
+    }, 2800);
+  };
+  
   // Player state
   const [playbackQueue, setPlaybackQueue] = useState<Track[]>([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number>(-1);
@@ -662,8 +679,32 @@ export default function App() {
     } catch(e) {}
     return false;
   });
-  const [isShuffle, setIsShuffle] = useState(false);
-  const [repeatMode, setRepeatMode] = useState<0|1|2|3>(0); // 0: off, 1: all, 2: one, 3: set (selected lists)
+  // Shuffle mode: 'off' | 'all' (all songs) | 'list' (current playlist / folder / list)
+  const [shuffleMode, setShuffleMode] = useState<'off' | 'all' | 'list'>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solidShuffleMode');
+      if (saved === 'all' || saved === 'list' || saved === 'off') return saved;
+      // Fallback for previous boolean
+      if (localStorage.getItem('v2_solidIsShuffle') === 'true') return 'all';
+    } catch(e) {}
+    return 'off';
+  });
+  const isShuffle = shuffleMode !== 'off';
+
+  const cycleShuffleMode = () => {
+    setShuffleMode(prev => {
+      let next: 'off' | 'all' | 'list' = 'off';
+      if (prev === 'off') next = 'all';
+      else if (prev === 'all') next = 'list';
+      else next = 'off';
+      try {
+        localStorage.setItem('v2_solidShuffleMode', next);
+      } catch(e) {}
+      return next;
+    });
+  };
+
+  const [repeatMode, setRepeatMode] = useState<0|1|2|3>(0); // 0: off, 1: all, 2: one, 3: set (selected lists / current playlist loop)
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -722,12 +763,29 @@ export default function App() {
       return 'md';
     }
   });
+  // Separate scales for CARD, ALBUM, and LIST so each mode maintains its own independent size
   const [cardScale, setCardScale] = useState<number>(() => {
     try {
-      const saved = localStorage.getItem('v2_solid_card_scale');
+      const saved = localStorage.getItem('v2_solid_scale_card') || localStorage.getItem('v2_solid_card_scale');
       return saved ? parseInt(saved, 10) : 190;
     } catch {
       return 190;
+    }
+  });
+  const [albumScale, setAlbumScale] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solid_scale_album') || localStorage.getItem('v2_solid_card_scale');
+      return saved ? parseInt(saved, 10) : 190;
+    } catch {
+      return 190;
+    }
+  });
+  const [listScale, setListScale] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solid_scale_list');
+      return saved ? parseInt(saved, 10) : 48;
+    } catch {
+      return 48;
     }
   });
   const [groupByArtist, setGroupByArtist] = useState<boolean>(() => {
@@ -755,7 +813,7 @@ export default function App() {
 
   const [listFontSize, setListFontSize] = useState<number>(11);
   const [colWidths, setColWidths] = useState({
-    index: 96,
+    index: 116,
     art: 40,
     trackNumber: 48,
     fileName: 180,
@@ -1316,12 +1374,16 @@ export default function App() {
         if (savedEqMid !== undefined && !isNaN(savedEqMid)) setEqMid(savedEqMid);
         if (savedEqHigh !== undefined && !isNaN(savedEqHigh)) setEqHigh(savedEqHigh);
         
+        const savedFavTargetId = await get('v2_solidFavoriteTargetPlaylistId');
+        if (savedFavTargetId) setFavoriteTargetPlaylistId(savedFavTargetId);
+
         if (savedSidebarWidth && !isNaN(savedSidebarWidth)) setSidebarWidth(savedSidebarWidth);
         if (savedColWidths) {
           const sanitized = { ...savedColWidths };
           Object.keys(sanitized).forEach(k => {
             if (isNaN(sanitized[k])) sanitized[k] = 100;
           });
+          if (sanitized.index && sanitized.index < 116) sanitized.index = 116;
           setColWidths(prev => ({ ...prev, ...sanitized }));
         }
         if (savedColVisibility) setColVisibility(prev => ({ ...prev, ...savedColVisibility }));
@@ -1468,10 +1530,15 @@ export default function App() {
         set('v2_solidCategories', categories).catch(console.error);
         set('v2_solidSidebarCategoryMode', sidebarCategoryMode).catch(console.error);
         set('v2_solidSelectedCategoryFilter', selectedCategoryFilter).catch(console.error);
+        set('v2_solidFavoriteTargetPlaylistId', favoriteTargetPlaylistId).catch(console.error);
+        try {
+          if (favoriteTargetPlaylistId) localStorage.setItem('v2_solidFavoriteTargetPlaylistId', favoriteTargetPlaylistId);
+          else localStorage.removeItem('v2_solidFavoriteTargetPlaylistId');
+        } catch {}
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [library, playlists, sidebarWidth, colWidths, colVisibility, colOrder, themeIndex, fontFamilyId, listFontSize, activePlaylistId, playingPlaylistId, playbackQueue, currentTrackIndex, categories, sidebarCategoryMode, selectedCategoryFilter, isInitialized]);
+  }, [library, playlists, sidebarWidth, colWidths, colVisibility, colOrder, themeIndex, fontFamilyId, listFontSize, activePlaylistId, playingPlaylistId, playbackQueue, currentTrackIndex, categories, sidebarCategoryMode, selectedCategoryFilter, favoriteTargetPlaylistId, isInitialized]);
 
   // Close theme menu on outside click or Escape key
   useEffect(() => {
@@ -1712,6 +1779,16 @@ export default function App() {
 
   const activePlaylist = playlists.find(p => p.id === activePlaylistId) || playlists[0];
   const playingPlaylist = playlists.find(p => p.id === playingPlaylistId) || playlists[0];
+
+  const favoriteTargetPlaylist = useMemo(() => {
+    if (!favoriteTargetPlaylistId) return null;
+    return playlists.find(p => p.id === favoriteTargetPlaylistId && p.id !== 'all-tracks') || null;
+  }, [favoriteTargetPlaylistId, playlists]);
+
+  const favoriteTrackIds = useMemo(() => {
+    if (!favoriteTargetPlaylist) return new Set<string>();
+    return new Set(favoriteTargetPlaylist.tracks.map(t => t.id));
+  }, [favoriteTargetPlaylist]);
 
   const getSortedTracks = (tracks: Track[]) => {
     if (activeSortConfig.key === 'none') return tracks;
@@ -2944,14 +3021,7 @@ export default function App() {
     }
     dragCounterRef.current = 0;
     setIsDragOver(false);
-    setDragOverPlaylistId(null);
-    setDraggedPlaylistId(null);
     setDragOverCategoryTarget(null);
-    setDraggedCategoryName(null);
-    setDragOverCategoryReorderTarget(null);
-    setCategoryDropPosition(null);
-    setSidebarDragAlbum(null);
-    setSidebarDragOverAlbum(null);
   };
 
   const isExternalFileDrag = (e: React.DragEvent | DragEvent) => {
@@ -3116,37 +3186,35 @@ export default function App() {
     };
 
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' || e.key === 'Esc' || e.code === 'Escape') {
+      if (e.key === 'Escape') {
         resetDragOverState();
       }
     };
 
     const handleGlobalPointerDown = () => {
+      // If overlay is somehow stuck, dismiss it upon user click
       if (isDragOver) {
         resetDragOverState();
       }
     };
 
-    window.addEventListener('dragend', handleGlobalDragEnd, true);
-    window.addEventListener('drop', handleGlobalDrop, true);
+    window.addEventListener('dragend', handleGlobalDragEnd);
+    window.addEventListener('drop', handleGlobalDrop);
     window.addEventListener('dragleave', handleGlobalDragLeave);
-    window.addEventListener('keydown', handleGlobalKeyDown, true);
-    window.addEventListener('keyup', handleGlobalKeyDown, true);
-    window.addEventListener('pointerdown', handleGlobalPointerDown, true);
-    window.addEventListener('mousedown', handleGlobalPointerDown, true);
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    window.addEventListener('pointerdown', handleGlobalPointerDown);
 
     return () => {
-      window.removeEventListener('dragend', handleGlobalDragEnd, true);
-      window.removeEventListener('drop', handleGlobalDrop, true);
+      window.removeEventListener('dragend', handleGlobalDragEnd);
+      window.removeEventListener('drop', handleGlobalDrop);
       window.removeEventListener('dragleave', handleGlobalDragLeave);
-      window.removeEventListener('keydown', handleGlobalKeyDown, true);
-      window.removeEventListener('keyup', handleGlobalKeyDown, true);
-      window.removeEventListener('pointerdown', handleGlobalPointerDown, true);
-      window.removeEventListener('mousedown', handleGlobalPointerDown, true);
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+      window.removeEventListener('pointerdown', handleGlobalPointerDown);
     };
   }, [isDragOver]);
 
-const clearActivePlaylist = () => {
+
+  const clearActivePlaylist = () => {
      setShowClearConfirm(true);
   };
 
@@ -3352,22 +3420,24 @@ const clearActivePlaylist = () => {
   };
 
   const handleNext = () => {
-    // Mode 3: SET repeat across selected playlists
-    if (repeatMode === 3 && selectedPlaylistIds.size > 0) {
-      // Gather all selected playlists that actually exist
+    // Mode 3: SET repeat across selected playlists OR within current active playlist
+    if (repeatMode === 3) {
       const chosenPlaylists = playlists.filter(p => p.id !== 'all-tracks' && selectedPlaylistIds.has(p.id));
       if (chosenPlaylists.length > 0) {
-        // If shuffle is active, pick random playlist and random track from it
-        if (isShuffle) {
+        // If shuffle is active
+        if (shuffleMode !== 'off') {
           const validPlaylists = chosenPlaylists.filter(p => p.tracks.length > 0);
           if (validPlaylists.length > 0) {
-            const randomPl = validPlaylists[Math.floor(Math.random() * validPlaylists.length)];
-            const randomTrackIdx = Math.floor(Math.random() * randomPl.tracks.length);
-            setPlaybackQueue(randomPl.tracks);
-            setPlayingPlaylistId(randomPl.id);
-            setCurrentTrackIndex(randomTrackIdx);
-            setIsPlaying(true);
-            return;
+            if (shuffleMode === 'list') {
+              // LIST SHUFFLE across the selected set
+              const randomPl = validPlaylists[Math.floor(Math.random() * validPlaylists.length)];
+              const randomTrackIdx = Math.floor(Math.random() * randomPl.tracks.length);
+              setPlaybackQueue(randomPl.tracks);
+              setPlayingPlaylistId(randomPl.id);
+              setCurrentTrackIndex(randomTrackIdx);
+              setIsPlaying(true);
+              return;
+            }
           }
         }
 
@@ -3380,7 +3450,7 @@ const clearActivePlaylist = () => {
             setIsPlaying(true);
             return;
           } else {
-            // Move to next selected playlist with tracks
+            // Move to next selected playlist with tracks (cyclic)
             let nextPlIdx = (currentPlIdx + 1) % chosenPlaylists.length;
             let attempts = 0;
             while (chosenPlaylists[nextPlIdx].tracks.length === 0 && attempts < chosenPlaylists.length) {
@@ -3407,11 +3477,30 @@ const clearActivePlaylist = () => {
             return;
           }
         }
+      } else if (playingPlaylistId && playingPlaylistId !== 'all-tracks') {
+        // Guaranteed single playlist loop when no set checked
+        if (playbackQueue.length > 0) {
+          if (shuffleMode === 'list') {
+            let nextIndex = Math.floor(Math.random() * playbackQueue.length);
+            if (nextIndex === currentTrackIndex && playbackQueue.length > 1) {
+              nextIndex = (nextIndex + 1) % playbackQueue.length;
+            }
+            setCurrentTrackIndex(nextIndex);
+            setIsPlaying(true);
+            return;
+          } else {
+            const nextIndex = (currentTrackIndex + 1) % playbackQueue.length;
+            setCurrentTrackIndex(nextIndex);
+            setIsPlaying(true);
+            return;
+          }
+        }
       }
     }
 
     if (playbackQueue.length === 0) return;
     
+    // Repeat One
     if (repeatMode === 2) {
       if (audioRef.current) {
         audioRef.current.currentTime = 0;
@@ -3420,27 +3509,49 @@ const clearActivePlaylist = () => {
       return;
     }
 
-    if (isShuffle) {
+    // ALL SHUFFLE: Pick random track from entire library / ALL TRACKS
+    if (shuffleMode === 'all') {
+      const allTracksList = playlists.find(p => p.id === 'all-tracks')?.tracks || library;
+      if (allTracksList.length > 0) {
+        let nextIndex = Math.floor(Math.random() * allTracksList.length);
+        if (allTracksList[nextIndex]?.id === currentTrack?.id && allTracksList.length > 1) {
+          nextIndex = (nextIndex + 1) % allTracksList.length;
+        }
+        // If current playbackQueue isn't allTracksList, switch queue to all tracks or play directly
+        setPlaybackQueue(allTracksList);
+        setPlayingPlaylistId('all-tracks');
+        setCurrentTrackIndex(nextIndex);
+        setIsPlaying(true);
+        return;
+      }
+    }
+
+    // LIST SHUFFLE: Pick random track from current active playlist / queue only
+    if (shuffleMode === 'list') {
       let nextIndex = Math.floor(Math.random() * playbackQueue.length);
       if (nextIndex === currentTrackIndex && playbackQueue.length > 1) {
         nextIndex = (nextIndex + 1) % playbackQueue.length;
       }
       setCurrentTrackIndex(nextIndex);
-    } else {
-      const nextIndex = currentTrackIndex + 1;
-      if (nextIndex >= playbackQueue.length) {
-        setCurrentTrackIndex(0);
-        if (repeatMode === 0) {
-          setIsPlaying(false);
-          if (audioRef.current) {
-            audioRef.current.pause();
-            audioRef.current.currentTime = 0;
-          }
-          return;
+      setIsPlaying(true);
+      return;
+    }
+
+    // Sequential next
+    const nextIndex = currentTrackIndex + 1;
+    if (nextIndex >= playbackQueue.length) {
+      setCurrentTrackIndex(0);
+      // If repeat is OFF (0), stop playback
+      if (repeatMode === 0) {
+        setIsPlaying(false);
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
         }
-      } else {
-        setCurrentTrackIndex(nextIndex);
+        return;
       }
+    } else {
+      setCurrentTrackIndex(nextIndex);
     }
     setIsPlaying(true);
   };
@@ -3529,6 +3640,148 @@ const clearActivePlaylist = () => {
     }
     setIsCreatingPlaylist(false);
     setNewPlaylistName('');
+  };
+
+  const handleCreateFavoritePlaylist = (explicitName?: string) => {
+    let targetName = explicitName;
+    if (!targetName) {
+      // Find highest existing "お気に入り XXX"
+      const favRegex = /^(?:お気に入り|FAVORITE)\s*(\d+)$/i;
+      let maxNum = 0;
+      playlists.forEach(p => {
+        const match = p.name.trim().match(favRegex);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > maxNum) maxNum = num;
+        }
+      });
+      const nextNum = (maxNum + 1).toString().padStart(3, '0');
+      targetName = `お気に入り ${nextNum}`;
+    }
+
+    const targetCat = (selectedCategoryFilter !== '__ALL__' && selectedCategoryFilter !== '__UNCATEGORIZED__')
+      ? selectedCategoryFilter
+      : undefined;
+
+    const newPl: Playlist = {
+      id: uuidv4(),
+      name: targetName,
+      tracks: [],
+      category: targetCat
+    };
+
+    setPlaylists(prev => [prev[0], newPl, ...prev.slice(1)]);
+    setFavoriteTargetPlaylistId(newPl.id);
+    try {
+      localStorage.setItem('v2_solidFavoriteTargetPlaylistId', newPl.id);
+    } catch {}
+    showFavoriteToast(`★ クイック登録先を [${newPl.name}] に設定しました`, true);
+    return newPl;
+  };
+
+  const handleSetFavoriteTargetPlaylist = (playlistId: string | null, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!playlistId || playlistId === favoriteTargetPlaylistId) {
+      setFavoriteTargetPlaylistId(null);
+      try { localStorage.removeItem('v2_solidFavoriteTargetPlaylistId'); } catch {}
+      showFavoriteToast('☆ お気に入り登録先の指定を解除しました', false);
+    } else {
+      const targetPl = playlists.find(p => p.id === playlistId && p.id !== 'all-tracks');
+      if (targetPl) {
+        setFavoriteTargetPlaylistId(playlistId);
+        try { localStorage.setItem('v2_solidFavoriteTargetPlaylistId', playlistId); } catch {}
+        showFavoriteToast(`★ クイック登録先に [${targetPl.name}] を指定しました`, true);
+      }
+    }
+  };
+
+  const handleToggleTrackFavorite = (track: Track, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    let targetPl = favoriteTargetPlaylist;
+    // If no target playlist is active, auto-create one or pick the active custom playlist
+    if (!targetPl) {
+      if (activePlaylistId !== 'all-tracks') {
+        const cur = playlists.find(p => p.id === activePlaylistId);
+        if (cur) {
+          setFavoriteTargetPlaylistId(cur.id);
+          try { localStorage.setItem('v2_solidFavoriteTargetPlaylistId', cur.id); } catch {}
+          targetPl = cur;
+          showFavoriteToast(`★ クイック登録先に [${cur.name}] を指定しました`, true);
+        }
+      }
+      if (!targetPl) {
+        targetPl = handleCreateFavoritePlaylist();
+      }
+    }
+
+    const targetId = targetPl.id;
+    const isAlreadyIn = targetPl.tracks.some(t => t.id === track.id);
+
+    if (isAlreadyIn) {
+      setPlaylists(prev => prev.map(p => {
+        if (p.id === targetId) {
+          return { ...p, tracks: p.tracks.filter(t => t.id !== track.id) };
+        }
+        return p;
+      }));
+      showFavoriteToast(`☆ [${targetPl.name}] から除外しました: ${track.title || track.fileName}`, false);
+    } else {
+      setPlaylists(prev => prev.map(p => {
+        if (p.id === targetId) {
+          if (p.tracks.some(t => t.id === track.id)) return p;
+          return { ...p, tracks: [...p.tracks, track] };
+        }
+        return p;
+      }));
+      showFavoriteToast(`★ [${targetPl.name}] に追加しました: ${track.title || track.fileName}`, true);
+    }
+  };
+
+  const handleBatchAddToFavorite = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const currentList = drillDownAlbum ? drillDownTracks : displayTracks;
+    const selectedTracks = currentList.filter(t => selectedTrackIds.has(t.id));
+    if (selectedTracks.length === 0) return;
+
+    let targetPl = favoriteTargetPlaylist;
+    if (!targetPl) {
+      if (activePlaylistId !== 'all-tracks') {
+        const cur = playlists.find(p => p.id === activePlaylistId);
+        if (cur) {
+          setFavoriteTargetPlaylistId(cur.id);
+          try { localStorage.setItem('v2_solidFavoriteTargetPlaylistId', cur.id); } catch {}
+          targetPl = cur;
+        }
+      }
+      if (!targetPl) {
+        targetPl = handleCreateFavoritePlaylist();
+      }
+    }
+
+    const targetId = targetPl.id;
+    let addedCount = 0;
+
+    setPlaylists(prev => prev.map(p => {
+      if (p.id === targetId) {
+        const existingIds = new Set(p.tracks.map(t => t.id));
+        const newTracks = selectedTracks.filter(t => !existingIds.has(t.id));
+        addedCount = newTracks.length;
+        return { ...p, tracks: [...p.tracks, ...newTracks] };
+      }
+      return p;
+    }));
+
+    if (addedCount > 0) {
+      showFavoriteToast(`★ [${targetPl.name}] に ${addedCount} 曲追加しました (計 ${targetPl.tracks.length + addedCount} 曲)`, true);
+    } else {
+      showFavoriteToast(`※ 選択した全曲はすでに [${targetPl.name}] に登録済みです`, false);
+    }
+    setSelectedTrackIds(new Set());
+    lastSelectedTrackIdRef.current = null;
   };
 
   const cycleTheme = (e?: React.MouseEvent) => {
@@ -3745,12 +3998,12 @@ const clearActivePlaylist = () => {
 
   const handlePlaylistDragOver = (e: React.DragEvent, id: string) => {
     e.preventDefault();
-    if (!draggedPlaylistId || id === 'all-tracks' || id === draggedPlaylistId) {
-      if (dragOverPlaylistId !== null) setDragOverPlaylistId(null);
-      return;
-    }
     e.dataTransfer.dropEffect = 'move';
-    setDragOverPlaylistId(id);
+    if (id !== 'all-tracks' && id !== draggedPlaylistId) {
+      setDragOverPlaylistId(id);
+    } else {
+      setDragOverPlaylistId(null);
+    }
   };
 
   const handlePlaylistDrop = (e: React.DragEvent, targetId: string) => {
@@ -4787,7 +5040,35 @@ const clearActivePlaylist = () => {
                     {isSelected && <Check size={8} className="text-white" />}
                 </div>
             </div>
-            <div className="w-8 flex-shrink-0 flex items-center justify-center relative" style={{ color: 'var(--theme-list-textDim)' }}>
+
+            {/* Quick Star / Pin to Favorite Playlist */}
+            {(() => {
+              const isInFav = favoriteTrackIds.has(track.id);
+              return (
+                <div 
+                  className="w-6 flex-shrink-0 flex items-center justify-center cursor-pointer"
+                  onClick={(e) => handleToggleTrackFavorite(track, e)}
+                  title={
+                    isInFav
+                      ? `★ [${favoriteTargetPlaylist?.name || 'お気に入り'}] に追加済み（クリックで除外）`
+                      : favoriteTargetPlaylist
+                      ? `★ [${favoriteTargetPlaylist.name}] にワンクリック追加`
+                      : `★ お気に入りリストを作成して追加`
+                  }
+                >
+                  <Star 
+                    size={12} 
+                    className={`transition-all duration-150 ${
+                      isInFav 
+                        ? 'fill-amber-400 text-amber-400 opacity-100 scale-110' 
+                        : 'text-neutral-500 opacity-0 group-hover:opacity-40 hover:!opacity-100 hover:text-amber-400 hover:scale-110'
+                    }`} 
+                  />
+                </div>
+              );
+            })()}
+
+            <div className="w-7 flex-shrink-0 flex items-center justify-center relative" style={{ color: 'var(--theme-list-textDim)' }}>
               {isActive ? (
                  <div className="absolute w-[6px] h-[6px] rounded-full" style={{ backgroundColor: 'var(--theme-list-accent)', boxShadow: `0 0 8px var(--theme-list-accent)` }}></div>
               ) : (
@@ -4998,7 +5279,7 @@ const clearActivePlaylist = () => {
         </div>
       );
     });
-  }, [tracksToRender, drillDownAlbum, drillDownTracks, displayTracks, activePlaylistId, playingPlaylistId, currentTrackIndex, currentTrack?.id, selectedTrackIds, editingTrackId, editTitle, editArtist, editFileName, listIconColor, activeSortConfig.key, colWidths, colVisibility]);
+  }, [tracksToRender, drillDownAlbum, drillDownTracks, displayTracks, activePlaylistId, playingPlaylistId, currentTrackIndex, currentTrack?.id, selectedTrackIds, editingTrackId, editTitle, editArtist, editFileName, listIconColor, activeSortConfig.key, colWidths, colVisibility, favoriteTrackIds, favoriteTargetPlaylist?.name]);
 
   // Replace old PanelBlock definition location
   return (
@@ -5115,11 +5396,18 @@ const clearActivePlaylist = () => {
                           {/* Controls */}
                           <div className="flex items-center justify-between mt-2">
                              <button 
-                               onClick={() => setIsShuffle(!isShuffle)}
-                               className="w-8 h-8 flex items-center justify-center rounded transition-colors hover:opacity-80"
+                               onClick={cycleShuffleMode}
+                               className="w-8 h-8 flex items-center justify-center rounded transition-colors relative hover:opacity-80"
                                style={{ color: isShuffle ? 'var(--theme-accent)' : 'var(--theme-textMuted)' }}
+                               title={shuffleMode === 'all' ? "全曲シャッフル (ALL SHUFFLE: ライブラリ全曲からランダム)" : shuffleMode === 'list' ? "リスト内シャッフル (LIST SHUFFLE: 現在のリスト内からランダム)" : "シャッフルOFF（クリックで ALL / LIST 切替）"}
                              >
                                 <Shuffle size={14} />
+                                {shuffleMode === 'all' && (
+                                  <span className="absolute -top-1 -right-1 text-[7px] font-mono font-bold px-0.5 rounded leading-none" style={{ backgroundColor: 'var(--theme-accentDark)', color: '#fff' }}>ALL</span>
+                                )}
+                                {shuffleMode === 'list' && (
+                                  <span className="absolute -top-1 -right-1 text-[7px] font-mono font-bold px-0.5 rounded leading-none" style={{ backgroundColor: 'var(--theme-accent)', color: '#000' }}>LIST</span>
+                                )}
                              </button>
 
                              <div className="flex items-center gap-6">
@@ -5142,7 +5430,7 @@ const clearActivePlaylist = () => {
                                onClick={() => setRepeatMode((prev) => (prev + 1) % 4 as 0|1|2|3)}
                                className="w-8 h-8 flex items-center justify-center rounded transition-colors relative hover:opacity-80"
                                style={{ color: repeatMode > 0 ? 'var(--theme-accent)' : 'var(--theme-textMuted)' }}
-                               title={repeatMode === 1 ? "Repeat All" : repeatMode === 2 ? "Repeat One" : repeatMode === 3 ? "Repeat Set" : "Repeat Off"}
+                               title={repeatMode === 1 ? "Repeat All (全曲リピート)" : repeatMode === 2 ? "Repeat One (1曲リピート)" : repeatMode === 3 ? "Repeat Set / List (リスト内リピート / 選択セット周回)" : "Repeat Off"}
                              >
                                 <Repeat size={14} />
                                 {repeatMode === 2 && <span className="absolute top-0 right-0 text-[8px] font-bold" style={{ color: 'var(--theme-accent)' }}>1</span>}
@@ -5186,10 +5474,31 @@ const clearActivePlaylist = () => {
                                <Activity size={16} className="absolute inset-0 m-auto" style={{ color: 'var(--theme-textDim)' }} />
                             )}
                          </div>
-                         <div className="flex flex-col min-w-0 overflow-hidden">
+                         <div className="flex flex-col min-w-0 overflow-hidden flex-1">
                             <div className="text-xs font-bold truncate tracking-wide" style={{ color: 'var(--theme-textMain)' }}>{currentTrack.title}</div>
                             <div className="text-[9px] uppercase tracking-wider truncate" style={{ color: 'var(--theme-textMuted)' }}>{currentTrack.artist}</div>
                          </div>
+                         <button
+                           type="button"
+                           onClick={(e) => handleToggleTrackFavorite(currentTrack, e)}
+                           className="p-1 hover:opacity-80 active:scale-95 transition-all cursor-pointer shrink-0"
+                           title={
+                             favoriteTrackIds.has(currentTrack.id)
+                               ? `★ [${favoriteTargetPlaylist?.name || 'お気に入り'}] に追加済み (クリックで除外)`
+                               : favoriteTargetPlaylist
+                               ? `★ [${favoriteTargetPlaylist.name}] にワンクリック追加`
+                               : `★ お気に入りリストを作成して追加`
+                           }
+                         >
+                           <Star
+                             size={13}
+                             className={
+                               favoriteTrackIds.has(currentTrack.id)
+                                 ? "fill-amber-400 text-amber-400"
+                                 : "text-neutral-500 hover:text-amber-400 opacity-60 hover:opacity-100"
+                             }
+                           />
+                         </button>
                       </div>
 
                       <div className="flex items-center gap-3 justify-center shrink-0">
@@ -5223,17 +5532,24 @@ const clearActivePlaylist = () => {
 
                       <div className="flex items-center gap-1 shrink-0 px-2">
                           <button 
-                            onClick={() => setIsShuffle(!isShuffle)}
-                            className="w-6 h-6 flex items-center justify-center rounded transition-colors hover:opacity-80"
+                            onClick={cycleShuffleMode}
+                            className="w-6 h-6 flex items-center justify-center rounded transition-colors relative hover:opacity-80"
                             style={{ color: isShuffle ? 'var(--theme-accent)' : 'var(--theme-textMuted)', backgroundColor: isShuffle ? 'var(--theme-accentMuted)' : 'transparent' }}
+                            title={shuffleMode === 'all' ? "全曲シャッフル (ALL SHUFFLE)" : shuffleMode === 'list' ? "リスト内シャッフル (LIST SHUFFLE)" : "シャッフルOFF"}
                           >
                              <Shuffle size={12} />
+                             {shuffleMode === 'all' && (
+                               <span className="absolute -top-1 -right-1 text-[6px] font-mono font-bold px-0.5 rounded leading-none" style={{ backgroundColor: 'var(--theme-accentDark)', color: '#fff' }}>ALL</span>
+                             )}
+                             {shuffleMode === 'list' && (
+                               <span className="absolute -top-1 -right-1 text-[6px] font-mono font-bold px-0.5 rounded leading-none" style={{ backgroundColor: 'var(--theme-accent)', color: '#000' }}>LIST</span>
+                             )}
                           </button>
                           <button 
                             onClick={() => setRepeatMode((prev) => (prev + 1) % 4 as 0|1|2|3)}
                             className="w-6 h-6 flex items-center justify-center rounded transition-colors relative hover:opacity-80"
                             style={{ color: repeatMode > 0 ? 'var(--theme-accent)' : 'var(--theme-textMuted)', backgroundColor: repeatMode > 0 ? 'var(--theme-accentMuted)' : 'transparent' }}
-                            title={repeatMode === 1 ? "Repeat All" : repeatMode === 2 ? "Repeat One" : repeatMode === 3 ? "Repeat Set" : "Repeat Off"}
+                            title={repeatMode === 1 ? "Repeat All (全曲リピート)" : repeatMode === 2 ? "Repeat One (1曲リピート)" : repeatMode === 3 ? "Repeat Set / List (リスト内リピート / 選択セット周回)" : "Repeat Off"}
                           >
                              <Repeat size={12} />
                              {repeatMode === 2 && <span className="absolute -top-1 -right-1 text-[8px] font-bold" style={{ color: 'var(--theme-accent)' }}>1</span>}
@@ -5568,13 +5884,40 @@ const clearActivePlaylist = () => {
                 />
               </div>
               <div className="flex flex-col h-full justify-between pb-1 min-w-0 flex-1">
-                <div className="min-w-0">
-                  <div className="text-lg font-bold mb-1 leading-tight break-words" title={currentTrack.title} style={{ color: 'var(--theme-textMain)', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                    {currentTrack.title}
+                <div className="min-w-0 flex items-start justify-between gap-1">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-lg font-bold mb-1 leading-tight break-words" title={currentTrack.title} style={{ color: 'var(--theme-textMain)', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                      {currentTrack.title}
+                    </div>
+                    <div className="text-[10px] truncate uppercase tracking-[0.2em] font-medium" style={{ color: 'var(--theme-accent)' }} title={currentTrack.artist}>
+                      {currentTrack.artist}
+                    </div>
                   </div>
-                  <div className="text-[10px] truncate uppercase tracking-[0.2em] font-medium" style={{ color: 'var(--theme-accent)' }} title={currentTrack.artist}>
-                    {currentTrack.artist}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => handleToggleTrackFavorite(currentTrack, e)}
+                    className="p-1.5 border rounded-[2px] transition-all hover:opacity-80 active:scale-95 shrink-0 cursor-pointer"
+                    style={{
+                      backgroundColor: favoriteTrackIds.has(currentTrack.id) ? 'var(--theme-accentMuted)' : 'var(--theme-bg)',
+                      borderColor: favoriteTrackIds.has(currentTrack.id) ? 'var(--theme-accent)' : 'var(--theme-border)'
+                    }}
+                    title={
+                      favoriteTrackIds.has(currentTrack.id)
+                        ? `★ [${favoriteTargetPlaylist?.name || 'お気に入り'}] に追加済み (クリックで除外)`
+                        : favoriteTargetPlaylist
+                        ? `★ [${favoriteTargetPlaylist.name}] にワンクリック追加`
+                        : `★ お気に入りリストを作成して追加`
+                    }
+                  >
+                    <Star
+                      size={13}
+                      className={
+                        favoriteTrackIds.has(currentTrack.id)
+                          ? "fill-amber-400 text-amber-400"
+                          : "text-neutral-500 hover:text-amber-400"
+                      }
+                    />
+                  </button>
                 </div>
                 
                 <div className="flex flex-col gap-1 mt-1">
@@ -5633,15 +5976,21 @@ const clearActivePlaylist = () => {
               style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}
             >
               <button 
-                onClick={() => setIsShuffle(!isShuffle)}
-                className="w-12 h-9 flex items-center justify-center border transition-all hover:opacity-80 active:scale-95"
+                onClick={cycleShuffleMode}
+                className="w-12 h-9 flex items-center justify-center border transition-all relative hover:opacity-80 active:scale-95"
                 style={isShuffle 
                   ? { backgroundColor: 'var(--theme-accentMuted)', color: 'var(--theme-accent)', borderColor: 'var(--theme-borderActive)' } 
                   : { backgroundColor: 'var(--theme-bg)', color: 'var(--theme-textMain)', borderColor: 'var(--theme-border)' }
                 }
-                title="Shuffle"
+                title={shuffleMode === 'all' ? "全曲シャッフル (ALL SHUFFLE: ライブラリ全曲からランダム)" : shuffleMode === 'list' ? "リスト内シャッフル (LIST SHUFFLE: 現在のリスト内からランダム)" : "シャッフルOFF（クリックで ALL / LIST 切替）"}
               >
                 <Shuffle size={15} />
+                {shuffleMode === 'all' && (
+                  <span className="absolute -top-1.5 -right-1.5 text-[7px] font-mono font-bold rounded-sm px-1 py-0.2 flex items-center justify-center z-10 leading-none tracking-tighter" style={{ backgroundColor: 'var(--theme-accentDark)', color: '#fff' }}>ALL</span>
+                )}
+                {shuffleMode === 'list' && (
+                  <span className="absolute -top-1.5 -right-1.5 text-[7px] font-mono font-bold rounded-sm px-1 py-0.2 flex items-center justify-center z-10 leading-none tracking-tighter" style={{ backgroundColor: 'var(--theme-accent)', color: '#000' }}>LIST</span>
+                )}
               </button>
               <button 
                 onClick={() => setRepeatMode((prev) => (prev + 1) % 4 as 0|1|2|3)}
@@ -5650,7 +5999,7 @@ const clearActivePlaylist = () => {
                   ? { backgroundColor: 'var(--theme-accentMuted)', color: 'var(--theme-accent)', borderColor: 'var(--theme-borderActive)' } 
                   : { backgroundColor: 'var(--theme-bg)', color: 'var(--theme-textMain)', borderColor: 'var(--theme-border)' }
                 }
-                title={repeatMode === 1 ? "Repeat All" : repeatMode === 2 ? "Repeat One" : repeatMode === 3 ? "Repeat Set (Selected Lists)" : "Repeat Off"}
+                title={repeatMode === 1 ? "Repeat All (全曲リピート)" : repeatMode === 2 ? "Repeat One (1曲リピート)" : repeatMode === 3 ? "Repeat Set / List (リスト内リピート / 選択セット周回)" : "Repeat Off"}
               >
                 <Repeat size={15} />
                 {repeatMode === 2 && (
@@ -6196,6 +6545,19 @@ const clearActivePlaylist = () => {
                         SELECT
                       </button>
                     )}
+
+                    <button 
+                      type="button"
+                      onClick={() => handleCreateFavoritePlaylist()}
+                      className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                      style={{ 
+                        backgroundColor: favoriteTargetPlaylist ? 'var(--theme-accentMuted)' : 'var(--theme-bg)', 
+                        borderColor: favoriteTargetPlaylist ? 'var(--theme-accent)' : 'var(--theme-listHeader-border)' 
+                      }}
+                      title={favoriteTargetPlaylist ? `お気に入りリストを新規作成（現在: ${favoriteTargetPlaylist.name}）` : "お気に入りリストを新規作成してクイック登録先 (★ TARGET) に指定"}
+                    >
+                      <Star size={10} className={favoriteTargetPlaylist ? "fill-amber-400 text-amber-400" : "text-amber-400 opacity-70 hover:opacity-100"} />
+                    </button>
 
                     <button 
                       onClick={() => { setIsCreatingPlaylist(true); setNewPlaylistName(''); }}
@@ -7055,11 +7417,6 @@ const clearActivePlaylist = () => {
                 draggable={pl.id !== 'all-tracks' && renamingPlaylistId !== pl.id}
                 onDragStart={(e) => handlePlaylistDragStart(e, pl.id)}
                 onDragOver={(e) => handlePlaylistDragOver(e, pl.id)}
-                onDragLeave={() => {
-                  if (dragOverPlaylistId === pl.id) {
-                    setDragOverPlaylistId(null);
-                  }
-                }}
                 onDrop={(e) => handlePlaylistDrop(e, pl.id)}
                 onDragEnd={handlePlaylistDragEnd}
                 onClick={(e) => {
@@ -7231,6 +7588,28 @@ const clearActivePlaylist = () => {
                   <span className="text-[9px] font-mono font-medium" style={{ color: isSelected || isActive ? 'var(--theme-list-textMain)' : 'var(--theme-list-textDim)' }}>
                     {pl.tracks.length.toString().padStart(3, '0')}
                   </span>
+                  {/* Favorite Target Star Indicator / Button (like in Image Viewer) */}
+                  {pl.id !== 'all-tracks' && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleSetFavoriteTargetPlaylist(pl.id, e)}
+                      className="p-1 rounded-[1px] transition-transform active:scale-95 flex items-center justify-center shrink-0 cursor-pointer"
+                      title={
+                        favoriteTargetPlaylistId === pl.id
+                          ? "★ 現在のお気に入り登録先（クリックで指定解除）\n曲の★を押すとこのリストに追加されます"
+                          : "★ お気に入り登録先（ターゲット）に指定\n曲の★マークを押した時にこのリストに入ります"
+                      }
+                    >
+                      <Star
+                        size={11}
+                        className={
+                          favoriteTargetPlaylistId === pl.id
+                            ? "fill-amber-400 text-amber-400 opacity-100"
+                            : "text-neutral-500 opacity-20 hover:opacity-100 hover:text-amber-400"
+                        }
+                      />
+                    </button>
+                  )}
                   {pl.id !== 'all-tracks' && renamingPlaylistId !== pl.id && (
                     <>
                     {/* Category quick assign badge / popover */}
@@ -7319,6 +7698,10 @@ const clearActivePlaylist = () => {
                               setPlaylists(prev => prev.filter(p => p.id !== pl.id));
                               if (activePlaylistId === pl.id) setActivePlaylistId('all-tracks');
                               if (playingPlaylistId === pl.id) setPlayingPlaylistId('all-tracks');
+                              if (favoriteTargetPlaylistId === pl.id) {
+                                setFavoriteTargetPlaylistId(null);
+                                try { localStorage.removeItem('v2_solidFavoriteTargetPlaylistId'); } catch {}
+                              }
                               setSelectedPlaylistIds(prev => {
                                 const next = new Set(prev);
                                 next.delete(pl.id);
@@ -8228,67 +8611,100 @@ const clearActivePlaylist = () => {
 
                {/* Album Mode Extra Controls: Global Tile Size Zoom & Artist Grouping */}
                {bankViewMode !== 'tracks' && (
-                 <div className="flex items-center gap-1.5 border-l pl-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
-                   {(bankViewMode === 'card' || bankViewMode === 'album') && (
-                     <div className="flex items-center gap-1.5">
-                       <span className="text-[8.5px] font-mono font-bold tracking-wider" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
-                         SIZE:
-                       </span>
-                       
-                       <button
-                         onClick={() => {
-                           const next = Math.max(90, cardScale - 20);
-                           setCardScale(next);
-                           localStorage.setItem('v2_solid_card_scale', String(next));
-                         }}
-                         className="w-4 h-4 flex items-center justify-center text-[10px] font-mono border rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
-                         style={{
-                           backgroundColor: 'var(--theme-bg)',
-                           borderColor: 'var(--theme-listHeader-border)',
-                           color: 'var(--theme-listHeader-text)',
-                         }}
-                         title="全体のタイルサイズを一括縮小（横の列数を増やす）"
-                       >
-                         -
-                       </button>
+                 <div className="flex items-center gap-1.5 border-l pl-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>                     {(bankViewMode === 'card' || bankViewMode === 'album' || bankViewMode === 'list') && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[8.5px] font-mono font-bold tracking-wider" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
+                           {bankViewMode === 'list' ? 'JACKET SIZE:' : bankViewMode === 'album' ? 'ALBUM SIZE:' : 'CARD SIZE:'}
+                        </span>
+                        
+                        <button
+                          onClick={() => {
+                            if (bankViewMode === 'list') {
+                              const next = Math.max(28, listScale - 6);
+                              setListScale(next);
+                              localStorage.setItem('v2_solid_scale_list', String(next));
+                            } else if (bankViewMode === 'album') {
+                              const next = Math.max(90, albumScale - 20);
+                              setAlbumScale(next);
+                              localStorage.setItem('v2_solid_scale_album', String(next));
+                            } else {
+                              const next = Math.max(90, cardScale - 20);
+                              setCardScale(next);
+                              localStorage.setItem('v2_solid_scale_card', String(next));
+                            }
+                          }}
+                          className="w-4 h-4 flex items-center justify-center text-[10px] font-mono border rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
+                          style={{
+                            backgroundColor: 'var(--theme-bg)',
+                            borderColor: 'var(--theme-listHeader-border)',
+                            color: 'var(--theme-listHeader-text)',
+                          }}
+                          title={bankViewMode === 'list' ? "リストのジャケット表示サイズを縮小" : "表示サイズを縮小"}
+                        >
+                          -
+                        </button>
 
-                       <input
-                         type="range"
-                         min="90"
-                         max="360"
-                         step="10"
-                         value={cardScale}
-                         onChange={(e) => {
-                           const val = parseInt(e.target.value, 10);
-                           setCardScale(val);
-                           localStorage.setItem('v2_solid_card_scale', String(val));
-                         }}
-                         className="w-20 sq-slider cursor-pointer"
-                         title={`全体のタイル表示サイズ: ${cardScale}px`}
-                       />
+                        <input
+                          type="range"
+                          min={bankViewMode === 'list' ? 28 : 90}
+                          max={bankViewMode === 'list' ? 160 : 360}
+                          step={bankViewMode === 'list' ? 4 : 10}
+                          value={bankViewMode === 'list' ? listScale : bankViewMode === 'album' ? albumScale : cardScale}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            if (bankViewMode === 'list') {
+                              setListScale(val);
+                              localStorage.setItem('v2_solid_scale_list', String(val));
+                            } else if (bankViewMode === 'album') {
+                              setAlbumScale(val);
+                              localStorage.setItem('v2_solid_scale_album', String(val));
+                            } else {
+                              setCardScale(val);
+                              localStorage.setItem('v2_solid_scale_card', String(val));
+                            }
+                          }}
+                          className="w-20 sq-slider cursor-pointer"
+                          title={
+                            bankViewMode === 'list'
+                              ? `リストジャケット表示サイズ: ${listScale}px`
+                              : bankViewMode === 'album'
+                              ? `アルバム表示サイズ: ${albumScale}px`
+                              : `カード表示サイズ: ${cardScale}px`
+                          }
+                        />
 
-                       <button
-                         onClick={() => {
-                           const next = Math.min(360, cardScale + 20);
-                           setCardScale(next);
-                           localStorage.setItem('v2_solid_card_scale', String(next));
-                         }}
-                         className="w-4 h-4 flex items-center justify-center text-[10px] font-mono border rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
-                         style={{
-                           backgroundColor: 'var(--theme-bg)',
-                           borderColor: 'var(--theme-listHeader-border)',
-                           color: 'var(--theme-listHeader-text)',
-                         }}
-                         title="全体のタイルサイズを一括拡大"
-                       >
-                         +
-                       </button>
+                        <button
+                          onClick={() => {
+                            if (bankViewMode === 'list') {
+                              const next = Math.min(160, listScale + 6);
+                              setListScale(next);
+                              localStorage.setItem('v2_solid_scale_list', String(next));
+                            } else if (bankViewMode === 'album') {
+                              const next = Math.min(360, albumScale + 20);
+                              setAlbumScale(next);
+                              localStorage.setItem('v2_solid_scale_album', String(next));
+                            } else {
+                              const next = Math.min(360, cardScale + 20);
+                              setCardScale(next);
+                              localStorage.setItem('v2_solid_scale_card', String(next));
+                            }
+                          }}
+                          className="w-4 h-4 flex items-center justify-center text-[10px] font-mono border rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
+                          style={{
+                            backgroundColor: 'var(--theme-bg)',
+                            borderColor: 'var(--theme-listHeader-border)',
+                            color: 'var(--theme-listHeader-text)',
+                          }}
+                          title={bankViewMode === 'list' ? "リストのジャケット表示サイズを拡大" : "表示サイズを拡大"}
+                        >
+                          +
+                        </button>
 
-                       <span className="text-[8.5px] font-mono w-8 text-right font-bold" style={{ color: 'var(--theme-accent)' }}>
-                         {cardScale}px
-                       </span>
-                     </div>
-                   )}
+                        <span className="text-[8.5px] font-mono w-8 text-right font-bold" style={{ color: 'var(--theme-accent)' }}>
+                          {bankViewMode === 'list' ? listScale : bankViewMode === 'album' ? albumScale : cardScale}px
+                        </span>
+                      </div>
+                    )}
 
                    <button
                      onClick={() => {
@@ -8343,7 +8759,51 @@ const clearActivePlaylist = () => {
                )}
               </div>
 
-             <div className="flex items-center gap-3 shrink-0">
+             <div className="flex items-center gap-2 shrink-0">
+               {/* Favorite Target Status Indicator & Quick Jump */}
+               <div 
+                 className="flex items-center gap-1 border px-2 py-0.5 rounded-[1px] transition-colors"
+                 style={{
+                   backgroundColor: favoriteTargetPlaylist ? 'var(--theme-accentMuted)' : 'transparent',
+                   borderColor: favoriteTargetPlaylist ? 'var(--theme-accent)' : 'var(--theme-listHeader-border)',
+                 }}
+               >
+                 <button
+                   type="button"
+                   onClick={() => {
+                     if (favoriteTargetPlaylist) {
+                       setActivePlaylistId(favoriteTargetPlaylist.id);
+                       setDrillDownAlbum(null);
+                     } else {
+                       handleCreateFavoritePlaylist();
+                     }
+                   }}
+                   className="flex items-center gap-1.5 transition-opacity hover:opacity-80 active:scale-95 cursor-pointer"
+                   title={favoriteTargetPlaylist ? `★ TARGET: ${favoriteTargetPlaylist.name} (${favoriteTargetPlaylist.tracks.length}曲) - クリックで開く` : "★ お気に入りリストを作成してターゲット指定"}
+                 >
+                   <Star size={10} className={favoriteTargetPlaylist ? "fill-amber-400 text-amber-400" : "text-amber-400 opacity-60"} />
+                   <span className="font-bold tracking-wider" style={{ color: favoriteTargetPlaylist ? 'var(--theme-accent)' : 'var(--theme-listHeader-textMuted)' }}>
+                     {favoriteTargetPlaylist ? `TARGET: ${favoriteTargetPlaylist.name}` : '+ NEW TARGET'}
+                   </span>
+                   {favoriteTargetPlaylist && (
+                     <span className="font-mono text-[8px] opacity-80" style={{ color: 'var(--theme-accent)' }}>
+                       ({favoriteTargetPlaylist.tracks.length})
+                     </span>
+                   )}
+                 </button>
+                 {favoriteTargetPlaylist && (
+                   <button
+                     type="button"
+                     onClick={(e) => handleSetFavoriteTargetPlaylist(null, e)}
+                     className="hover:opacity-80 p-0.5 ml-0.5 cursor-pointer"
+                     style={{ color: 'var(--theme-listHeader-textMuted)' }}
+                     title="ターゲット指定を解除"
+                   >
+                     <X size={8} />
+                   </button>
+                 )}
+               </div>
+
                {(bankViewMode === 'tracks' || drillDownAlbum) && (
                 <div className="relative">
                   <button
@@ -8456,6 +8916,8 @@ const clearActivePlaylist = () => {
               artists={displayedArtistGroups}
               cardSize={cardSize}
               cardScale={cardScale}
+              albumScale={albumScale}
+              listScale={listScale}
               displayMode={bankViewMode}
               groupByArtist={groupByArtist}
               onPlayAlbum={handlePlayAlbum}
@@ -8468,6 +8930,9 @@ const clearActivePlaylist = () => {
               onDeleteAlbum={(album) => handleDeleteAlbum(album, activePlaylistId)}
               onDeleteAlbums={(albumsToDelete) => handleDeleteMultipleAlbums(albumsToDelete, activePlaylistId)}
               onRenameAlbum={(album, newName) => handleRenameAlbum(album, newName, activePlaylistId)}
+              onToggleFavoriteTrack={handleToggleTrackFavorite}
+              favoriteTrackIds={favoriteTrackIds}
+              favoriteTargetName={favoriteTargetPlaylist?.name}
               focusedAlbumId={focusedAlbumId}
               currentTrackId={currentTrack?.id}
               isPlaying={isPlaying}
@@ -8646,7 +9111,11 @@ const clearActivePlaylist = () => {
                         {tracksToRender.some(t => selectedTrackIds.has(t.id)) && !tracksToRender.every(t => selectedTrackIds.has(t.id)) && <Minus size={9} style={{ color: 'var(--theme-accent)' }} strokeWidth={3} />}
                       </button>
                     </div>
-                    <div className="w-8 flex-shrink-0 flex items-center justify-center" style={{ color: 'var(--theme-list-textDim)' }}>
+                    {/* Star Column Header */}
+                    <div className="w-6 flex-shrink-0 flex items-center justify-center" title="お気に入り (★)">
+                      <Star size={10} className="text-amber-400 opacity-60" />
+                    </div>
+                    <div className="w-7 flex-shrink-0 flex items-center justify-center" style={{ color: 'var(--theme-list-textDim)' }}>
                       #
                     </div>
                     {colVisibility.art && (
@@ -8745,6 +9214,31 @@ const clearActivePlaylist = () => {
                       >
                         <X size={10} style={{ color: 'var(--theme-textMain)' }} />
                         <span>解除</span>
+                      </button>
+
+                      {/* Batch Mix to Target Favorite Playlist */}
+                      <button
+                        type="button"
+                        onClick={handleBatchAddToFavorite}
+                        className="flex items-center gap-1.5 text-[9px] font-mono px-2 py-0.5 border rounded-[2px] hover:opacity-80 active:scale-95 transition-all cursor-pointer font-bold"
+                        style={{
+                          backgroundColor: 'var(--theme-accentMuted)',
+                          borderColor: 'var(--theme-accent)',
+                          color: 'var(--theme-accent)'
+                        }}
+                        title={
+                          favoriteTargetPlaylist 
+                            ? `選択した${selectedTrackIds.size}曲を [${favoriteTargetPlaylist.name}] に一括追加` 
+                            : `お気に入りリストを新規作成して選択した${selectedTrackIds.size}曲を追加`
+                        }
+                      >
+                        <Star size={11} className="fill-amber-400 text-amber-400" />
+                        <span>
+                          {favoriteTargetPlaylist 
+                            ? `MIX TO "${favoriteTargetPlaylist.name}" (${selectedTrackIds.size})` 
+                            : `+ MIX TO FAVORITE (${selectedTrackIds.size})`
+                          }
+                        </span>
                       </button>
                     </div>
 
@@ -9173,6 +9667,24 @@ const clearActivePlaylist = () => {
           >
             <X size={11} />
           </button>
+        </div>
+      )}
+
+      {/* Quick Favorite Mix Notification Toast */}
+      {favoriteToast && (
+        <div 
+          className="fixed bottom-4 right-4 z-50 flex items-center gap-2.5 px-3.5 py-2 border font-mono text-[10px] select-none shadow-2xl rounded-[2px]"
+          style={{ 
+            backgroundColor: 'var(--theme-surface)', 
+            borderColor: favoriteToast.isAdd ? 'var(--theme-accent)' : 'var(--theme-border)', 
+            color: 'var(--theme-textMain)',
+          }}
+        >
+          <Star 
+            size={12} 
+            className={favoriteToast.isAdd ? "fill-amber-400 text-amber-400 shrink-0" : "text-neutral-400 shrink-0"} 
+          />
+          <span className="font-semibold">{favoriteToast.message}</span>
         </div>
       )}
 

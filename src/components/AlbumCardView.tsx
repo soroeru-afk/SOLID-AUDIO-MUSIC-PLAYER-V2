@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, Disc, User, ChevronRight, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, GripVertical, ListMusic, Music, ArrowLeft, Folder, List, Maximize2, Minimize2, Trash2, X, Edit2, Check } from 'lucide-react';
+import { Play, Pause, Disc, User, ChevronRight, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, GripVertical, ListMusic, Music, ArrowLeft, Folder, List, Maximize2, Minimize2, Trash2, X, Edit2, Check, Star } from 'lucide-react';
 
 export interface AlbumGroup {
   id: string;
@@ -24,6 +24,8 @@ interface AlbumCardViewProps {
   artists: ArtistGroup[];
   cardSize?: 'sm' | 'md' | 'lg' | 'xl';
   cardScale?: number;
+  albumScale?: number;
+  listScale?: number;
   displayMode: 'card' | 'list' | 'album';
   groupByArtist: boolean;
   onPlayAlbum: (album: AlbumGroup) => void;
@@ -37,6 +39,9 @@ interface AlbumCardViewProps {
   onDeleteAlbum?: (album: AlbumGroup) => void;
   onDeleteAlbums?: (albums: AlbumGroup[]) => void;
   onRenameAlbum?: (album: AlbumGroup, newName: string) => void;
+  onToggleFavoriteTrack?: (track: any) => void;
+  favoriteTrackIds?: Set<string>;
+  favoriteTargetName?: string;
   focusedAlbumId?: string | null;
   currentTrackId?: string;
   isPlaying?: boolean;
@@ -59,6 +64,8 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   artists,
   cardSize = 'md',
   cardScale = 190,
+  albumScale = 190,
+  listScale = 48,
   displayMode,
   groupByArtist,
   onPlayAlbum,
@@ -72,6 +79,9 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   onDeleteAlbum,
   onDeleteAlbums,
   onRenameAlbum,
+  onToggleFavoriteTrack,
+  favoriteTrackIds,
+  favoriteTargetName,
   focusedAlbumId,
   currentTrackId,
   isPlaying,
@@ -385,25 +395,27 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     setDragOverAlbumId(null);
   };
 
-  const isCompact = cardScale < 160;
+  const effectiveCardScale = cardScale;
+  const effectiveAlbumScale = albumScale || cardScale;
+  const isCompact = effectiveCardScale < 160;
 
-  // Responsive full-bleed auto-fill grid styles (fills horizontally and wraps to next row, scaling all items at once)
+  // Responsive full-bleed auto-fill grid styles for CARD mode (scales card tiles independently)
   const cardGridStyle: React.CSSProperties = {
     display: 'grid',
-    gridTemplateColumns: `repeat(auto-fill, minmax(${Math.max(90, cardScale)}px, 1fr))`,
-    gap: `${Math.max(6, Math.min(18, Math.round(cardScale * 0.06)))}px`,
+    gridTemplateColumns: `repeat(auto-fill, minmax(${Math.max(90, effectiveCardScale)}px, 1fr))`,
+    gap: `${Math.max(6, Math.min(18, Math.round(effectiveCardScale * 0.06)))}px`,
     width: '100%',
     alignItems: 'start',
   };
 
-  // In ALBUM mode (Cover + Tracklist side-by-side), scale the minimum tile width proportionally to cardScale
-  const albumBlockMinWidth = Math.max(250, Math.round(cardScale * 2.0));
-  const coverWidthPx = Math.max(88, Math.min(240, Math.round(cardScale * 0.85)));
+  // In ALBUM mode (Cover + Tracklist side-by-side), scale tile width proportionally to albumScale (independent from card & list sizes)
+  const albumBlockMinWidth = Math.max(250, Math.round(effectiveAlbumScale * 2.0));
+  const coverWidthPx = Math.max(88, Math.min(240, Math.round(effectiveAlbumScale * 0.85)));
 
   const coverGridStyle: React.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: `repeat(auto-fill, minmax(${albumBlockMinWidth}px, 1fr))`,
-    gap: `${Math.max(8, Math.min(18, Math.round(cardScale * 0.07)))}px`,
+    gap: `${Math.max(8, Math.min(18, Math.round(effectiveAlbumScale * 0.07)))}px`,
     width: '100%',
     alignItems: 'start',
   };
@@ -948,6 +960,30 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                     {track.title || track.fileName}
                   </span>
                   <div className="shrink-0 flex items-center gap-1.5">
+                    {onToggleFavoriteTrack && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleFavoriteTrack(track);
+                        }}
+                        className="p-0.5 hover:opacity-80 active:scale-95 transition-all cursor-pointer"
+                        title={
+                          favoriteTrackIds?.has(track.id)
+                            ? `★ [${favoriteTargetName || 'お気に入り'}] から除外`
+                            : `★ [${favoriteTargetName || 'お気に入り'}] に追加`
+                        }
+                      >
+                        <Star
+                          size={10}
+                          className={
+                            favoriteTrackIds?.has(track.id)
+                              ? "fill-amber-400 text-amber-400"
+                              : "text-neutral-500 opacity-40 hover:opacity-100 hover:text-amber-400"
+                          }
+                        />
+                      </button>
+                    )}
                     {onMoveTracksToAlbum && albums.length > 1 && (
                       <button
                         type="button"
@@ -986,6 +1022,15 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   // Helper to render an album in LIST row mode (LIST VIEW)
   // Clicking the thumbnail jacket brings this album to the very top in enlarged ALBUM mode!
   const renderListRow = (album: AlbumGroup) => {
+    // List view jacket size is directly governed by independent listScale (28px - 160px)
+    const effectiveListArtSize = Math.max(28, Math.min(160, listScale || 48));
+    const artSizePx = effectiveListArtSize;
+    const rowHeightPx = Math.max(artSizePx + 10, 42);
+    const btnSizePx = Math.max(22, Math.min(36, Math.round(artSizePx * 0.55)));
+    const titleSizePx = Math.max(10, Math.min(16, Math.round(10.5 + (artSizePx - 36) * 0.05)));
+    const subTextSizePx = Math.max(8.5, Math.min(13, Math.round(9 + (artSizePx - 36) * 0.04)));
+    const trackPadYPx = Math.max(4, Math.min(12, Math.round(6 * (artSizePx / 48))));
+    const trackTextSizePx = Math.max(9, Math.min(13, Math.round(10 * Math.sqrt(artSizePx / 48))));
     const isThisAlbumPlaying =
       isPlaying &&
       currentTrackId &&
@@ -1018,8 +1063,9 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
           onClick={() => {
             if (renamingAlbumId !== album.id) toggleExpandList(album.id);
           }}
-          className="group flex items-center h-12 px-3 transition-all cursor-pointer select-none"
+          className="group flex items-center px-3 transition-all cursor-pointer select-none"
           style={{
+            minHeight: `${rowHeightPx}px`,
             backgroundColor: isThisAlbumActive
               ? 'var(--theme-list-accentMuted)'
               : isSelected
@@ -1064,8 +1110,10 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
           {/* Thumbnail Artwork - CLICK TO BRING TO TOP IN ENLARGED ALBUM MODE */}
           <div
             onClick={(e) => toggleZoomAlbum(e, album.id)}
-            className="w-9 h-9 mr-3 shrink-0 border relative overflow-hidden bg-black/40 rounded-[2px] transition-all cursor-pointer group/art"
+            className="mr-3 shrink-0 border relative overflow-hidden bg-black/40 rounded-[2px] transition-all cursor-pointer group/art"
             style={{
+              width: `${artSizePx}px`,
+              height: `${artSizePx}px`,
               borderColor: 'var(--theme-list-border)',
             }}
             title="ジャケットをクリックして最上部にアルバム拡大モードで表示"
@@ -1087,8 +1135,10 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
               e.stopPropagation();
               onPlayAlbum(album);
             }}
-            className="w-6 h-6 mr-3 shrink-0 border rounded-[2px] flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
+            className="mr-3 shrink-0 border rounded-[2px] flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
             style={{
+              width: `${btnSizePx}px`,
+              height: `${btnSizePx}px`,
               backgroundColor: 'var(--theme-list-surfaceLighter)',
               borderColor: isThisAlbumPlaying ? 'var(--theme-accent)' : 'var(--theme-list-border)',
               color: isThisAlbumPlaying ? 'var(--theme-accent)' : 'var(--theme-list-textMain)',
@@ -1108,8 +1158,8 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
               renderInlineAlbumTitleInput(album, false)
             ) : (
               <div
-                className="text-[11px] font-bold font-mono truncate leading-tight hover:opacity-80"
-                style={{ color: 'var(--theme-list-textMain)' }}
+                className="font-bold font-mono truncate leading-tight hover:opacity-80"
+                style={{ color: 'var(--theme-list-textMain)', fontSize: `${titleSizePx}px` }}
                 onDoubleClick={(e) => startRenameAlbum(e, album)}
                 title={`${album.album}（ダブルクリックまたは「名前変更」で編集）`}
               >
@@ -1117,8 +1167,8 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
               </div>
             )}
             <div
-              className="text-[9.5px] mt-0.5 font-mono truncate"
-              style={{ color: 'var(--theme-list-textMuted)' }}
+              className="mt-0.5 font-mono truncate"
+              style={{ color: 'var(--theme-list-textMuted)', fontSize: `${subTextSizePx}px` }}
             >
               {album.artist}
             </div>
@@ -1171,8 +1221,11 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                 <div
                   key={track.id}
                   onClick={(e) => handleTrackClick(e, track, album)}
-                  className="py-1.5 px-2 text-[10px] gap-3 flex items-center font-mono cursor-pointer transition-colors hover:opacity-80 rounded-[1px]"
+                  className="px-2 gap-3 flex items-center font-mono cursor-pointer transition-colors hover:opacity-80 rounded-[1px]"
                   style={{
+                    paddingTop: `${trackPadYPx}px`,
+                    paddingBottom: `${trackPadYPx}px`,
+                    fontSize: `${trackTextSizePx}px`,
                     backgroundColor: isTrackActive ? 'var(--theme-list-accentMuted)' : 'transparent',
                     color: isTrackActive ? 'var(--theme-accent)' : 'var(--theme-list-textMain)',
                   }}
@@ -1194,6 +1247,30 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                   <span className="flex-1 min-w-0 truncate font-medium">
                     {track.title || track.fileName}
                   </span>
+                  {onToggleFavoriteTrack && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleFavoriteTrack(track);
+                      }}
+                      className="p-1 hover:opacity-80 active:scale-95 transition-all cursor-pointer shrink-0"
+                      title={
+                        favoriteTrackIds?.has(track.id)
+                          ? `★ [${favoriteTargetName || 'お気に入り'}] から除外`
+                          : `★ [${favoriteTargetName || 'お気に入り'}] に追加`
+                      }
+                    >
+                      <Star
+                        size={11}
+                        className={
+                          favoriteTrackIds?.has(track.id)
+                            ? "fill-amber-400 text-amber-400"
+                            : "text-neutral-500 opacity-40 hover:opacity-100 hover:text-amber-400"
+                        }
+                      />
+                    </button>
+                  )}
                   {onMoveTracksToAlbum && albums.length > 1 && (
                     <button
                       type="button"
@@ -1484,6 +1561,30 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                   </span>
 
                   <div className="shrink-0 flex items-center gap-2">
+                    {onToggleFavoriteTrack && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleFavoriteTrack(track);
+                        }}
+                        className="p-0.5 hover:opacity-80 active:scale-95 transition-all cursor-pointer"
+                        title={
+                          favoriteTrackIds?.has(track.id)
+                            ? `★ [${favoriteTargetName || 'お気に入り'}] から除外`
+                            : `★ [${favoriteTargetName || 'お気に入り'}] に追加`
+                        }
+                      >
+                        <Star
+                          size={isZoomed ? 13 : 10}
+                          className={
+                            favoriteTrackIds?.has(track.id)
+                              ? "fill-amber-400 text-amber-400"
+                              : "text-neutral-500 opacity-40 hover:opacity-100 hover:text-amber-400"
+                          }
+                        />
+                      </button>
+                    )}
                     {onMoveTracksToAlbum && albums.length > 1 && (
                       <button
                         type="button"
@@ -1834,7 +1935,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                       visibleArtistAlbums.length > 1
                         ? {
                             display: 'grid',
-                            gridTemplateColumns: `repeat(auto-fill, minmax(${Math.max(90, cardScale - 15)}px, 1fr))`,
+                            gridTemplateColumns: `repeat(auto-fill, minmax(${Math.max(90, effectiveCardScale - 15)}px, 1fr))`,
                             gap: '8px',
                           }
                         : { display: 'flex', flexDirection: 'column', flex: 1 }
