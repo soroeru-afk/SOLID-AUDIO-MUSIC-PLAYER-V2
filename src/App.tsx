@@ -930,6 +930,15 @@ export default function App() {
   const lastSelectedPlaylistIdRef = useRef<string | null>(null);
   const [confirmDeleteSelectedPlaylists, setConfirmDeleteSelectedPlaylists] = useState(false);
 
+  // --- Create Favorite Target Playlist Modal State ---
+  const [showCreateFavoriteModal, setShowCreateFavoriteModal] = useState(false);
+  const [newFavoriteName, setNewFavoriteName] = useState('');
+  const [newFavoriteCategory, setNewFavoriteCategory] = useState<string>('__UNCATEGORIZED__');
+  const [isCreatingNewCategoryInFavModal, setIsCreatingNewCategoryInFavModal] = useState(false);
+  const [newCustomCategoryInput, setNewCustomCategoryInput] = useState('');
+  const [pendingTrackForFavorite, setPendingTrackForFavorite] = useState<Track | null>(null);
+  const [pendingTracksForBatchFavorite, setPendingTracksForBatchFavorite] = useState<Track[] | null>(null);
+
   // --- Category Management State ---
   const [categories, setCategories] = useState<string[]>([]);
   const [sidebarCategoryMode, setSidebarCategoryMode] = useState<'dropdown' | 'tree'>(() => {
@@ -3642,6 +3651,84 @@ export default function App() {
     setNewPlaylistName('');
   };
 
+  const openCreateFavoriteModal = (trackToAutoAdd?: Track, batchTracksToAutoAdd?: Track[]) => {
+    // 1. Calculate next friendly sequence name (e.g. お気に入り 1, お気に入り 2 ...)
+    const favRegex = /^(?:お気に入り|FAVORITE)\s*(\d+)$/i;
+    let maxNum = 0;
+    playlists.forEach(p => {
+      const match = p.name.trim().match(favRegex);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+    });
+    const nextName = maxNum > 0 ? `お気に入り ${maxNum + 1}` : 'お気に入り 1';
+    setNewFavoriteName(nextName);
+
+    // 2. Determine initial category: prioritize "お気に入り" or "Favorite" if exists
+    const favCat = categories.find(c => c.trim() === 'お気に入り' || c.trim().toLowerCase() === 'favorite');
+    if (favCat) {
+      setNewFavoriteCategory(favCat);
+    } else if (selectedCategoryFilter !== '__ALL__' && selectedCategoryFilter !== '__UNCATEGORIZED__' && categories.includes(selectedCategoryFilter)) {
+      setNewFavoriteCategory(selectedCategoryFilter);
+    } else if (categories.length > 0) {
+      setNewFavoriteCategory(categories[0]);
+    } else {
+      setNewFavoriteCategory('__UNCATEGORIZED__');
+    }
+
+    setIsCreatingNewCategoryInFavModal(false);
+    setNewCustomCategoryInput('');
+    setPendingTrackForFavorite(trackToAutoAdd || null);
+    setPendingTracksForBatchFavorite(batchTracksToAutoAdd || null);
+    setShowCreateFavoriteModal(true);
+  };
+
+  const submitCreateFavoritePlaylist = () => {
+    const finalName = newFavoriteName.trim() || 'お気に入り';
+    
+    // Determine category
+    let targetCat: string | undefined = undefined;
+    if (isCreatingNewCategoryInFavModal && newCustomCategoryInput.trim()) {
+      const newCatName = normalizeZenkakuAlphanumeric(newCustomCategoryInput.trim());
+      targetCat = newCatName;
+      if (!categories.includes(newCatName)) {
+        setCategories(prev => [...prev, newCatName]);
+      }
+    } else if (newFavoriteCategory && newFavoriteCategory !== '__UNCATEGORIZED__') {
+      targetCat = newFavoriteCategory;
+    }
+
+    const newPl: Playlist = {
+      id: uuidv4(),
+      name: finalName,
+      tracks: pendingTrackForFavorite ? [pendingTrackForFavorite] : (pendingTracksForBatchFavorite || []),
+      category: targetCat
+    };
+
+    setPlaylists(prev => [prev[0], newPl, ...prev.slice(1)]);
+    setActivePlaylistId(newPl.id);
+    setFavoriteTargetPlaylistId(newPl.id);
+    try {
+      localStorage.setItem('v2_solidFavoriteTargetPlaylistId', newPl.id);
+    } catch {}
+
+    // Automatically expand the destination category folder in sidebar
+    if (targetCat) {
+      setExpandedCategoryNames(prev => new Set([...prev, targetCat]));
+    } else {
+      setExpandedCategoryNames(prev => new Set([...prev, '__UNCATEGORIZED__']));
+    }
+
+    setShowCreateFavoriteModal(false);
+    setPendingTrackForFavorite(null);
+    setPendingTracksForBatchFavorite(null);
+
+    const catLabel = targetCat ? `フォルダー [${targetCat}]` : '未分類';
+    showFavoriteToast(`★ ${catLabel} に [${newPl.name}] を作成し、ターゲットに指定しました`, true);
+    return newPl;
+  };
+
   const handleCreateFavoritePlaylist = (explicitName?: string) => {
     let targetName = explicitName;
     if (!targetName) {
@@ -3714,7 +3801,8 @@ export default function App() {
         }
       }
       if (!targetPl) {
-        targetPl = handleCreateFavoritePlaylist();
+        openCreateFavoriteModal(track);
+        return;
       }
     }
 
@@ -3758,7 +3846,8 @@ export default function App() {
         }
       }
       if (!targetPl) {
-        targetPl = handleCreateFavoritePlaylist();
+        openCreateFavoriteModal(undefined, selectedTracks);
+        return;
       }
     }
 
@@ -6548,13 +6637,13 @@ export default function App() {
 
                     <button 
                       type="button"
-                      onClick={() => handleCreateFavoritePlaylist()}
+                      onClick={() => openCreateFavoriteModal()}
                       className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
                       style={{ 
                         backgroundColor: favoriteTargetPlaylist ? 'var(--theme-accentMuted)' : 'var(--theme-bg)', 
                         borderColor: favoriteTargetPlaylist ? 'var(--theme-accent)' : 'var(--theme-listHeader-border)' 
                       }}
-                      title={favoriteTargetPlaylist ? `お気に入りリストを新規作成（現在: ${favoriteTargetPlaylist.name}）` : "お気に入りリストを新規作成してクイック登録先 (★ TARGET) に指定"}
+                      title={favoriteTargetPlaylist ? `お気に入りリストを新規作成・フォルダー選択（現在: ${favoriteTargetPlaylist.name}）` : "お気に入りリストを新規作成してクイック登録先 (★ TARGET) に指定"}
                     >
                       <Star size={10} className={favoriteTargetPlaylist ? "fill-amber-400 text-amber-400" : "text-amber-400 opacity-70 hover:opacity-100"} />
                     </button>
@@ -8775,7 +8864,7 @@ export default function App() {
                        setActivePlaylistId(favoriteTargetPlaylist.id);
                        setDrillDownAlbum(null);
                      } else {
-                       handleCreateFavoritePlaylist();
+                       openCreateFavoriteModal();
                      }
                    }}
                    className="flex items-center gap-1.5 transition-opacity hover:opacity-80 active:scale-95 cursor-pointer"
@@ -8792,15 +8881,27 @@ export default function App() {
                    )}
                  </button>
                  {favoriteTargetPlaylist && (
-                   <button
-                     type="button"
-                     onClick={(e) => handleSetFavoriteTargetPlaylist(null, e)}
-                     className="hover:opacity-80 p-0.5 ml-0.5 cursor-pointer"
-                     style={{ color: 'var(--theme-listHeader-textMuted)' }}
-                     title="ターゲット指定を解除"
-                   >
-                     <X size={8} />
-                   </button>
+                   <>
+                     <button
+                       type="button"
+                       onClick={() => openCreateFavoriteModal()}
+                       className="hover:opacity-80 px-1 py-0.5 ml-1 border-l text-[8px] font-mono cursor-pointer flex items-center gap-0.5"
+                       style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }}
+                       title="次のお気に入りリストを新規作成してターゲット指定 (+ NEW)"
+                     >
+                       <Plus size={8} />
+                       <span>NEW</span>
+                     </button>
+                     <button
+                       type="button"
+                       onClick={(e) => handleSetFavoriteTargetPlaylist(null, e)}
+                       className="hover:opacity-80 p-0.5 ml-0.5 cursor-pointer"
+                       style={{ color: 'var(--theme-listHeader-textMuted)' }}
+                       title="ターゲット指定を解除"
+                     >
+                       <X size={8} />
+                     </button>
+                   </>
                  )}
                </div>
 
@@ -9567,6 +9668,216 @@ export default function App() {
                 style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', backgroundColor: 'var(--theme-bg)' }}
               >
                 CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Favorite Target Playlist Modal with Category Selection */}
+      {showCreateFavoriteModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-mono select-none" 
+          onClick={() => setShowCreateFavoriteModal(false)}
+        >
+          <div 
+            className="w-full max-w-md flex flex-col border shadow-2xl rounded-[2px] overflow-hidden" 
+            style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }} 
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div 
+              className="px-3.5 py-2.5 border-b flex justify-between items-center" 
+              style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-border)' }}
+            >
+              <div className="flex items-center gap-2">
+                <Star size={13} className="fill-amber-400 text-amber-400 shrink-0" />
+                <span className="text-[11px] font-bold tracking-wider" style={{ color: 'var(--theme-textMain)' }}>
+                  NEW FAVORITE TARGET PLAYLIST
+                </span>
+              </div>
+              <button 
+                onClick={() => setShowCreateFavoriteModal(false)} 
+                className="hover:opacity-80 p-0.5 cursor-pointer transition-opacity" 
+                style={{ color: 'var(--theme-textMuted)' }}
+                title="閉じる"
+              >
+                <X size={13} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 flex flex-col gap-3.5">
+              {/* Playlist Name Input */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[9px] font-bold tracking-wider uppercase" style={{ color: 'var(--theme-textDim)' }}>
+                  PLAYLIST NAME (お気に入りリスト名)
+                </label>
+                <input
+                  type="text"
+                  value={newFavoriteName}
+                  onChange={(e) => setNewFavoriteName(e.target.value)}
+                  placeholder="お気に入り 1..."
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitCreateFavoritePlaylist();
+                    else if (e.key === 'Escape') setShowCreateFavoriteModal(false);
+                  }}
+                  className="w-full text-[11px] font-mono px-2.5 py-1.5 border rounded-[1px] outline-none transition-colors"
+                  style={{
+                    backgroundColor: 'var(--theme-bg)',
+                    borderColor: 'var(--theme-border)',
+                    color: 'var(--theme-textMain)'
+                  }}
+                />
+              </div>
+
+              {/* Destination Category Folder Selector */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[9px] font-bold tracking-wider uppercase" style={{ color: 'var(--theme-textDim)' }}>
+                    CATEGORY FOLDER (配置先フォルダーを選択)
+                  </label>
+                  {!isCreatingNewCategoryInFavModal && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCreatingNewCategoryInFavModal(true);
+                        setNewCustomCategoryInput('');
+                      }}
+                      className="text-[8.5px] font-mono flex items-center gap-1 hover:opacity-80 underline cursor-pointer"
+                      style={{ color: 'var(--theme-accent)' }}
+                    >
+                      <Plus size={9} />
+                      <span>＋ 新しいカテゴリーを作成</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* If user clicked "create new category" */}
+                {isCreatingNewCategoryInFavModal ? (
+                  <div className="p-2 border rounded-[2px] flex flex-col gap-2" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-accent)' }}>
+                    <div className="flex items-center justify-between text-[8.5px]" style={{ color: 'var(--theme-accent)' }}>
+                      <span>新しいカテゴリー名を入力:</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsCreatingNewCategoryInFavModal(false)}
+                        className="hover:opacity-80 underline cursor-pointer"
+                        style={{ color: 'var(--theme-textDim)' }}
+                      >
+                        キャンセル
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={newCustomCategoryInput}
+                        onChange={(e) => setNewCustomCategoryInput(e.target.value)}
+                        placeholder="例: お気に入り"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') submitCreateFavoritePlaylist();
+                          else if (e.key === 'Escape') setIsCreatingNewCategoryInFavModal(false);
+                        }}
+                        className="flex-1 text-[10.5px] font-mono px-2 py-1 border rounded-[1px] outline-none"
+                        style={{
+                          backgroundColor: 'var(--theme-surface)',
+                          borderColor: 'var(--theme-border)',
+                          color: 'var(--theme-textMain)'
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  /* Existing Categories List */
+                  <div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1 border rounded-[2px] p-1.5" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)' }}>
+                    {/* Existing Categories */}
+                    {categories.map((cat) => {
+                      const isSelected = newFavoriteCategory === cat;
+                      const count = playlists.filter(p => p.id !== 'all-tracks' && p.category === cat).length;
+                      const isFavoriteNamed = cat.trim() === 'お気に入り' || cat.trim().toLowerCase() === 'favorite';
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setNewFavoriteCategory(cat)}
+                          className="text-left px-2.5 py-1.5 border rounded-[2px] text-[10px] tracking-wider transition-colors hover:opacity-90 flex items-center justify-between cursor-pointer"
+                          style={{
+                            borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-border)',
+                            backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-surface)',
+                            color: isSelected ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+                          }}
+                        >
+                          <span className="truncate flex items-center gap-1.5 font-bold">
+                            <Folder size={11} className={isSelected ? "text-[var(--theme-accent)]" : "opacity-60"} />
+                            <span>{cat}</span>
+                            {isFavoriteNamed && (
+                              <span className="text-[7.5px] px-1 py-0.2 border rounded-[1px] ml-1" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }}>
+                                RECOMMENDED
+                              </span>
+                            )}
+                          </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[8.5px] font-mono" style={{ color: 'var(--theme-textDim)' }}>
+                              ({count} lists)
+                            </span>
+                            {isSelected && <Check size={11} strokeWidth={2.5} />}
+                          </div>
+                        </button>
+                      );
+                    })}
+
+                    {/* Uncategorized Option */}
+                    <button
+                      type="button"
+                      onClick={() => setNewFavoriteCategory('__UNCATEGORIZED__')}
+                      className="text-left px-2.5 py-1.5 border rounded-[2px] text-[10px] tracking-wider transition-colors hover:opacity-90 flex items-center justify-between cursor-pointer"
+                      style={{
+                        borderColor: newFavoriteCategory === '__UNCATEGORIZED__' ? 'var(--theme-accent)' : 'var(--theme-border)',
+                        backgroundColor: newFavoriteCategory === '__UNCATEGORIZED__' ? 'var(--theme-accentMuted)' : 'var(--theme-surface)',
+                        color: newFavoriteCategory === '__UNCATEGORIZED__' ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+                      }}
+                    >
+                      <span className="truncate flex items-center gap-1.5">
+                        <Bookmark size={11} style={{ color: 'var(--theme-textDim)' }} strokeDasharray="2 2" />
+                        <span>UNCATEGORIZED (未分類・フォルダーなし)</span>
+                      </span>
+                      {newFavoriteCategory === '__UNCATEGORIZED__' && <Check size={11} strokeWidth={2.5} />}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="text-[8.5px] font-mono leading-relaxed p-2 rounded-[2px] border" style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMuted)' }}>
+                ※作成されたお気に入りリストは自動的にクイック登録先 (★ TARGET) に指定され、サイドバーの該当フォルダー内に展開・表示されます。
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div 
+              className="px-3.5 py-2.5 border-t flex justify-end gap-2" 
+              style={{ backgroundColor: 'var(--theme-listHeader-bg)', borderColor: 'var(--theme-border)' }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowCreateFavoriteModal(false)}
+                className="px-3 py-1.5 border rounded-[2px] text-[9.5px] font-mono tracking-wider hover:opacity-80 transition-colors cursor-pointer"
+                style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', backgroundColor: 'var(--theme-bg)' }}
+              >
+                CANCEL
+              </button>
+              <button
+                type="button"
+                onClick={submitCreateFavoritePlaylist}
+                className="px-3.5 py-1.5 border rounded-[2px] text-[9.5px] font-mono font-bold tracking-wider hover:opacity-90 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                style={{
+                  backgroundColor: 'var(--theme-accentMuted)',
+                  borderColor: 'var(--theme-accent)',
+                  color: 'var(--theme-accent)',
+                }}
+              >
+                <Star size={10} className="fill-amber-400 text-amber-400" />
+                <span>CREATE & SET TARGET</span>
               </button>
             </div>
           </div>
