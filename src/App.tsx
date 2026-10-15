@@ -2944,7 +2944,14 @@ export default function App() {
     }
     dragCounterRef.current = 0;
     setIsDragOver(false);
+    setDragOverPlaylistId(null);
+    setDraggedPlaylistId(null);
     setDragOverCategoryTarget(null);
+    setDraggedCategoryName(null);
+    setDragOverCategoryReorderTarget(null);
+    setCategoryDropPosition(null);
+    setSidebarDragAlbum(null);
+    setSidebarDragOverAlbum(null);
   };
 
   const isExternalFileDrag = (e: React.DragEvent | DragEvent) => {
@@ -3738,12 +3745,12 @@ const clearActivePlaylist = () => {
 
   const handlePlaylistDragOver = (e: React.DragEvent, id: string) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (id !== 'all-tracks' && id !== draggedPlaylistId) {
-      setDragOverPlaylistId(id);
-    } else {
-      setDragOverPlaylistId(null);
+    if (!draggedPlaylistId || id === 'all-tracks' || id === draggedPlaylistId) {
+      if (dragOverPlaylistId !== null) setDragOverPlaylistId(null);
+      return;
     }
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverPlaylistId(id);
   };
 
   const handlePlaylistDrop = (e: React.DragEvent, targetId: string) => {
@@ -7048,6 +7055,11 @@ const clearActivePlaylist = () => {
                 draggable={pl.id !== 'all-tracks' && renamingPlaylistId !== pl.id}
                 onDragStart={(e) => handlePlaylistDragStart(e, pl.id)}
                 onDragOver={(e) => handlePlaylistDragOver(e, pl.id)}
+                onDragLeave={() => {
+                  if (dragOverPlaylistId === pl.id) {
+                    setDragOverPlaylistId(null);
+                  }
+                }}
                 onDrop={(e) => handlePlaylistDrop(e, pl.id)}
                 onDragEnd={handlePlaylistDragEnd}
                 onClick={(e) => {
