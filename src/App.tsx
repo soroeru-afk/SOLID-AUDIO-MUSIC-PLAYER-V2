@@ -242,6 +242,21 @@ const DEFAULT_WINDOW_SIZES: Record<'full' | 'mini' | 'slim', { width: number; he
   slim: { width: 720, height: 160 }
 };
 
+const MIN_WINDOW_SIZES: Record<'full' | 'mini' | 'slim', { width: number; height: number }> = {
+  full: { width: 1000, height: 700 },
+  mini: { width: 450, height: 500 },
+  slim: { width: 600, height: 140 }
+};
+
+const sanitizeWindowSize = (mode: 'full' | 'mini' | 'slim', size?: any): { width: number; height: number } => {
+  const def = DEFAULT_WINDOW_SIZES[mode];
+  const min = MIN_WINDOW_SIZES[mode];
+  if (!size || typeof size.width !== 'number' || typeof size.height !== 'number') return def;
+  if (isNaN(size.width) || isNaN(size.height)) return def;
+  if (size.width < min.width || size.height < min.height) return def;
+  return { width: Math.round(size.width), height: Math.round(size.height) };
+};
+
 // --- Utils ---
 const formatTime = (seconds: number) => {
   if (isNaN(seconds)) return '0:00';
@@ -1160,39 +1175,49 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
-          full: parsed.full || DEFAULT_WINDOW_SIZES.full,
-          mini: parsed.mini || DEFAULT_WINDOW_SIZES.mini,
-          slim: parsed.slim || DEFAULT_WINDOW_SIZES.slim
+          full: sanitizeWindowSize('full', parsed.full),
+          mini: sanitizeWindowSize('mini', parsed.mini),
+          slim: sanitizeWindowSize('slim', parsed.slim)
         };
       }
     } catch (e) {}
     return DEFAULT_WINDOW_SIZES;
   });
 
-  // Track window resizing by user per mode (with guard for full screen)
+  // Track window resizing and persist custom dimensions per viewMode (debounced & guarded)
   useEffect(() => {
+    let resizeTimer: any;
     const handleResize = () => {
-      if (typeof document !== 'undefined' && document.fullscreenElement) return;
-      if (window.innerWidth && window.innerHeight) {
-        setWindowSizes(prev => {
-          const current = prev[viewMode];
-          if (Math.abs(current.width - window.innerWidth) > 10 || Math.abs(current.height - window.innerHeight) > 10) {
-            const updated = {
-              ...prev,
-              [viewMode]: { width: window.innerWidth, height: window.innerHeight }
-            };
-            try {
-              localStorage.setItem('v2_solidWindowSizes', JSON.stringify(updated));
-              set('v2_solidWindowSizes', updated).catch(() => {});
-            } catch (e) {}
-            return updated;
-          }
-          return prev;
-        });
-      }
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (typeof document !== 'undefined' && document.fullscreenElement) return;
+        const w = window.outerWidth || window.innerWidth;
+        const h = window.outerHeight || window.innerHeight;
+        const min = MIN_WINDOW_SIZES[viewMode];
+        if (w >= min.width && h >= min.height) {
+          setWindowSizes(prev => {
+            const current = prev[viewMode];
+            if (Math.abs(current.width - w) > 10 || Math.abs(current.height - h) > 10) {
+              const updated = {
+                ...prev,
+                [viewMode]: { width: Math.round(w), height: Math.round(h) }
+              };
+              try {
+                localStorage.setItem('v2_solidWindowSizes', JSON.stringify(updated));
+                set('v2_solidWindowSizes', updated).catch(() => {});
+              } catch (e) {}
+              return updated;
+            }
+            return prev;
+          });
+        }
+      }, 300);
     };
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(resizeTimer);
+    };
   }, [viewMode]);
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -1272,7 +1297,7 @@ export default function App() {
     setPlayerOffset({ x: 0, y: 0 });
   }, [viewMode]);
 
-  // Resize window according to current viewMode
+  // Resize window ONLY when viewMode changes (prevents recursive resize loops)
   useEffect(() => {
     try {
       localStorage.setItem('v2_solidViewMode', viewMode);
@@ -1284,13 +1309,13 @@ export default function App() {
         return;
       }
       try {
-        const targetSize = windowSizes[viewMode] || DEFAULT_WINDOW_SIZES[viewMode];
+        const targetSize = sanitizeWindowSize(viewMode, windowSizes[viewMode]);
         window.resizeTo(targetSize.width, targetSize.height);
       } catch (err) {
         console.warn('Window resizeTo not supported in this context', err);
       }
     }
-  }, [viewMode, windowSizes]);
+  }, [viewMode]);
 
   // Fullscreen state and handler
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1380,9 +1405,9 @@ export default function App() {
         
         if (savedWindowSizes && typeof savedWindowSizes === 'object') {
           setWindowSizes(prev => ({
-            full: savedWindowSizes.full && savedWindowSizes.full.width ? savedWindowSizes.full : prev.full,
-            mini: savedWindowSizes.mini && savedWindowSizes.mini.width ? savedWindowSizes.mini : prev.mini,
-            slim: savedWindowSizes.slim && savedWindowSizes.slim.width ? savedWindowSizes.slim : prev.slim
+            full: sanitizeWindowSize('full', savedWindowSizes.full || prev.full),
+            mini: sanitizeWindowSize('mini', savedWindowSizes.mini || prev.mini),
+            slim: sanitizeWindowSize('slim', savedWindowSizes.slim || prev.slim)
           }));
         }
         
@@ -6187,7 +6212,27 @@ export default function App() {
                       </div>
                    </>
                 ) : (
-                   <div className="w-full h-10 flex items-center justify-center text-[10px] tracking-widest flex-1" style={{ color: 'var(--theme-textDim)' }}>AWAITING TRACK SELECTION</div>
+                   <div className="w-full h-10 flex items-center justify-between px-3 text-[10px] tracking-widest flex-1" style={{ color: 'var(--theme-textDim)' }}>
+                      <span>AWAITING TRACK SELECTION</span>
+                      <div className="flex items-center gap-3 shrink-0 pl-3 border-l" style={{ borderColor: 'var(--theme-border)' }}>
+                         <button 
+                           onClick={() => setViewMode('mini')}
+                           className="hover:opacity-80 transition-opacity"
+                           style={{ color: 'var(--theme-textMain)' }}
+                           title="Card Mode"
+                         >
+                            <PanelTop size={14} />
+                         </button>
+                         <button 
+                           onClick={() => setViewMode('full')}
+                           className="hover:opacity-80 transition-opacity"
+                           style={{ color: 'var(--theme-textMain)' }}
+                           title="Close Mode (Return to Full View)"
+                         >
+                            <X size={16} />
+                         </button>
+                      </div>
+                   </div>
                 )}
              </div>
           )}
@@ -6199,7 +6244,20 @@ export default function App() {
 
       {/* Top Header Row */}
       <header className="flex justify-between items-center px-1 relative z-50">
-        <div className="flex items-center gap-3">
+        <div 
+          className="flex items-center gap-3 cursor-pointer select-none"
+          title="ダブルクリックでウィンドウサイズを標準サイズ (1700x1200) にリセット"
+          onDoubleClick={() => {
+            setWindowSizes(prev => ({ ...prev, full: DEFAULT_WINDOW_SIZES.full }));
+            try {
+              localStorage.setItem('v2_solidWindowSizes', JSON.stringify({ ...windowSizes, full: DEFAULT_WINDOW_SIZES.full }));
+              set('v2_solidWindowSizes', { ...windowSizes, full: DEFAULT_WINDOW_SIZES.full }).catch(() => {});
+            } catch (e) {}
+            if (typeof window !== 'undefined' && typeof window.resizeTo === 'function') {
+              window.resizeTo(DEFAULT_WINDOW_SIZES.full.width, DEFAULT_WINDOW_SIZES.full.height);
+            }
+          }}
+        >
           <Activity size={18} style={{ color: 'var(--theme-accent)' }} />
           <h1 className="text-xl font-bold tracking-widest uppercase">SOLID AUDIO MUSIC PLAYER</h1>
         </div>
