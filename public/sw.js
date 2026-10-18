@@ -1,4 +1,4 @@
-const CACHE_NAME = 'solid-audio-cache-v2.0.40';
+const CACHE_NAME = 'solid-audio-cache-v2.0.41';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

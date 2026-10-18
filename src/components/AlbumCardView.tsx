@@ -45,6 +45,15 @@ interface AlbumCardViewProps {
   focusedAlbumId?: string | null;
   currentTrackId?: string;
   isPlaying?: boolean;
+  playlists?: { id: string; name: string; category?: string }[];
+  onMoveAlbumToPlaylist?: (album: AlbumGroup, targetPlaylistId: string) => void;
+  onMoveAlbumsToPlaylist?: (albums: AlbumGroup[], targetPlaylistId: string) => void;
+  categories?: string[];
+  onExtractAlbumToCategory?: (album: AlbumGroup, targetCategory: string | undefined) => void;
+  onExtractAlbumsToCategory?: (albums: AlbumGroup[], targetCategory: string | undefined) => void;
+  onMoveAlbumsToNewPlaylist?: (albums: AlbumGroup[], newPlaylistName: string, category: string | undefined) => void;
+  onSelectedAlbumsChange?: (selectedAlbums: AlbumGroup[]) => void;
+  triggerOpenBatchMoveModal?: number;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -85,6 +94,15 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   focusedAlbumId,
   currentTrackId,
   isPlaying,
+  playlists,
+  onMoveAlbumToPlaylist,
+  onMoveAlbumsToPlaylist,
+  categories,
+  onExtractAlbumToCategory,
+  onExtractAlbumsToCategory,
+  onMoveAlbumsToNewPlaylist,
+  onSelectedAlbumsChange,
+  triggerOpenBatchMoveModal,
 }) => {
   const reorderHandler = onReorderAlbum || onReorderAlbums;
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -101,10 +119,21 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   const [selectedAlbumIds, setSelectedAlbumIds] = useState<Set<string>>(new Set());
   const [confirmDeleteSelected, setConfirmDeleteSelected] = useState<boolean>(false);
 
+  // New folder creation state inside movePlaylistModal
+  const [newFolderNameInput, setNewFolderNameInput] = useState('');
+  const [newFolderCategory, setNewFolderCategory] = useState<string>('__UNCATEGORIZED__');
+  const [isCreatingNewFolderInModal, setIsCreatingNewFolderInModal] = useState(false);
+
   // Modal state for moving 1 track or an entire separated album into another album (no clipping!)
   const [moveTargetModal, setMoveTargetModal] = useState<{
     trackIds: string[];
     sourceAlbumId: string;
+    label: string;
+  } | null>(null);
+
+  // Modal state for moving album(s) into another playlist/folder as independent album(s)
+  const [movePlaylistModal, setMovePlaylistModal] = useState<{
+    albums: AlbumGroup[];
     label: string;
   } | null>(null);
 
@@ -120,6 +149,25 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, [activePlaylistId, displayMode, firstAlbumId, focusedAlbumId]);
+
+  // Sync selected albums with parent component for main header MOVE button
+  useEffect(() => {
+    if (onSelectedAlbumsChange) {
+      const selected = albums.filter(a => selectedAlbumIds.has(a.id));
+      onSelectedAlbumsChange(selected);
+    }
+  }, [selectedAlbumIds, albums, onSelectedAlbumsChange]);
+
+  // Listen to parent trigger for opening the batch move modal
+  useEffect(() => {
+    if (triggerOpenBatchMoveModal && selectedAlbumIds.size > 0) {
+      const selected = albums.filter(a => selectedAlbumIds.has(a.id));
+      setMovePlaylistModal({
+        albums: selected,
+        label: `選択した ${selected.length} 件のアルバム`,
+      });
+    }
+  }, [triggerOpenBatchMoveModal]);
 
   const toggleSelectAlbum = (albumId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -201,6 +249,28 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
             選択解除
           </button>
 
+          {(onMoveAlbumsToPlaylist || onExtractAlbumsToCategory) && (
+            <button
+              type="button"
+              onClick={() => {
+                setMovePlaylistModal({
+                  albums: selectedAlbums,
+                  label: `選択した ${selectedAlbumIds.size} 件のアルバム (計 ${totalSelectedTracks} 曲)`,
+                });
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-[9px] font-mono font-bold border rounded-[1px] transition-colors hover:opacity-90 active:scale-95 cursor-pointer"
+              style={{
+                backgroundColor: 'var(--theme-accentMuted)',
+                borderColor: 'var(--theme-accent)',
+                color: 'var(--theme-accent)',
+              }}
+              title="選択したアルバムを別のプレイリストまたはカテゴリー直下へ移動"
+            >
+              <Folder size={11} />
+              <span>別リスト・カテゴリーへ移動 ({selectedAlbumIds.size})</span>
+            </button>
+          )}
+
           {confirmDeleteSelected ? (
             <div 
               className="flex items-center gap-1.5 px-2 py-0.5 border rounded-[1px]"
@@ -238,9 +308,9 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
               onClick={() => setConfirmDeleteSelected(true)}
               className="flex items-center gap-1.5 px-2.5 py-1 text-[9px] font-mono font-bold border rounded-[1px] transition-colors hover:opacity-90 active:scale-95 cursor-pointer"
               style={{
-                backgroundColor: 'var(--theme-accentMuted)',
-                borderColor: 'var(--theme-accent)',
-                color: 'var(--theme-accent)',
+                backgroundColor: 'var(--theme-list-bg)',
+                borderColor: 'var(--theme-list-border)',
+                color: 'var(--theme-list-textMuted)',
               }}
               title="選択したアルバムを一括削除"
             >
@@ -370,6 +440,19 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     setDraggedAlbumId(albumId);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', albumId);
+    const alb = albums.find((a) => a.id === albumId);
+    if (alb) {
+      e.dataTransfer.setData(
+        'application/x-solid-album',
+        JSON.stringify({
+          albumId: alb.id,
+          album: alb.album,
+          artist: alb.artist,
+          playlistId: activePlaylistId,
+          trackIds: alb.tracks.map((t: any) => t.id),
+        })
+      );
+    }
   };
 
   const handleAlbumDragOver = (e: React.DragEvent, albumId: string) => {
@@ -589,14 +672,35 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                 }}
                 className={`${isZoomed ? 'px-2.5 h-6 text-[10px]' : 'px-1.5 h-4 text-[7.5px]'} border rounded-[1px] font-mono font-bold tracking-wider flex items-center gap-1 transition-colors hover:opacity-80 active:scale-95`}
                 style={{
+                  backgroundColor: 'var(--theme-list-bg)',
+                  borderColor: 'var(--theme-list-border)',
+                  color: 'var(--theme-list-textDim)',
+                }}
+                title={`このアルバムの全曲（${album.tracks.length}曲）を同リスト内の別アルバムへ統合`}
+              >
+                <Disc size={isZoomed ? 11 : 8} />
+                {(!compactMode || isZoomed) && <span>同一リスト結合</span>}
+              </button>
+            )}
+            {(onMoveAlbumsToPlaylist || onExtractAlbumsToCategory) && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMovePlaylistModal({
+                    albums: [album],
+                    label: `「${album.album}」(${album.tracks.length}曲)`,
+                  });
+                }}
+                className={`${isZoomed ? 'px-2.5 h-6 text-[10px]' : 'px-1.5 h-4 text-[8px]'} border rounded-[1px] font-mono font-bold tracking-wider flex items-center gap-1 transition-colors hover:opacity-80 active:scale-95 cursor-pointer`}
+                style={{
                   backgroundColor: 'var(--theme-accentMuted)',
                   borderColor: 'var(--theme-accent)',
                   color: 'var(--theme-accent)',
                 }}
-                title={`このアルバムの全曲（${album.tracks.length}曲）を別のアルバムへまとめて結合・移動する`}
+                title={`このアルバムを別のリストまたはカテゴリー直下へ移動 (MOVE)`}
               >
                 <Folder size={isZoomed ? 11 : 8} />
-                {(!compactMode || isZoomed) && <span>全曲結合・移動</span>}
+                <span>MOVE</span>
               </button>
             )}
             {onOpenAlbum && (
@@ -1653,7 +1757,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
 
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4"
         onClick={() => setMoveTargetModal(null)}
       >
         <div
@@ -1752,6 +1856,273 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     );
   };
 
+  // Fixed Centered Modal for moving albums to another Playlist/Folder (Independent albums, no track unification)
+  const renderMovePlaylistModal = () => {
+    if (!movePlaylistModal || !onMoveAlbumsToPlaylist || !playlists) return null;
+    const targetPlaylists = playlists.filter((p) => p.id !== 'all-tracks' && p.id !== activePlaylistId);
+
+    return (
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4 font-mono animate-fade-in"
+        onClick={() => setMovePlaylistModal(null)}
+      >
+        <div
+          className="w-full max-w-md border rounded-[2px] shadow-2xl flex flex-col overflow-hidden"
+          style={{
+            backgroundColor: 'var(--theme-surface)',
+            borderColor: 'var(--theme-border)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className="px-4 py-2.5 border-b flex items-center justify-between"
+            style={{
+              backgroundColor: 'var(--theme-surfaceLighter)',
+              borderColor: 'var(--theme-border)',
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <Folder size={13} style={{ color: 'var(--theme-accent)' }} />
+              <span className="text-[11px] font-bold tracking-wider" style={{ color: 'var(--theme-textMain)' }}>
+                移動先のフォルダ / リストを選択
+              </span>
+            </div>
+            <button
+              onClick={() => setMovePlaylistModal(null)}
+              className="p-1 hover:opacity-70 transition-opacity cursor-pointer"
+              style={{ color: 'var(--theme-textMuted)' }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          <div
+            className="px-4 py-2 border-b text-[10px]"
+            style={{
+              backgroundColor: 'var(--theme-bg)',
+              borderColor: 'var(--theme-border)',
+              color: 'var(--theme-textMuted)',
+            }}
+          >
+            <div>
+              移動対象: <span className="font-bold" style={{ color: 'var(--theme-accent)' }}>{movePlaylistModal.label}</span>
+            </div>
+            <div className="text-[8.5px] mt-0.5" style={{ color: 'var(--theme-textDim)' }}>
+              ※ アルバム単位の独立性を維持したまま、対象リスト内に並びます（曲統一ではありません）。
+            </div>
+          </div>
+
+          <div className="max-h-96 overflow-y-auto divide-y" style={{ borderColor: 'var(--theme-border)' }}>
+            {/* Section A: Extract album to Category as independent playlist */}
+            {onExtractAlbumsToCategory && (
+              <div className="flex flex-col" style={{ backgroundColor: 'var(--theme-bg)' }}>
+                <div
+                  className="px-4 py-1.5 text-[8.5px] uppercase tracking-wider font-semibold border-b flex items-center justify-between"
+                  style={{
+                    backgroundColor: 'var(--theme-surfaceLighter)',
+                    borderColor: 'var(--theme-border)',
+                    color: 'var(--theme-textDim)',
+                  }}
+                >
+                  <span>1. カテゴリー直下に独立配置（フォルダーから出す）</span>
+                  <span className="text-[7.5px]" style={{ color: 'var(--theme-accent)' }}>独立リスト化</span>
+                </div>
+                <div className="divide-y" style={{ borderColor: 'var(--theme-border)' }}>
+                  <button
+                    onClick={() => {
+                      onExtractAlbumsToCategory(movePlaylistModal.albums, undefined);
+                      setMovePlaylistModal(null);
+                      setSelectedAlbumIds(new Set());
+                    }}
+                    className="w-full text-left px-4 py-2 flex items-center justify-between gap-2 hover:opacity-90 transition-colors cursor-pointer"
+                    style={{ color: 'var(--theme-textMain)', backgroundColor: 'transparent' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  >
+                    <span className="text-[10px] font-mono flex items-center gap-1.5">
+                      <Folder size={11} style={{ color: 'var(--theme-textDim)' }} />
+                      <span>未分類 (UNCATEGORIZED) 直下に配置</span>
+                    </span>
+                    <span className="text-[8px] font-bold px-1.5 py-0.5 border rounded-[1px]" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textMuted)' }}>
+                      配置 ➔
+                    </span>
+                  </button>
+                  {categories && categories.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => {
+                        onExtractAlbumsToCategory(movePlaylistModal.albums, cat);
+                        setMovePlaylistModal(null);
+                        setSelectedAlbumIds(new Set());
+                      }}
+                      className="w-full text-left px-4 py-2 flex items-center justify-between gap-2 hover:opacity-90 transition-colors cursor-pointer"
+                      style={{ color: 'var(--theme-textMain)', backgroundColor: 'transparent' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                    >
+                      <span className="text-[10px] font-mono flex items-center gap-1.5">
+                        <Folder size={11} style={{ color: 'var(--theme-accent)' }} />
+                        <span>「{cat}」直下に独立アルバムとして配置</span>
+                      </span>
+                      <span className="text-[8px] font-bold px-1.5 py-0.5 border rounded-[1px]" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
+                        直下に配置 ➔
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Section B: Merge into another existing Playlist / Folder */}
+            <div className="flex flex-col">
+              <div
+                className="px-4 py-1.5 text-[8.5px] uppercase tracking-wider font-semibold border-b flex items-center justify-between"
+                style={{
+                  backgroundColor: 'var(--theme-surfaceLighter)',
+                  borderColor: 'var(--theme-border)',
+                  color: 'var(--theme-textDim)',
+                }}
+              >
+                <span>2. 他のフォルダー / リストへ移動・合流</span>
+                <span className="text-[7.5px] opacity-60">既存リスト</span>
+              </div>
+              <div className="divide-y" style={{ borderColor: 'var(--theme-border)' }}>
+                {targetPlaylists.map((targetPl) => (
+                  <button
+                    key={targetPl.id}
+                    onClick={() => {
+                      onMoveAlbumsToPlaylist(movePlaylistModal.albums, targetPl.id);
+                      setMovePlaylistModal(null);
+                      setSelectedAlbumIds(new Set());
+                    }}
+                    className="w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 transition-colors hover:opacity-90 cursor-pointer"
+                    style={{ color: 'var(--theme-textMain)', backgroundColor: 'transparent' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  >
+                    <div className="flex items-center gap-2.5 truncate min-w-0 flex-1">
+                      <Folder size={13} style={{ color: 'var(--theme-accent)' }} className="shrink-0" />
+                      <span className="font-bold truncate text-[10.5px]">{targetPl.name}</span>
+                      {targetPl.category && (
+                        <span
+                          className="text-[7.5px] px-1 py-0.2 border rounded-[1px] shrink-0 font-medium"
+                          style={{
+                            borderColor: 'var(--theme-border)',
+                            color: 'var(--theme-textMuted)',
+                            backgroundColor: 'var(--theme-surface)',
+                          }}
+                        >
+                          {targetPl.category}
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      className="px-2 py-0.5 text-[8.5px] font-bold border rounded-[1px] shrink-0"
+                      style={{
+                        backgroundColor: 'var(--theme-accentMuted)',
+                        borderColor: 'var(--theme-accent)',
+                        color: 'var(--theme-accent)',
+                      }}
+                    >
+                      合流 ➔
+                    </span>
+                  </button>
+                ))}
+                {targetPlaylists.length === 0 && (
+                  <div className="px-4 py-4 text-center text-[9px]" style={{ color: 'var(--theme-textDim)' }}>
+                    他の既存リストはありません（上のカテゴリー直下配置をご利用ください）
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Section C: Create a new Playlist / Artist Folder and Move */}
+            {onMoveAlbumsToNewPlaylist && (
+              <div className="flex flex-col" style={{ backgroundColor: 'var(--theme-bg)' }}>
+                <div
+                  className="px-4 py-1.5 text-[8.5px] uppercase tracking-wider font-semibold border-b flex items-center justify-between"
+                  style={{
+                    backgroundColor: 'var(--theme-surfaceLighter)',
+                    borderColor: 'var(--theme-border)',
+                    color: 'var(--theme-textDim)',
+                  }}
+                >
+                  <span>3. 新規フォルダー（アーティスト/リスト）を作成して移動</span>
+                  <span className="text-[7.5px]" style={{ color: 'var(--theme-accent)' }}>新規作成＋移動</span>
+                </div>
+                <div className="p-3 flex flex-col gap-2 font-mono">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[8.5px] uppercase tracking-wider shrink-0" style={{ color: 'var(--theme-textMuted)' }}>
+                      所属カテゴリー:
+                    </span>
+                    <select
+                      value={newFolderCategory}
+                      onChange={(e) => setNewFolderCategory(e.target.value)}
+                      className="flex-1 bg-transparent border rounded-[2px] px-2 py-1 text-[9px] outline-none cursor-pointer"
+                      style={{
+                        borderColor: 'var(--theme-border)',
+                        color: 'var(--theme-textMain)',
+                        backgroundColor: 'var(--theme-surface)',
+                      }}
+                    >
+                      <option value="__UNCATEGORIZED__">未分類 (UNCATEGORIZED)</option>
+                      {categories && categories.map(cat => (
+                        <option key={cat} value={cat}>「{cat}」カテゴリー</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="新規フォルダー名（例: 松田聖子、ベスト盤など）..."
+                      value={newFolderNameInput}
+                      onChange={(e) => setNewFolderNameInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newFolderNameInput.trim()) {
+                          const targetCat = newFolderCategory === '__UNCATEGORIZED__' ? undefined : newFolderCategory;
+                          onMoveAlbumsToNewPlaylist(movePlaylistModal.albums, newFolderNameInput.trim(), targetCat);
+                          setMovePlaylistModal(null);
+                          setSelectedAlbumIds(new Set());
+                          setNewFolderNameInput('');
+                        }
+                      }}
+                      className="flex-1 bg-transparent border rounded-[2px] px-2.5 py-1 text-[9.5px] outline-none"
+                      style={{
+                        borderColor: newFolderNameInput.trim() ? 'var(--theme-accent)' : 'var(--theme-border)',
+                        color: 'var(--theme-textMain)',
+                        backgroundColor: 'var(--theme-surface)',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={!newFolderNameInput.trim()}
+                      onClick={() => {
+                        if (!newFolderNameInput.trim()) return;
+                        const targetCat = newFolderCategory === '__UNCATEGORIZED__' ? undefined : newFolderCategory;
+                        onMoveAlbumsToNewPlaylist(movePlaylistModal.albums, newFolderNameInput.trim(), targetCat);
+                        setMovePlaylistModal(null);
+                        setSelectedAlbumIds(new Set());
+                        setNewFolderNameInput('');
+                      }}
+                      className="px-3 py-1 text-[9px] font-bold border rounded-[2px] transition-colors hover:opacity-90 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed shrink-0 cursor-pointer"
+                      style={{
+                        backgroundColor: 'var(--theme-accentMuted)',
+                        borderColor: 'var(--theme-accent)',
+                        color: 'var(--theme-accent)',
+                      }}
+                    >
+                      作成して移動 ➔
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (albums.length === 0) {
     return (
       <div
@@ -1779,6 +2150,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     return (
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
         {renderMoveTargetModal()}
+        {renderMovePlaylistModal()}
         {renderSelectionBanner()}
         <div
           className="flex items-center justify-between pb-2 mb-3 border-b text-[9px] font-mono shrink-0"
@@ -1957,6 +2329,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     return (
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
         {renderMoveTargetModal()}
+        {renderMovePlaylistModal()}
         {renderSelectionBanner()}
         <div
           className="flex items-center justify-between pb-2 border-b text-[9px] font-mono shrink-0 mb-3"
@@ -2016,6 +2389,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     return (
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
         {renderMoveTargetModal()}
+        {renderMovePlaylistModal()}
         {renderSelectionBanner()}
         <div
           className="flex items-center justify-between pb-2 border-b text-[9px] font-mono shrink-0 mb-3"
@@ -2066,6 +2440,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   return (
     <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
       {renderMoveTargetModal()}
+      {renderMovePlaylistModal()}
       {renderSelectionBanner()}
       <div
         className="flex items-center justify-between pb-2 border-b text-[9px] font-mono shrink-0 mb-3"
