@@ -1840,15 +1840,19 @@ export default function App() {
       document.head.appendChild(metaThemeColor);
     }
     const colorMap: Record<string, string> = {
-      black: '#0a0d12',
-      red: '#0d0404',
-      navy: '#0d131f',
-      light: '#f1f5f9',
-      paper: '#f7f6f2',
-      pink: '#fff5f7'
+      NAVY: '#0d1117',
+      BLACK: '#0B0C0D',
+      PAPER: '#f4f3ef',
+      PINK: '#1a1215',
+      LIGHT: '#e8ecef',
+      BROWN: '#1a1614',
+      MOCHA: '#46382c',
+      OLIVE: '#161a15',
+      RED: '#140808'
     };
-    metaThemeColor.setAttribute('content', colorMap[theme.id] || '#0a0d12');
-  }, [theme.id]);
+    const activeColor = colorMap[theme.id] || colorMap[theme.id?.toUpperCase()] || theme.bg || '#0d1117';
+    metaThemeColor.setAttribute('content', activeColor);
+  }, [theme.id, theme.bg]);
   const isLightTheme = theme.id === 'LIGHT';
   const iconColor = isLightTheme ? '#1a2530' : '#ffffff';
   const listIconColor = (theme as any).listIconColor || iconColor;
