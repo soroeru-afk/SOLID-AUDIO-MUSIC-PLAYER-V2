@@ -988,6 +988,15 @@ export default function App() {
 
   // --- Main Album View Selection State Sync ---
   const [mainSelectedAlbums, setMainSelectedAlbums] = useState<AlbumGroup[]>([]);
+  const handleSelectedAlbumsChange = React.useCallback((selected: AlbumGroup[]) => {
+    setMainSelectedAlbums(prev => {
+      if (prev.length === 0 && selected.length === 0) return prev;
+      if (prev.length === selected.length && prev.every((a, idx) => a.id === selected[idx]?.id)) {
+        return prev;
+      }
+      return selected;
+    });
+  }, []);
   const [triggerOpenMainAlbumMoveModal, setTriggerOpenMainAlbumMoveModal] = useState<number>(0);
 
   // --- Create Folder Directly Inside Category State ---
@@ -1831,19 +1840,16 @@ export default function App() {
       document.head.appendChild(metaThemeColor);
     }
     const colorMap: Record<string, string> = {
-      navy: '#0d1117',
-      black: '#0b0c0d',
-      paper: '#f4f3ef',
-      pink: '#1a1215',
-      light: '#e8ecef',
-      brown: '#1a1614',
-      mocha: '#46382c',
-      olive: '#161a15',
-      red: '#140808'
+      black: '#0a0d12',
+      red: '#0d0404',
+      navy: '#0d131f',
+      light: '#f1f5f9',
+      paper: '#f7f6f2',
+      pink: '#fff5f7'
     };
-    metaThemeColor.setAttribute('content', colorMap[theme.id.toLowerCase()] || theme.bg || '#0a0d12');
+    metaThemeColor.setAttribute('content', colorMap[theme.id] || '#0a0d12');
   }, [theme.id]);
-  const isLightTheme = theme.id === 'LIGHT' || theme.id === 'PAPER';
+  const isLightTheme = theme.id === 'LIGHT';
   const iconColor = isLightTheme ? '#1a2530' : '#ffffff';
   const listIconColor = (theme as any).listIconColor || iconColor;
   
@@ -1897,12 +1903,20 @@ export default function App() {
     });
   };
 
-  const displayTracks = getSortedTracks(activePlaylist.tracks.filter(t => 
-    t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    t.artist.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.album.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.fileName.toLowerCase().includes(searchQuery.toLowerCase())
-  ));
+  const displayTracks = useMemo(() => {
+    if (!activePlaylist?.tracks) return [];
+    const tracks = activePlaylist.tracks;
+    const q = searchQuery.trim().toLowerCase();
+    const filtered = q
+      ? tracks.filter(t => 
+          (t.title && t.title.toLowerCase().includes(q)) || 
+          (t.artist && t.artist.toLowerCase().includes(q)) ||
+          (t.album && t.album.toLowerCase().includes(q)) ||
+          (t.fileName && t.fileName.toLowerCase().includes(q))
+        )
+      : tracks;
+    return getSortedTracks(filtered);
+  }, [activePlaylist?.tracks, searchQuery, activeSortConfig]);
 
   // Helper to resolve track album and artist with folderPath & playlist hierarchy
   // Ensures tracks inside the same folder (or single-folder playlist) are grouped into ONE unified album by folder name,
@@ -2271,9 +2285,11 @@ export default function App() {
     }, 150);
   }, [currentTrack, playingPlaylistId, playlists, playlistAlbumsMap, selectedCategoryFilter]);
 
+  const loadingAudioTrackIdRef = useRef<string | null>(null);
   useEffect(() => {
     const track = playbackQueue[currentTrackIndex];
-    if (track && track.url === '' && !track.missing) {
+    if (track && track.url === '' && !track.missing && loadingAudioTrackIdRef.current !== track.id) {
+      loadingAudioTrackIdRef.current = track.id;
       (async () => {
         try {
           const audioData = await get(`v2_track_audio_${track.id}`);
@@ -2286,7 +2302,7 @@ export default function App() {
             setPlaylists(prev => prev.map(p => ({ ...p, tracks: p.tracks.map(updateTrack) })));
             setPlaybackQueue(prev => prev.map(updateTrack));
           } else {
-            console.error("Audio data not found for", track.id);
+            console.warn("Audio data not found for", track.id);
             const markMissing = (t: Track) => t.id === track.id ? { ...t, missing: true } : t;
             setLibrary(prev => prev.map(markMissing));
             setPlaylists(prev => prev.map(p => ({ ...p, tracks: p.tracks.map(markMissing) })));
@@ -2294,6 +2310,8 @@ export default function App() {
           }
         } catch (e) {
           console.error("Error loading audio data", e);
+        } finally {
+          loadingAudioTrackIdRef.current = null;
         }
       })();
     }
@@ -3815,16 +3833,38 @@ export default function App() {
     setIsPlaying(true);
   };
 
+  const safePlay = (targetAudio?: HTMLAudioElement | null) => {
+    const audio = targetAudio || audioRef.current;
+    if (!audio) return;
+    if (audioCtxRef.current?.state === 'suspended') {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+    try {
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err: any) => {
+          if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') {
+            // Normal browser cancellation when track changes or gesture pending
+            return;
+          }
+          console.warn('Audio play error:', err);
+        });
+      }
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') {
+        return;
+      }
+      console.warn('Audio play invocation error:', err);
+    }
+  };
+
   const togglePlay = () => {
     if (!currentTrack) return;
     setIsPlaying(prev => {
       const next = !prev;
       if (audioRef.current) {
         if (next) {
-          if (audioCtxRef.current?.state === 'suspended') {
-            audioCtxRef.current.resume();
-          }
-          audioRef.current.play().catch(()=>{});
+          safePlay(audioRef.current);
         }
         else audioRef.current.pause();
       }
@@ -3973,7 +4013,7 @@ export default function App() {
     if (currentTime > 3) {
       if (audioRef.current) {
          audioRef.current.currentTime = 0;
-         audioRef.current.play().catch(()=>{});
+         safePlay(audioRef.current);
       }
       setCurrentTime(0);
       setIsPlaying(true);
@@ -4975,7 +5015,6 @@ export default function App() {
           return newQueue;
         });
       }
-      // Keep selection active so bottom bar stays open and user can continue moving tracks
       return;
     }
 
@@ -5010,7 +5049,6 @@ export default function App() {
         return newQueue;
       });
     }
-    // Keep selection active so bottom bar stays open and user can continuously reorder tracks
   };
 
   // --- Album Ordering (Top, Up, Down, Bottom & Drag-and-Drop) ---
@@ -5114,7 +5152,7 @@ export default function App() {
 
     if (audioRef.current && playUrl) {
       audioRef.current.src = playUrl;
-      audioRef.current.play().catch(console.error);
+      safePlay(audioRef.current);
     }
   };
 
@@ -5148,7 +5186,7 @@ export default function App() {
     }
     if (audioRef.current && playUrl) {
       audioRef.current.src = playUrl;
-      audioRef.current.play().catch(console.error);
+      safePlay(audioRef.current);
     }
   };
 
@@ -5183,7 +5221,7 @@ export default function App() {
     }
     if (audioRef.current && playUrl) {
       audioRef.current.src = playUrl;
-      audioRef.current.play().catch(console.error);
+      safePlay(audioRef.current);
     }
   };
 
@@ -5869,8 +5907,7 @@ export default function App() {
               )}
             {(() => {
               const isSelected = selectedTrackIds.has(track.id);
-              const hasMultipleSelected = selectedTrackIds.size > 1;
-              const isBatchRow = hasMultipleSelected && isSelected;
+              const isBatchRow = isSelected;
 
               const isTopBtnDisabled = isBatchRow ? !canMoveSelectedTop : idx === 0;
               const isUpBtnDisabled = isBatchRow ? !canMoveSelectedUp : idx === 0;
@@ -5888,7 +5925,7 @@ export default function App() {
                         moveTrack(e, idx, 0);
                       }
                     }} 
-                    title={isBatchRow ? `選択した${selectedTrackIds.size}曲を一括で一番上へ移動 (TOP)` : '一番上へ移動 (TOP)'} 
+                    title={isBatchRow ? (selectedTrackIds.size > 1 ? `選択した${selectedTrackIds.size}曲を一括で一番上へ移動 (TOP)` : '選択した曲を一番上へ移動 (TOP)') : '一番上へ移動 (TOP)'} 
                     className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
                     disabled={isTopBtnDisabled} 
                     style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
@@ -5904,7 +5941,7 @@ export default function App() {
                         moveTrack(e, idx, idx - 1);
                       }
                     }} 
-                    title={isBatchRow ? `選択した${selectedTrackIds.size}曲を一括で一つ上へ移動 (UP)` : '一つ上へ移動 (UP)'} 
+                    title={isBatchRow ? (selectedTrackIds.size > 1 ? `選択した${selectedTrackIds.size}曲を一括で一つ上へ移動 (UP)` : '選択した曲を一つ上へ移動 (UP)') : '一つ上へ移動 (UP)'} 
                     className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
                     disabled={isUpBtnDisabled} 
                     style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
@@ -5920,7 +5957,7 @@ export default function App() {
                         moveTrack(e, idx, idx + 1);
                       }
                     }} 
-                    title={isBatchRow ? `選択した${selectedTrackIds.size}曲を一括で一つ下へ移動 (DOWN)` : '一つ下へ移動 (DOWN)'} 
+                    title={isBatchRow ? (selectedTrackIds.size > 1 ? `選択した${selectedTrackIds.size}曲を一括で一つ下へ移動 (DOWN)` : '選択した曲を一つ下へ移動 (DOWN)') : '一つ下へ移動 (DOWN)'} 
                     className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
                     disabled={isDownBtnDisabled} 
                     style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
@@ -5936,7 +5973,7 @@ export default function App() {
                         moveTrack(e, idx, tracksToRender.length - 1);
                       }
                     }} 
-                    title={isBatchRow ? `選択した${selectedTrackIds.size}曲を一括で一番下へ移動 (BOTTOM)` : '一番下へ移動 (BOTTOM)'} 
+                    title={isBatchRow ? (selectedTrackIds.size > 1 ? `選択した${selectedTrackIds.size}曲を一括で一番下へ移動 (BOTTOM)` : '選択した曲を一番下へ移動 (BOTTOM)') : '一番下へ移動 (BOTTOM)'} 
                     className="w-5 h-5 flex items-center justify-center border rounded-[2px] transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 cursor-pointer" 
                     disabled={isBottomBtnDisabled} 
                     style={{ backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)', borderColor: isSelected ? 'var(--theme-accent)' : 'var(--theme-list-border)', color: listIconColor }}
@@ -5968,10 +6005,7 @@ export default function App() {
         onEnded={handleNext}
         onCanPlay={() => {
           if (isPlaying && audioRef.current?.paused) {
-            if (audioCtxRef.current?.state === 'suspended') {
-              audioCtxRef.current.resume();
-            }
-            audioRef.current.play().catch(()=>{});
+            safePlay(audioRef.current);
           }
         }}
       />
@@ -9851,7 +9885,7 @@ export default function App() {
               onExtractAlbumToCategory={handleExtractAlbumToCategory}
               onExtractAlbumsToCategory={handleExtractAlbumsToCategory}
               onMoveAlbumsToNewPlaylist={handleMoveAlbumsToNewPlaylist}
-              onSelectedAlbumsChange={setMainSelectedAlbums}
+              onSelectedAlbumsChange={handleSelectedAlbumsChange}
               triggerOpenBatchMoveModal={triggerOpenMainAlbumMoveModal}
             />
           ) : (
@@ -10021,148 +10055,77 @@ export default function App() {
                 </div>
               )}
               <div className="w-full flex flex-col min-h-full">
-                {/* List Header */}
-                <div className="flex items-center uppercase tracking-normal px-2 h-8 border-b shrink-0 sticky top-0 z-20 text-[10px] w-full" style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMuted)' }}>
-                  <div className="relative flex-shrink-0 flex items-center h-full" style={{ width: colWidths.index }}>
-                    <div className="w-8 flex-shrink-0 flex items-center justify-center">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const allSelected = tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id));
-                          if (allSelected) {
-                            setSelectedTrackIds(new Set());
-                            lastSelectedTrackIdRef.current = null;
-                          } else {
-                            setSelectedTrackIds(new Set(tracksToRender.map(t => t.id)));
-                          }
-                        }}
-                        className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center hover:opacity-80 active:scale-95 transition-all cursor-pointer"
-                        style={{
-                          borderColor: (tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id))) || tracksToRender.some(t => selectedTrackIds.has(t.id)) ? 'var(--theme-accent)' : 'var(--theme-list-border)',
-                          backgroundColor: (tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id))) ? 'var(--theme-accent)' : (tracksToRender.some(t => selectedTrackIds.has(t.id)) ? 'var(--theme-accentMuted)' : 'transparent'),
-                        }}
-                        title={tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id)) ? "全選択を解除" : "表示中の全曲を一括選択 (全選択)"}
-                      >
-                        {tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id)) && <Check size={10} style={{ color: '#ffffff' }} strokeWidth={3} />}
-                        {tracksToRender.some(t => selectedTrackIds.has(t.id)) && !tracksToRender.every(t => selectedTrackIds.has(t.id)) && <Minus size={9} style={{ color: 'var(--theme-accent)' }} strokeWidth={3} />}
-                      </button>
-                    </div>
-                    {/* Star Column Header */}
-                    <div className="w-6 flex-shrink-0 flex items-center justify-center" title="お気に入り (★)">
-                      <Star size={10} className="text-amber-400 opacity-60" />
-                    </div>
-                    <div className="w-7 flex-shrink-0 flex items-center justify-center" style={{ color: 'var(--theme-list-textDim)' }}>
-                      #
-                    </div>
-                    {colVisibility.art && (
-                      <div className="w-8 flex-shrink-0 flex items-center pl-1" style={{ color: 'var(--theme-list-textDim)' }}>
-                        ART
-                      </div>
-                    )}
-                    <div onMouseDown={(e) => handleColMouseDown(e, 'index')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
-                      <div className="w-[1px] h-full opacity-40 group-hover:opacity-100 transition-colors" style={{ backgroundColor: 'var(--theme-list-border)' }} />
-                    </div>
-                  </div>
-                  <div ref={columnsContainerRef} className="flex-1 min-w-0 flex items-center gap-3 pl-3 h-full">
-                    {visibleCols.map((col, idx) => {
-                      const isLast = idx === visibleCols.length - 1;
-                      const nextCol = isLast ? undefined : visibleCols[idx + 1];
-                      const weight = colWidths[col as keyof typeof colWidths] || 150;
-
-                      return (
-                        <div 
-                          key={col} 
-                          draggable 
-                          onDragStart={(e) => handleColDragStart(e, col)} 
-                          onDragOver={handleColDragOver} 
-                          onDrop={(e) => handleColDrop(e, col)} 
-                          className="relative min-w-0 pr-2 flex items-center h-full select-none" 
-                          style={{ flex: `${weight} 0 0%`, minWidth: col === 'trackNumber' ? 30 : 40 }}
-                        >
-                          <div onClick={() => handleSort(col as 'title' | 'artist' | 'album' | 'fileName' | 'trackNumber')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer" style={{ color: 'var(--theme-list-textMuted)' }}>
-                            <span className="truncate">{COL_LABELS[col] || col}</span>
-                            {activeSortConfig.key === col && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
-                          </div>
-                          {!isLast && nextCol && (
-                            <div onMouseDown={(e) => handleColMouseDown(e, col, nextCol)} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
-                              <div className="w-[1px] h-full opacity-40 group-hover:opacity-100 transition-colors" style={{ backgroundColor: 'var(--theme-list-border)' }} />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {colVisibility.actions && <div className="w-24 flex-shrink-0 text-center" style={{ color: 'var(--theme-list-textMuted)' }}>操作</div>}
-                </div>
-                {/* List Items */}
-                <div className="flex flex-col flex-1 pb-16 w-full">
-                  {memoizedTrackList}
-                </div>
-
-                {/* Floating / Sticky Industrial Batch Action Bar at bottom */}
-                {selectedTrackIds.size > 0 && (
+                {/* Sticky Top Header Container: Permanent Batch Action Bar + Column Headers */}
+                <div className="sticky top-0 z-20 flex flex-col shrink-0 w-full" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
+                  {/* Permanent Industrial Batch Action Bar (タイトル・アルバムの上の常駐バー) */}
                   <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="sticky bottom-0 left-0 right-0 z-30 px-3 py-1.5 border-t flex items-center justify-between gap-2 font-mono shrink-0 select-none overflow-visible"
+                    className="px-2.5 h-8 border-b flex items-center justify-between gap-2 font-mono shrink-0 select-none overflow-visible transition-colors"
                     style={{
-                      backgroundColor: 'var(--theme-surface)',
-                      borderColor: 'var(--theme-border)',
+                      backgroundColor: selectedTrackIds.size > 0 ? 'var(--theme-surface)' : 'var(--theme-list-surfaceLighter)',
+                      borderColor: 'var(--theme-list-border)',
                     }}
                   >
-                    {/* Left: Selection Counter, Select All & Clear Button */}
+                    {/* Left: Selection Counter, ALL SELECT & CANCEL Button, and MIX TO */}
                     <div className="flex items-center gap-1.5 min-w-0 shrink-0">
                       <span
-                        className="text-[10px] font-bold px-2 py-0.5 border rounded-[2px] flex items-center gap-1 shrink-0"
+                        className="text-[9.5px] font-bold px-2 py-0.5 border rounded-[1px] flex items-center gap-1 shrink-0 transition-all"
                         style={{
-                          borderColor: 'var(--theme-accent)',
-                          backgroundColor: 'var(--theme-accentMuted)',
-                          color: 'var(--theme-accent)',
+                          borderColor: selectedTrackIds.size > 0 ? 'var(--theme-accent)' : 'var(--theme-list-border)',
+                          backgroundColor: selectedTrackIds.size > 0 ? 'var(--theme-accentMuted)' : 'transparent',
+                          color: selectedTrackIds.size > 0 ? 'var(--theme-accent)' : 'var(--theme-list-textDim)',
+                          opacity: selectedTrackIds.size > 0 ? 1 : 0.5,
                         }}
                       >
-                        <Check size={10} />
-                        <span>{selectedTrackIds.size}曲 選択中</span>
+                        {selectedTrackIds.size > 0 ? <Check size={10} /> : <Minus size={10} />}
+                        <span>{selectedTrackIds.size > 0 ? `${selectedTrackIds.size} SELECTED` : '0 SELECTED'}</span>
                       </span>
+
+                      {/* ALL SELECT Button */}
                       <button
                         type="button"
+                        disabled={tracksToRender.length === 0}
                         onClick={() => {
                           setSelectedTrackIds(new Set(tracksToRender.map(t => t.id)));
                         }}
-                        className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[2px] hover:opacity-80 active:scale-95 transition-all cursor-pointer font-medium"
+                        className="flex items-center gap-1.5 text-[9px] font-mono px-2.5 py-0.5 border rounded-[1px] hover:opacity-80 active:scale-95 transition-all cursor-pointer font-medium disabled:opacity-30 disabled:cursor-default shrink-0"
                         style={{
-                          backgroundColor: 'var(--theme-bg)',
-                          borderColor: 'var(--theme-border)',
-                          color: 'var(--theme-textMain)',
+                          backgroundColor: 'var(--theme-list-bg)',
+                          borderColor: 'var(--theme-list-border)',
+                          color: 'var(--theme-list-textMain)',
                         }}
-                        title="表示中の全曲を一括選択 (全選択)"
+                        title="表示中の全曲を一括選択 (ALL SELECT)"
                       >
                         <CheckSquare size={10} style={{ color: 'var(--theme-accent)' }} />
-                        <span>全選択</span>
+                        <span>ALL SELECT</span>
                       </button>
+
+                      {/* CANCEL Button: ワイド幅で押しやすく視認性の高い解除ボタン */}
                       <button
                         type="button"
+                        disabled={selectedTrackIds.size === 0}
                         onClick={() => { setSelectedTrackIds(new Set()); lastSelectedTrackIdRef.current = null; }}
-                        className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[2px] hover:opacity-80 active:scale-95 transition-all cursor-pointer font-medium"
+                        className="flex items-center justify-center gap-1.5 text-[9px] font-mono min-w-[80px] px-4 py-0.5 border rounded-[1px] hover:opacity-80 active:scale-95 transition-all cursor-pointer font-medium disabled:opacity-30 disabled:cursor-default shrink-0"
                         style={{
-                          backgroundColor: 'var(--theme-bg)',
-                          borderColor: 'var(--theme-border)',
-                          color: 'var(--theme-textMain)',
+                          backgroundColor: selectedTrackIds.size > 0 ? 'var(--theme-list-surfaceLighter)' : 'transparent',
+                          borderColor: selectedTrackIds.size > 0 ? 'var(--theme-list-borderActive)' : 'var(--theme-list-border)',
+                          color: selectedTrackIds.size > 0 ? 'var(--theme-list-textMain)' : 'var(--theme-list-textDim)',
                         }}
-                        title="選択をすべて解除"
+                        title="選択をすべて解除 (CANCEL)"
                       >
-                        <X size={10} style={{ color: 'var(--theme-textMain)' }} />
-                        <span>解除</span>
+                        <X size={10} style={{ color: selectedTrackIds.size > 0 ? 'var(--theme-accent)' : 'inherit' }} />
+                        <span>CANCEL</span>
                       </button>
 
                       {/* Batch Mix to Target Favorite Playlist */}
                       <button
                         type="button"
+                        disabled={selectedTrackIds.size === 0}
                         onClick={handleBatchAddToFavorite}
-                        className="flex items-center gap-1.5 text-[9px] font-mono px-2 py-0.5 border rounded-[2px] hover:opacity-80 active:scale-95 transition-all cursor-pointer font-bold"
+                        className="flex items-center gap-1.5 text-[9px] font-mono px-2.5 py-0.5 border rounded-[1px] hover:opacity-80 active:scale-95 transition-all cursor-pointer font-bold disabled:opacity-30 disabled:cursor-default shrink-0"
                         style={{
-                          backgroundColor: 'var(--theme-accentMuted)',
-                          borderColor: 'var(--theme-accent)',
-                          color: 'var(--theme-accent)'
+                          backgroundColor: selectedTrackIds.size > 0 ? 'var(--theme-accentMuted)' : 'transparent',
+                          borderColor: selectedTrackIds.size > 0 ? 'var(--theme-accent)' : 'var(--theme-list-border)',
+                          color: selectedTrackIds.size > 0 ? 'var(--theme-accent)' : 'var(--theme-list-textDim)'
                         }}
                         title={
                           favoriteTargetPlaylist 
@@ -10170,94 +10133,84 @@ export default function App() {
                             : `お気に入りリストを新規作成して選択した${selectedTrackIds.size}曲を追加`
                         }
                       >
-                        <Star size={11} className="fill-amber-400 text-amber-400" />
-                        <span>
+                        <Star size={11} className={selectedTrackIds.size > 0 ? "fill-amber-400 text-amber-400" : "text-amber-400/40"} />
+                        <span className="truncate max-w-[200px]">
                           {favoriteTargetPlaylist 
-                            ? `MIX TO "${favoriteTargetPlaylist.name}" (${selectedTrackIds.size})` 
-                            : `+ MIX TO FAVORITE (${selectedTrackIds.size})`
+                            ? `MIX TO "${favoriteTargetPlaylist.name}"${selectedTrackIds.size > 0 ? ` (${selectedTrackIds.size})` : ''}` 
+                            : `+ MIX TO FAVORITE${selectedTrackIds.size > 0 ? ` (${selectedTrackIds.size})` : ''}`
                           }
                         </span>
                       </button>
                     </div>
 
-                    {/* Right: Unified Square Icon Buttons (サイドバー上のボタンと同様に文字なし・同サイズのスクエアボタンで統一) */}
+                    {/* Right: Unified Square Icon Buttons */}
                     <div className="flex items-center gap-1 shrink-0">
                       {/* Arrow Reorder Buttons */}
-                      <div className="flex items-center gap-1 border-r pr-1.5 mr-0.5" style={{ borderColor: 'var(--theme-border)' }}>
+                      <div className="flex items-center gap-1 border-r pr-1.5 mr-0.5" style={{ borderColor: 'var(--theme-list-border)' }}>
                         <button
                           type="button"
-                          disabled={!canMoveSelectedTop}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            moveSelectedTracks('top');
-                          }}
-                          className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25 cursor-pointer"
-                          style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                          disabled={selectedTrackIds.size === 0 || !canMoveSelectedTop}
+                          onClick={() => moveSelectedTracks('top')}
+                          className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 disabled:cursor-default cursor-pointer"
+                          style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
                           title={`選択した${selectedTrackIds.size}曲を一番上へ移動 (TOP)`}
                         >
                           <ChevronsUp size={12} />
                         </button>
                         <button
                           type="button"
-                          disabled={!canMoveSelectedUp}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            moveSelectedTracks('up');
-                          }}
-                          className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25 cursor-pointer"
-                          style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                          disabled={selectedTrackIds.size === 0 || !canMoveSelectedUp}
+                          onClick={() => moveSelectedTracks('up')}
+                          className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 disabled:cursor-default cursor-pointer"
+                          style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
                           title={`選択した${selectedTrackIds.size}曲を上へ移動 (UP)`}
                         >
                           <ChevronUp size={12} />
                         </button>
                         <button
                           type="button"
-                          disabled={!canMoveSelectedDown}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            moveSelectedTracks('down');
-                          }}
-                          className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25 cursor-pointer"
-                          style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                          disabled={selectedTrackIds.size === 0 || !canMoveSelectedDown}
+                          onClick={() => moveSelectedTracks('down')}
+                          className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 disabled:cursor-default cursor-pointer"
+                          style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
                           title={`選択した${selectedTrackIds.size}曲を下へ移動 (DOWN)`}
                         >
                           <ChevronDown size={12} />
                         </button>
                         <button
                           type="button"
-                          disabled={!canMoveSelectedBottom}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            moveSelectedTracks('bottom');
-                          }}
-                          className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-25 cursor-pointer"
-                          style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                          disabled={selectedTrackIds.size === 0 || !canMoveSelectedBottom}
+                          onClick={() => moveSelectedTracks('bottom')}
+                          className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 disabled:cursor-default cursor-pointer"
+                          style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMain)' }}
                           title={`選択した${selectedTrackIds.size}曲を一番下へ移動 (BOTTOM)`}
                         >
                           <ChevronsDown size={12} />
                         </button>
                       </div>
 
-                      {/* MOVE TO VIEW / ADD TO VIEW Popover */}
+                      {/* MOVE TO VIEW / ADD TO VIEW Popover (Opens Downward) */}
                       <div className="relative">
                         <button 
+                          disabled={selectedTrackIds.size === 0}
                           onClick={() => {
+                            if (selectedTrackIds.size === 0) return;
                             setShowAddToPlaylist(!showAddToPlaylist);
                             setShowMoveToAlbum(false);
                           }}
-                          className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                          className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 disabled:cursor-default cursor-pointer"
                           style={{
-                            backgroundColor: showAddToPlaylist ? 'var(--theme-accentMuted)' : 'var(--theme-bg)',
-                            borderColor: showAddToPlaylist ? 'var(--theme-accent)' : 'var(--theme-border)',
-                            color: 'var(--theme-textMain)'
+                            backgroundColor: showAddToPlaylist ? 'var(--theme-accentMuted)' : 'var(--theme-list-bg)',
+                            borderColor: showAddToPlaylist ? 'var(--theme-accent)' : 'var(--theme-list-border)',
+                            color: 'var(--theme-list-textMain)'
                           }}
                           title={activePlaylistId === 'all-tracks' ? "選択した曲を別のリストへ追加 (ADD TO VIEW)" : "選択した曲を別のリストへ移動 (MOVE TO VIEW)"}
                         >
-                          <ListPlus size={12} style={{ color: 'var(--theme-accent)' }} />
+                          <ListPlus size={12} style={{ color: selectedTrackIds.size > 0 ? 'var(--theme-accent)' : 'inherit' }} />
                         </button>
                         {showAddToPlaylist && (
                           <div 
-                            className="absolute bottom-full right-0 mb-1.5 w-72 max-w-[calc(100vw-32px)] border z-50 flex flex-col rounded-[2px] overflow-hidden shadow-2xl font-mono" 
+                            className="absolute top-full right-0 mt-1 w-72 max-w-[calc(100vw-32px)] border z-50 flex flex-col rounded-[2px] overflow-hidden shadow-2xl font-mono" 
                             style={{ 
                               backgroundColor: 'var(--theme-surface)', 
                               borderColor: 'var(--theme-border)',
@@ -10296,26 +10249,28 @@ export default function App() {
                         )}
                       </div>
 
-                      {/* Move to another Album Popover (Always available when tracks are selected, with Create New Album support) */}
+                      {/* Move to another Album Popover (Opens Downward) */}
                       <div className="relative">
                         <button
+                          disabled={selectedTrackIds.size === 0}
                           onClick={() => {
+                            if (selectedTrackIds.size === 0) return;
                             setShowMoveToAlbum(!showMoveToAlbum);
                             setShowAddToPlaylist(false);
                           }}
-                          className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                          className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 disabled:cursor-default cursor-pointer"
                           style={{
-                            backgroundColor: showMoveToAlbum ? 'var(--theme-accentMuted)' : 'var(--theme-bg)',
-                            borderColor: showMoveToAlbum ? 'var(--theme-accent)' : 'var(--theme-border)',
-                            color: 'var(--theme-textMain)',
+                            backgroundColor: showMoveToAlbum ? 'var(--theme-accentMuted)' : 'var(--theme-list-bg)',
+                            borderColor: showMoveToAlbum ? 'var(--theme-accent)' : 'var(--theme-list-border)',
+                            color: 'var(--theme-list-textMain)',
                           }}
                           title="選択した曲を別のアルバムへ移動、または新規アルバムを作成して分離"
                         >
-                          <Disc size={12} style={{ color: 'var(--theme-accent)' }} />
+                          <Disc size={12} style={{ color: selectedTrackIds.size > 0 ? 'var(--theme-accent)' : 'inherit' }} />
                         </button>
                         {showMoveToAlbum && (
                           <div
-                            className="absolute bottom-full right-0 mb-1.5 w-80 max-w-[calc(100vw-32px)] border z-50 flex flex-col rounded-[2px] overflow-hidden shadow-2xl font-mono"
+                            className="absolute top-full right-0 mt-1 w-80 max-w-[calc(100vw-32px)] border z-50 flex flex-col rounded-[2px] overflow-hidden shadow-2xl font-mono"
                             style={{ 
                               backgroundColor: 'var(--theme-surface)', 
                               borderColor: 'var(--theme-border)',
@@ -10337,6 +10292,7 @@ export default function App() {
                                   if (e.key === 'Enter' && newAlbumInputName.trim()) {
                                     handleMoveTracksToAlbum(Array.from(selectedTrackIds), { album: newAlbumInputName.trim() });
                                     setNewAlbumInputName('');
+                                    setShowMoveToAlbum(false);
                                   }
                                 }}
                                 className="flex-1 min-w-0 text-[10px] font-mono px-2 py-1 border rounded-[1px] outline-none"
@@ -10349,6 +10305,7 @@ export default function App() {
                                   if (!newAlbumInputName.trim()) return;
                                   handleMoveTracksToAlbum(Array.from(selectedTrackIds), { album: newAlbumInputName.trim() });
                                   setNewAlbumInputName('');
+                                  setShowMoveToAlbum(false);
                                 }}
                                 className="px-2 py-1 text-[9px] font-mono font-bold border rounded-[1px] hover:opacity-80 active:scale-95 disabled:opacity-40 transition-colors shrink-0"
                                 style={{ backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }}
@@ -10367,6 +10324,7 @@ export default function App() {
                                     key={alb.id}
                                     onClick={() => {
                                       handleMoveTracksToAlbum(Array.from(selectedTrackIds), alb);
+                                      setShowMoveToAlbum(false);
                                     }}
                                     className="text-left px-3 py-2 text-[10px] font-mono shrink-0 flex items-center justify-between gap-2.5 hover:opacity-80 transition-colors w-full cursor-pointer whitespace-nowrap min-h-[32px]"
                                     style={{ 
@@ -10396,40 +10354,43 @@ export default function App() {
 
                       {/* Clean Filename to Title Tool */}
                       <button
+                        disabled={selectedTrackIds.size === 0}
                         onClick={handleBatchUseFilenameAsTitle}
-                        className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                        className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 disabled:cursor-default cursor-pointer"
                         style={{
-                          backgroundColor: 'var(--theme-bg)',
-                          borderColor: 'var(--theme-border)',
-                          color: 'var(--theme-textMain)',
+                          backgroundColor: 'var(--theme-list-bg)',
+                          borderColor: 'var(--theme-list-border)',
+                          color: 'var(--theme-list-textMain)',
                         }}
                         title="選択した曲のファイル名・既存タイトルから不要な番号等を除去した綺麗な曲名に整形 (CLEAN TITLE)"
                       >
-                        <FileText size={12} style={{ color: 'var(--theme-accent)' }} />
+                        <FileText size={12} style={{ color: selectedTrackIds.size > 0 ? 'var(--theme-accent)' : 'inherit' }} />
                       </button>
 
                       {/* Reset Title to Raw Filename Tool */}
                       <button
+                        disabled={selectedTrackIds.size === 0}
                         onClick={handleBatchResetToFilename}
-                        className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                        className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 disabled:cursor-default cursor-pointer"
                         style={{
-                          backgroundColor: 'var(--theme-bg)',
-                          borderColor: 'var(--theme-border)',
-                          color: 'var(--theme-textMain)',
+                          backgroundColor: 'var(--theme-list-bg)',
+                          borderColor: 'var(--theme-list-border)',
+                          color: 'var(--theme-list-textMain)',
                         }}
                         title="選択した曲のタイトルを元のファイル名そのままに復元 (RESET TO FILENAME)"
                       >
-                        <RotateCcw size={12} style={{ color: 'var(--theme-textMuted)' }} />
+                        <RotateCcw size={12} style={{ color: 'var(--theme-list-textMuted)' }} />
                       </button>
 
                       {/* Delete Selected Tracks */}
                       <button 
+                        disabled={selectedTrackIds.size === 0}
                         onClick={deleteSelectedTracks}
-                        className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                        className="flex items-center justify-center border rounded-[2px] w-6 h-6 transition-colors hover:opacity-80 active:scale-95 disabled:opacity-20 disabled:cursor-default cursor-pointer"
                         style={{
-                          backgroundColor: 'var(--theme-bg)',
-                          borderColor: 'var(--theme-border)',
-                          color: 'var(--theme-accent)',
+                          backgroundColor: 'var(--theme-list-bg)',
+                          borderColor: 'var(--theme-list-border)',
+                          color: selectedTrackIds.size > 0 ? 'var(--theme-accent)' : 'inherit',
                         }}
                         title="選択した曲を削除"
                       >
@@ -10437,7 +10398,87 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                )}
+
+                  {/* List Header (Column Headers) */}
+                  <div className="flex items-center uppercase tracking-normal px-2 h-8 border-b shrink-0 text-[10px] w-full" style={{ backgroundColor: 'var(--theme-list-bg)', borderColor: 'var(--theme-list-border)', color: 'var(--theme-list-textMuted)' }}>
+                    <div className="relative flex-shrink-0 flex items-center h-full" style={{ width: colWidths.index }}>
+                      <div className="w-8 flex-shrink-0 flex items-center justify-center">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const allSelected = tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id));
+                            if (allSelected) {
+                              setSelectedTrackIds(new Set());
+                              lastSelectedTrackIdRef.current = null;
+                            } else {
+                              setSelectedTrackIds(new Set(tracksToRender.map(t => t.id)));
+                            }
+                          }}
+                          className="w-3.5 h-3.5 border rounded-[1px] flex items-center justify-center hover:opacity-80 active:scale-95 transition-all cursor-pointer"
+                          style={{
+                            borderColor: (tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id))) || tracksToRender.some(t => selectedTrackIds.has(t.id)) ? 'var(--theme-accent)' : 'var(--theme-list-border)',
+                            backgroundColor: (tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id))) ? 'var(--theme-accent)' : (tracksToRender.some(t => selectedTrackIds.has(t.id)) ? 'var(--theme-accentMuted)' : 'transparent'),
+                          }}
+                          title={tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id)) ? "全選択を解除" : "表示中の全曲を一括選択 (全選択)"}
+                        >
+                          {tracksToRender.length > 0 && tracksToRender.every(t => selectedTrackIds.has(t.id)) && <Check size={10} style={{ color: '#ffffff' }} strokeWidth={3} />}
+                          {tracksToRender.some(t => selectedTrackIds.has(t.id)) && !tracksToRender.every(t => selectedTrackIds.has(t.id)) && <Minus size={9} style={{ color: 'var(--theme-accent)' }} strokeWidth={3} />}
+                        </button>
+                      </div>
+                      {/* Star Column Header */}
+                      <div className="w-6 flex-shrink-0 flex items-center justify-center" title="お気に入り (★)">
+                        <Star size={10} className="text-amber-400 opacity-60" />
+                      </div>
+                      <div className="w-7 flex-shrink-0 flex items-center justify-center" style={{ color: 'var(--theme-list-textDim)' }}>
+                        #
+                      </div>
+                      {colVisibility.art && (
+                        <div className="w-8 flex-shrink-0 flex items-center pl-1" style={{ color: 'var(--theme-list-textDim)' }}>
+                          ART
+                        </div>
+                      )}
+                      <div onMouseDown={(e) => handleColMouseDown(e, 'index')} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
+                        <div className="w-[1px] h-full opacity-40 group-hover:opacity-100 transition-colors" style={{ backgroundColor: 'var(--theme-list-border)' }} />
+                      </div>
+                    </div>
+                    <div ref={columnsContainerRef} className="flex-1 min-w-0 flex items-center gap-3 pl-3 h-full">
+                      {visibleCols.map((col, idx) => {
+                        const isLast = idx === visibleCols.length - 1;
+                        const nextCol = isLast ? undefined : visibleCols[idx + 1];
+                        const weight = colWidths[col as keyof typeof colWidths] || 150;
+
+                        return (
+                          <div 
+                            key={col} 
+                            draggable 
+                            onDragStart={(e) => handleColDragStart(e, col)} 
+                            onDragOver={handleColDragOver} 
+                            onDrop={(e) => handleColDrop(e, col)} 
+                            className="relative min-w-0 pr-2 flex items-center h-full select-none" 
+                            style={{ flex: `${weight} 0 0%`, minWidth: col === 'trackNumber' ? 30 : 40 }}
+                          >
+                            <div onClick={() => handleSort(col as 'title' | 'artist' | 'album' | 'fileName' | 'trackNumber')} className="flex-1 min-w-0 flex items-center gap-1 cursor-pointer" style={{ color: 'var(--theme-list-textMuted)' }}>
+                              <span className="truncate">{COL_LABELS[col] || col}</span>
+                              {activeSortConfig.key === col && (activeSortConfig.direction === 'asc' ? <ChevronUp size={10} className="shrink-0" /> : <ChevronDown size={10} className="shrink-0" />)}
+                            </div>
+                            {!isLast && nextCol && (
+                              <div onMouseDown={(e) => handleColMouseDown(e, col, nextCol)} className="absolute right-0 top-0 bottom-0 w-[14px] cursor-col-resize flex justify-center z-20 group" style={{ transform: 'translateX(50%)' }}>
+                                <div className="w-[1px] h-full opacity-40 group-hover:opacity-100 transition-colors" style={{ backgroundColor: 'var(--theme-list-border)' }} />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {colVisibility.actions && <div className="w-24 flex-shrink-0 text-center" style={{ color: 'var(--theme-list-textMuted)' }}>操作</div>}
+                  </div>
+                </div>
+
+                {/* List Items */}
+                <div className="flex flex-col flex-1 pb-6 w-full">
+                  {memoizedTrackList}
+                </div>
               </div>
             </div>
           )}

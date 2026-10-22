@@ -151,10 +151,17 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   }, [activePlaylistId, displayMode, firstAlbumId, focusedAlbumId]);
 
   // Sync selected albums with parent component for main header MOVE button
+  const prevSelectedIdsKeyRef = useRef<string>('');
   useEffect(() => {
     if (onSelectedAlbumsChange) {
-      const selected = albums.filter(a => selectedAlbumIds.has(a.id));
-      onSelectedAlbumsChange(selected);
+      const selected = selectedAlbumIds.size > 0 
+        ? albums.filter(a => selectedAlbumIds.has(a.id))
+        : [];
+      const currentKey = selected.map(a => a.id).sort().join(',');
+      if (prevSelectedIdsKeyRef.current !== currentKey) {
+        prevSelectedIdsKeyRef.current = currentKey;
+        onSelectedAlbumsChange(selected);
+      }
     }
   }, [selectedAlbumIds, albums, onSelectedAlbumsChange]);
 
