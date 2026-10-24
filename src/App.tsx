@@ -9893,7 +9893,7 @@ export default function App() {
               triggerOpenBatchMoveModal={triggerOpenMainAlbumMoveModal}
             />
           ) : (
-            <div className="flex flex-col h-full overflow-y-auto overflow-x-hidden relative w-full" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
+            <div className="flex flex-col h-full overflow-hidden relative w-full" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
               {drillDownAlbum && (
                 <div className="flex items-center justify-between px-3 py-2 border-b shrink-0" style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)' }}>
                   <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
@@ -10058,9 +10058,9 @@ export default function App() {
                   )}
                 </div>
               )}
-              <div className="w-full flex flex-col min-h-full">
-                {/* Sticky Top Header Container: Permanent Batch Action Bar + Column Headers */}
-                <div className="sticky top-0 z-20 flex flex-col shrink-0 w-full" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
+              {/* Fixed Top Header Container: Permanent Batch Action Bar + Column Headers */}
+
+              <div className="flex flex-col shrink-0 w-full z-20 overflow-visible" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
                   {/* Permanent Industrial Batch Action Bar (タイトル・アルバムの上の常駐バー) */}
                   <div
                     className="px-2.5 h-8 border-b flex items-center justify-between gap-2 font-mono shrink-0 select-none overflow-visible transition-colors"
@@ -10479,10 +10479,10 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* List Items */}
-                <div className="flex flex-col flex-1 pb-6 w-full">
+                {/* Scrollable Track List Items */}
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-6 w-full">
                   {memoizedTrackList}
-                </div>
+
               </div>
             </div>
           )}
