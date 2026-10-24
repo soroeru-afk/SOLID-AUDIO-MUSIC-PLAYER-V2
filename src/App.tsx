@@ -176,38 +176,68 @@ const THEMES = [
   },
   { 
     id: 'MOCHA', 
-    dotColor: '#bfa38a',
-    bg: '#2b211a', 
-    surface: '#382c23',
-    surfaceLighter: '#45372c',
-    border: '#574639', 
-    borderActive: '#bfa38a',
-    textMain: '#f5ebe1',
-    textMuted: '#baa493',
-    textDim: '#857161',
-    accent: '#bfa38a',
-    accentDark: '#8f735c',
-    accentMuted: '#3d2f25',
-    sliderTrackBg: '#1f1712',
-    sliderTrackBorder: '#574639',
-    controlBoxBg: '#2b211a',
-    // 04 & 05 ヘッダーバー (#382C23 / #574639)
-    listHeaderBg: '#382c23',
-    listHeaderBorder: '#574639',
-    listHeaderText: '#f5ebe1',
-    listHeaderTextMuted: '#baa493',
-    // 04 & 05 LIST AREA (プレイリスト一覧 & トラックリスト: 落ち着いたモカクリーム背景 & 濃いめモカ文字)
-    listBg: '#ede3d6',
-    listSurface: '#e2d6c7',
-    listSurfaceLighter: '#d6c8b7',
-    listBorder: '#c2b09e',
-    listBorderActive: '#755c4a',
-    listTextMain: '#1e1610',
-    listTextMuted: '#524134',
-    listTextDim: '#786353',
-    listAccent: '#6b513f',
-    listAccentMuted: '#dac8b6',
-    listIconColor: '#1e1610',
+    dotColor: '#c4a48b',
+    // タイトルの入っている背景・外側キャンバス（画像右側の明るめモカ #59483A）
+    bg: '#59483a', 
+    // 手前のところ（パネル本体・ワークスペース：明るいクリーム色）
+    surface: '#f7ece1',
+    surfaceLighter: '#efe2d5',
+    border: '#cfbaaa', 
+    borderActive: '#8f7663',
+    // 手前パネル内の文字（濃いモカ色）
+    textMain: '#2b2018',
+    textMuted: '#47382d',
+    textDim: '#78685a',
+    accent: '#8f7663',
+    accentDark: '#47382d',
+    accentMuted: '#e8d8cb',
+    sliderTrackBg: '#e5d6c7',
+    sliderTrackBorder: '#cfbaaa',
+    // 手前パネル内のボックス・ボタン（落ち着いたダークモカに明るい文字）
+    controlBoxBg: '#efe2d5',
+    buttonBg: '#261c16',
+    buttonText: '#f7ece1',
+    // 最上部ヘッダー（タイトルの入っている背景・明るめモカ #59483A）
+    headerBg: '#59483a',
+    headerText: '#ffffff',
+    headerTextMuted: '#e8d8cb',
+    headerBorder: '#78685a',
+    // 最上部ヘッダー内のコントロール（ミニパネルボタン、フォントサイズ、フォント・テーマ選択）：下の送るボタンと同じ濃いめのダークモカ色
+    headerControlBg: '#261c16',
+    headerControlBorder: '#453428',
+    headerControlText: '#f7ece1',
+    headerControlTextMuted: '#cfbaaa',
+    // 最上部マーク（Activity波形アイコン）をはっきりと鮮明に表示
+    headerMark: '#ffffff',
+    // CLEAR ALL DATA ボタン（List Managerの [ ALL DATA ] に合わせた色 #a8856a）
+    clearDataBg: '#a8856a',
+    clearDataBorder: '#8c6d54',
+    clearDataText: '#ffffff',
+    // 各パネルの見出し（01, 02, 03, 04：ボタンと同じ濃いめのダークモカ）
+    panelTitleBg: '#261c16',
+    panelTitleText: '#f7ece1',
+    panelTitleBorder: '#453428',
+    // アルバムアート回転枠の背景（若干濃いめのローストモカ）
+    albumArtBg: '#36271e',
+    // 04 & 05 ヘッダーバー (#59483A / #8F7663)
+    listHeaderBg: '#59483a',
+    listHeaderBorder: '#8f7663',
+    listHeaderText: '#ffffff',
+    listHeaderTextMuted: '#e8d8cb',
+    // 04 & 05 LIST AREA (プレイリスト一覧 & トラックリスト: #F7ECE1 クリーム背景 & 濃いめモカ文字)
+    listBg: '#f7ece1',
+    listSurface: '#efe2d5',
+    listSurfaceLighter: '#e5d6c7',
+    listBorder: '#cfbaaa',
+    listBorderActive: '#8f7663',
+    listTextMain: '#2b2018',
+    listTextMuted: '#47382d',
+    listTextDim: '#78685a',
+    listAccent: '#47382d',
+    listAccentMuted: '#e8d8cb',
+    listIconColor: '#2b2018',
+    canvasBg: '#efe2d5',
+    canvasBar: '#59483a',
   },
   { 
     id: 'OLIVE', 
@@ -645,12 +675,18 @@ const COL_LABELS: Record<string, string> = {
 const PanelBlock = ({ title, children, className = "", styleVars, action }: { title: string, children: React.ReactNode, className?: string, styleVars?: React.CSSProperties, action?: React.ReactNode }) => (
   <div className={`border flex flex-col relative ${className}`} style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)', ...styleVars }}>
     {title && (
-      <div className="absolute -top-2 left-2 px-1 z-10" style={{ backgroundColor: 'var(--theme-surface)' }}>
-         <span className="text-[10px] tracking-widest uppercase" style={{ color: 'var(--theme-textMuted)' }}>{title}</span>
+      <div 
+        className="absolute top-0 -translate-y-1/2 left-2 px-2 h-[23px] flex items-center justify-center z-10 border rounded-[1px] shadow-sm select-none" 
+        style={{ 
+          backgroundColor: 'var(--theme-panelTitle-bg, var(--theme-surface))',
+          borderColor: 'var(--theme-panelTitle-border, var(--theme-border))'
+        }}
+      >
+         <span className="text-[10px] tracking-widest uppercase font-bold leading-none -translate-y-[0.5px]" style={{ color: 'var(--theme-panelTitle-text, var(--theme-textMuted))' }}>{title}</span>
       </div>
     )}
     {action && (
-      <div className="absolute -top-2.5 right-2 px-1 z-10 flex items-center" style={{ backgroundColor: 'var(--theme-surface)' }}>
+      <div className="absolute top-0 -translate-y-1/2 right-2 z-10 flex items-center">
         {action}
       </div>
     )}
@@ -1846,7 +1882,7 @@ export default function App() {
       PINK: '#1a1215',
       LIGHT: '#e8ecef',
       BROWN: '#1a1614',
-      MOCHA: '#2b211a',
+      MOCHA: '#59483a',
       OLIVE: '#161a15',
       RED: '#140808'
     };
@@ -2344,9 +2380,10 @@ export default function App() {
 
       // Theme-aware colors for canvas
       const isLight = isLightRef.current;
-      const canvasBg = isLight ? currentTheme.current.surfaceLighter : currentTheme.current.bg;
-      const barColor = isLight ? currentTheme.current.accentDark : currentTheme.current.accent;
-      const baselineColor = isLight ? currentTheme.current.border : currentTheme.current.borderActive;
+      const themeObj = currentTheme.current as any;
+      const canvasBg = themeObj.canvasBg || (isLight ? themeObj.surfaceLighter : themeObj.bg);
+      const barColor = themeObj.canvasBar || (isLight ? themeObj.accentDark : themeObj.accent);
+      const baselineColor = themeObj.canvasBaseline || (isLight ? themeObj.border : themeObj.borderActive);
 
       // Clear with theme bg color
       ctx.fillStyle = canvasBg;
@@ -5676,8 +5713,26 @@ export default function App() {
     '--theme-accentMuted': theme.accentMuted,
     '--theme-sliderTrackBg': theme.sliderTrackBg,
     '--theme-sliderTrackBorder': theme.sliderTrackBorder,
+    '--theme-albumArt-bg': (theme as any).albumArtBg || theme.bg,
     // Accent dark boxes & list headers (#363D47 in GRAY theme)
     '--theme-controlBox-bg': (theme as any).controlBoxBg || theme.surface,
+    '--theme-button-bg': (theme as any).buttonBg || theme.bg,
+    '--theme-button-text': (theme as any).buttonText || theme.textMain,
+    '--theme-header-bg': (theme as any).headerBg || theme.surface,
+    '--theme-header-text': (theme as any).headerText || theme.textMain,
+    '--theme-header-textMuted': (theme as any).headerTextMuted || theme.textMuted,
+    '--theme-header-border': (theme as any).headerBorder || theme.border,
+    '--theme-header-control-bg': (theme as any).headerControlBg || (theme as any).headerBg || theme.surface,
+    '--theme-header-control-border': (theme as any).headerControlBorder || (theme as any).headerBorder || theme.border,
+    '--theme-header-control-text': (theme as any).headerControlText || (theme as any).headerText || theme.textMain,
+    '--theme-header-control-textMuted': (theme as any).headerControlTextMuted || (theme as any).headerTextMuted || theme.textMuted,
+    '--theme-header-mark': (theme as any).headerMark || theme.accent,
+    '--theme-clearData-bg': (theme as any).clearDataBg || (theme as any).buttonBg || theme.bg,
+    '--theme-clearData-border': (theme as any).clearDataBorder || (theme as any).border || theme.border,
+    '--theme-clearData-text': (theme as any).clearDataText || (theme as any).buttonText || theme.textMain,
+    '--theme-panelTitle-bg': (theme as any).panelTitleBg || theme.surface,
+    '--theme-panelTitle-text': (theme as any).panelTitleText || theme.textMuted,
+    '--theme-panelTitle-border': (theme as any).panelTitleBorder || theme.border,
     '--theme-listHeader-bg': (theme as any).listHeaderBg || (theme as any).listSurface || theme.surfaceLighter,
     '--theme-listHeader-border': (theme as any).listHeaderBorder || (theme as any).listBorder || theme.border,
     '--theme-listHeader-text': (theme as any).listHeaderText || (theme as any).listTextMain || theme.textMain,
@@ -6318,7 +6373,7 @@ export default function App() {
       <div className={`flex flex-col h-full w-full ${isFullscreen ? 'p-1.5 gap-3' : 'p-4 gap-6'} box-border transition-all duration-300 ${viewMode !== 'full' ? 'opacity-0 pointer-events-none absolute' : 'opacity-100 relative'}`}>
 
       {/* Top Header Row */}
-      <header className="flex justify-between items-center px-1 relative z-50">
+      <header className="flex justify-between items-center px-1 relative z-50" style={{ color: 'var(--theme-header-text, var(--theme-textMain))' }}>
         <div 
           className="flex items-center gap-3 cursor-pointer select-none"
           title="ダブルクリックでウィンドウサイズを標準サイズ (1700x1200) にリセット"
@@ -6333,8 +6388,8 @@ export default function App() {
             }
           }}
         >
-          <Activity size={18} style={{ color: 'var(--theme-accent)' }} />
-          <h1 className="text-xl font-bold tracking-widest uppercase">SOLID AUDIO MUSIC PLAYER</h1>
+          <Activity size={18} style={{ color: 'var(--theme-header-mark, var(--theme-accent))' }} />
+          <h1 className="text-xl font-bold tracking-widest uppercase" style={{ color: 'var(--theme-header-text, var(--theme-textMain))' }}>SOLID AUDIO MUSIC PLAYER</h1>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1">
@@ -6342,9 +6397,9 @@ export default function App() {
             <button 
               onClick={toggleFullscreen}
               className="flex items-center justify-center border h-6 px-2 transition-colors hover:opacity-80"
-              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)', color: isFullscreen ? 'var(--theme-accent)' : 'var(--theme-textMuted)' }}
-              onMouseEnter={e => e.currentTarget.style.color = 'var(--theme-textMain)'}
-              onMouseLeave={e => e.currentTarget.style.color = isFullscreen ? 'var(--theme-accent)' : 'var(--theme-textMuted)'}
+              style={{ borderColor: 'var(--theme-header-control-border, var(--theme-header-border, var(--theme-border)))', backgroundColor: 'var(--theme-header-control-bg, var(--theme-surface))', color: isFullscreen ? 'var(--theme-accent)' : 'var(--theme-header-control-textMuted, var(--theme-textMuted))' }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--theme-header-control-text, var(--theme-textMain))'}
+              onMouseLeave={e => e.currentTarget.style.color = isFullscreen ? 'var(--theme-accent)' : 'var(--theme-header-control-textMuted, var(--theme-textMuted))'}
               title={isFullscreen ? "Full Screen 解除 (閉じる)" : "Full Screen 表示"}
             >
               {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
@@ -6354,9 +6409,9 @@ export default function App() {
             <button 
               onClick={() => setViewMode('mini')}
               className="flex items-center justify-center border h-6 px-2 transition-colors hover:opacity-80"
-              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-textMuted)' }}
-              onMouseEnter={e => e.currentTarget.style.color = 'var(--theme-textMain)'}
-              onMouseLeave={e => e.currentTarget.style.color = 'var(--theme-textMuted)'}
+              style={{ borderColor: 'var(--theme-header-control-border, var(--theme-header-border, var(--theme-border)))', backgroundColor: 'var(--theme-header-control-bg, var(--theme-surface))', color: 'var(--theme-header-control-textMuted, var(--theme-textMuted))' }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--theme-header-control-text, var(--theme-textMain))'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--theme-header-control-textMuted, var(--theme-textMuted))'}
               title="Card Mode (カード型ミニプレーヤー)"
             >
               <PanelTop size={12} />
@@ -6366,9 +6421,9 @@ export default function App() {
             <button 
               onClick={() => setViewMode('slim')}
               className="flex items-center justify-center border h-6 px-2 transition-colors hover:opacity-80"
-              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-textMuted)' }}
-              onMouseEnter={e => e.currentTarget.style.color = 'var(--theme-textMain)'}
-              onMouseLeave={e => e.currentTarget.style.color = 'var(--theme-textMuted)'}
+              style={{ borderColor: 'var(--theme-header-control-border, var(--theme-header-border, var(--theme-border)))', backgroundColor: 'var(--theme-header-control-bg, var(--theme-surface))', color: 'var(--theme-header-control-textMuted, var(--theme-textMuted))' }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--theme-header-control-text, var(--theme-textMain))'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--theme-header-control-textMuted, var(--theme-textMuted))'}
               title="Slim Bar Mode (スリムバー型ミニプレーヤー)"
             >
               <Minus size={12} />
@@ -6377,9 +6432,9 @@ export default function App() {
           
           <div 
             className="flex items-center gap-3 border h-6 px-3"
-            style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}
+            style={{ borderColor: 'var(--theme-header-control-border, var(--theme-border))', backgroundColor: 'var(--theme-header-control-bg, var(--theme-surface))' }}
           >
-            <span className="text-[9px] uppercase tracking-wider font-bold" style={{ color: 'var(--theme-textMuted)' }}>SIZE</span>
+            <span className="text-[9px] uppercase tracking-wider font-bold" style={{ color: 'var(--theme-header-control-textMuted, var(--theme-textMuted))' }}>SIZE</span>
             <input
               type="range"
               min="9"
@@ -6388,7 +6443,7 @@ export default function App() {
               onChange={(e) => setListFontSize(parseInt(e.target.value))}
               className="w-20 sq-slider"
             />
-            <span className="text-[9px] uppercase tracking-wider font-mono" style={{ color: 'var(--theme-accent)', width: '24px', textAlign: 'right' }}>{listFontSize}PX</span>
+            <span className="text-[9px] uppercase tracking-wider font-mono font-bold" style={{ color: 'var(--theme-header-control-text, var(--theme-accent))', width: '24px', textAlign: 'right' }}>{listFontSize}PX</span>
           </div>
 
           {/* Font Control: Dropdown (GOTHIC, MARU, MEIRYO, MONO) */}
@@ -6396,18 +6451,18 @@ export default function App() {
             <div 
               className="flex items-center h-6 border rounded-[1px] select-none pl-2.5 pr-2 gap-2 cursor-pointer transition-colors"
               style={{
-                borderColor: isFontMenuOpen ? 'var(--theme-accent)' : 'var(--theme-border)',
-                backgroundColor: 'var(--theme-surface)',
+                borderColor: isFontMenuOpen ? 'var(--theme-accent)' : 'var(--theme-header-control-border, var(--theme-border))',
+                backgroundColor: 'var(--theme-header-control-bg, var(--theme-surface))',
               }}
               onClick={() => setIsFontMenuOpen(prev => !prev)}
               title="フォント切り替え"
             >
-              <span className="text-[9px] uppercase tracking-wider font-bold" style={{ color: 'var(--theme-textMuted)' }}>FONT:</span>
+              <span className="text-[9px] uppercase tracking-wider font-bold" style={{ color: 'var(--theme-header-control-textMuted, var(--theme-textMuted))' }}>FONT:</span>
               <div className="flex items-center gap-1.5 min-w-[56px] justify-between">
-                <span className="text-[10px] font-bold tracking-wider" style={{ color: 'var(--theme-textMain)', fontFamily: activeFont.fontFamily }}>
+                <span className="text-[10px] font-bold tracking-wider" style={{ color: 'var(--theme-header-control-text, var(--theme-textMain))', fontFamily: activeFont.fontFamily }}>
                   {activeFont.label}
                 </span>
-                <ChevronDown size={11} className={`transition-transform duration-150 ${isFontMenuOpen ? 'rotate-180' : ''}`} style={{ color: isFontMenuOpen ? 'var(--theme-accent)' : 'var(--theme-textMuted)' }} />
+                <ChevronDown size={11} className={`transition-transform duration-150 ${isFontMenuOpen ? 'rotate-180' : ''}`} style={{ color: isFontMenuOpen ? 'var(--theme-accent)' : 'var(--theme-header-control-textMuted, var(--theme-textMuted))' }} />
               </div>
             </div>
 
@@ -6416,9 +6471,9 @@ export default function App() {
               <div 
                 className="absolute right-0 top-full mt-1 z-[100] w-32 border shadow-2xl rounded-[1px] py-1 select-none animate-fade-in"
                 style={{
-                  backgroundColor: 'var(--theme-surfaceLighter)',
-                  borderColor: 'var(--theme-borderActive)',
-                  color: 'var(--theme-textMain)',
+                  backgroundColor: 'var(--theme-header-control-bg, var(--theme-surfaceLighter))',
+                  borderColor: 'var(--theme-header-control-border, var(--theme-borderActive))',
+                  color: 'var(--theme-header-control-text, var(--theme-textMain))',
                 }}
               >
                 <div className="flex flex-col">
@@ -6434,12 +6489,12 @@ export default function App() {
                         className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-bold tracking-wider text-left transition-colors cursor-pointer"
                         style={{
                           backgroundColor: isSelected ? 'var(--theme-accent, #2563eb)' : 'transparent',
-                          color: isSelected ? '#ffffff' : 'var(--theme-textMain)',
+                          color: isSelected ? '#ffffff' : 'var(--theme-header-control-text, var(--theme-textMain))',
                           fontFamily: f.fontFamily,
                         }}
                         onMouseEnter={(e) => {
                           if (!isSelected) {
-                            e.currentTarget.style.backgroundColor = 'var(--theme-surface)';
+                            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
                           }
                         }}
                         onMouseLeave={(e) => {
@@ -6465,8 +6520,8 @@ export default function App() {
             <div 
               className="flex items-center h-6 border rounded-[1px] select-none overflow-hidden"
               style={{
-                borderColor: isThemeMenuOpen ? 'var(--theme-accent)' : 'var(--theme-border)',
-                backgroundColor: 'var(--theme-surface)',
+                borderColor: isThemeMenuOpen ? 'var(--theme-accent)' : 'var(--theme-header-control-border, var(--theme-border))',
+                backgroundColor: 'var(--theme-header-control-bg, var(--theme-surface))',
               }}
             >
               {/* Left Button: Click name to cycle to next theme in sequence (Fixed width prevents layout shift) */}
@@ -6474,7 +6529,7 @@ export default function App() {
                 onClick={cycleTheme}
                 className="flex items-center h-full pl-2 pr-1.5 transition-colors hover:bg-black/10 dark:hover:bg-white/10 cursor-pointer w-[78px] justify-start"
                 title={`クリックで次のテーマへ順送り (${theme.id})`}
-                style={{ color: 'var(--theme-textMain)' }}
+                style={{ color: 'var(--theme-header-control-text, var(--theme-textMain))' }}
               >
                 {/* Current Theme Dot */}
                 <span 
@@ -6486,7 +6541,7 @@ export default function App() {
                   }}
                 />
                 {/* Current Theme Name */}
-                <span className="text-[10px] font-mono font-bold tracking-wider truncate">
+                <span className="text-[10px] font-mono font-bold tracking-wider truncate" style={{ color: 'var(--theme-header-control-text, var(--theme-textMain))' }}>
                   {theme.id}
                 </span>
               </button>
@@ -6499,13 +6554,13 @@ export default function App() {
                 }}
                 className="flex items-center justify-center h-full w-5 border-l transition-colors hover:bg-black/10 dark:hover:bg-white/10 cursor-pointer"
                 style={{
-                  borderColor: 'var(--theme-border)',
-                  color: isThemeMenuOpen ? 'var(--theme-accent)' : 'var(--theme-textMuted)',
-                  backgroundColor: isThemeMenuOpen ? 'var(--theme-surfaceLighter)' : 'transparent',
+                  borderColor: 'var(--theme-header-control-border, var(--theme-border))',
+                  color: isThemeMenuOpen ? 'var(--theme-accent)' : 'var(--theme-header-control-text, var(--theme-header-control-textMuted, var(--theme-textMuted)))',
+                  backgroundColor: isThemeMenuOpen ? 'rgba(255,255,255,0.08)' : 'transparent',
                 }}
                 title="テーマ一覧メニューを開く"
               >
-                <span className="text-[7px]">▼</span>
+                <span className="text-[7px]" style={{ color: 'var(--theme-header-control-text, var(--theme-header-control-textMuted))' }}>▼</span>
               </button>
             </div>
 
@@ -6514,17 +6569,17 @@ export default function App() {
               <div 
                 className="absolute right-0 top-full mt-1 z-[100] w-44 border shadow-2xl rounded-[1px] py-1 select-none animate-fade-in"
                 style={{
-                  backgroundColor: 'var(--theme-surfaceLighter)',
-                  borderColor: 'var(--theme-borderActive)',
-                  color: 'var(--theme-textMain)',
+                  backgroundColor: 'var(--theme-header-control-bg, var(--theme-surfaceLighter))',
+                  borderColor: 'var(--theme-header-control-border, var(--theme-borderActive))',
+                  color: 'var(--theme-header-control-text, var(--theme-textMain))',
                 }}
               >
                 {/* Header: 🎨 テーマ切り替え */}
                 <div 
                   className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold border-b tracking-wider select-none"
                   style={{
-                    borderColor: 'var(--theme-border)',
-                    color: 'var(--theme-textMain)',
+                    borderColor: 'var(--theme-header-control-border, var(--theme-border))',
+                    color: 'var(--theme-header-control-text, var(--theme-textMain))',
                   }}
                 >
                   <span className="text-[11px]">🎨</span>
@@ -6547,12 +6602,12 @@ export default function App() {
                         }}
                         className="w-full flex items-center justify-between px-3 py-1.5 text-[10.5px] font-mono font-bold tracking-wider text-left transition-colors cursor-pointer"
                         style={{
-                          backgroundColor: isSelected ? 'var(--theme-surface)' : 'transparent',
-                          color: isSelected ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+                          backgroundColor: isSelected ? 'var(--theme-accent)' : 'transparent',
+                          color: isSelected ? '#ffffff' : 'var(--theme-header-control-text, var(--theme-textMain))',
                         }}
                         onMouseEnter={(e) => {
                           if (!isSelected) {
-                            e.currentTarget.style.backgroundColor = 'var(--theme-surface)';
+                            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
                           }
                         }}
                         onMouseLeave={(e) => {
@@ -6574,7 +6629,7 @@ export default function App() {
                           <span className="truncate">{t.id}</span>
                         </div>
                         {isSelected && (
-                          <Check size={12} style={{ color: 'var(--theme-accent)' }} />
+                          <Check size={12} style={{ color: '#ffffff' }} />
                         )}
                       </button>
                     );
@@ -6583,7 +6638,7 @@ export default function App() {
               </div>
             )}
           </div>
-          <div className="text-xs tracking-widest font-mono" style={{ color: 'var(--theme-textMuted)' }}>v2.1.0 OS</div>
+          <div className="text-xs tracking-widest font-mono" style={{ color: 'var(--theme-header-textMuted, var(--theme-textMuted))' }}>v2.1.0 OS</div>
         </div>
       </header>
 
@@ -6593,12 +6648,12 @@ export default function App() {
         {/* 01 TRACK INFO */}
         <PanelBlock 
           title="01 TRACK INFO" 
-          className="col-span-4 p-4 relative"
+          className="col-span-4 pt-5 pb-4 px-4 relative"
           action={currentTrack ? (
             <button
               type="button"
               onClick={handleLocateCurrentTrack}
-              className="flex items-center gap-1 px-1.5 py-0.5 border text-[9px] font-mono tracking-wider transition-all hover:opacity-80 active:scale-95 cursor-pointer shadow-sm group rounded-[1px]"
+              className="flex items-center gap-1 px-2 h-[23px] leading-none border text-[9px] font-mono tracking-wider transition-all hover:opacity-80 active:scale-95 cursor-pointer shadow-sm group rounded-[1px] select-none"
               style={{
                 backgroundColor: 'var(--theme-surface)',
                 borderColor: 'var(--theme-border)',
@@ -6613,7 +6668,7 @@ export default function App() {
         >
           {currentTrack ? (
             <div className="flex h-full gap-4 overflow-hidden relative">
-              <div className="h-full aspect-square shrink-0 relative border shadow-inner" style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-bg)' }}>
+              <div className="h-full aspect-square shrink-0 relative border shadow-inner" style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-albumArt-bg, var(--theme-bg))' }}>
                 <AlbumArt3D
                   coverUrl={currentTrack.coverUrl}
                   title={currentTrack.title}
@@ -6632,17 +6687,21 @@ export default function App() {
                     <div className="text-lg font-bold mb-1 leading-tight break-words" title={currentTrack.title} style={{ color: 'var(--theme-textMain)', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                       {currentTrack.title}
                     </div>
-                    <div className="text-[10px] truncate uppercase tracking-[0.2em] font-medium" style={{ color: 'var(--theme-accent)' }} title={currentTrack.artist}>
+                    <div className="text-[10px] truncate uppercase tracking-[0.2em] font-bold" style={{ color: 'var(--theme-accentDark, var(--theme-textMain))' }} title={currentTrack.artist}>
                       {currentTrack.artist}
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={(e) => handleToggleTrackFavorite(currentTrack, e)}
-                    className="p-1.5 border rounded-[2px] transition-all hover:opacity-80 active:scale-95 shrink-0 cursor-pointer"
+                    className="p-1.5 border rounded-[2px] transition-all hover:opacity-90 active:scale-95 shrink-0 cursor-pointer shadow-sm"
                     style={{
-                      backgroundColor: favoriteTrackIds.has(currentTrack.id) ? 'var(--theme-accentMuted)' : 'var(--theme-bg)',
-                      borderColor: favoriteTrackIds.has(currentTrack.id) ? 'var(--theme-accent)' : 'var(--theme-border)'
+                      backgroundColor: favoriteTrackIds.has(currentTrack.id) 
+                        ? 'rgba(245, 158, 11, 0.18)' 
+                        : 'var(--theme-bg)',
+                      borderColor: favoriteTrackIds.has(currentTrack.id) 
+                        ? '#f59e0b' 
+                        : 'rgba(245, 158, 11, 0.45)'
                     }}
                     title={
                       favoriteTrackIds.has(currentTrack.id)
@@ -6656,8 +6715,8 @@ export default function App() {
                       size={13}
                       className={
                         favoriteTrackIds.has(currentTrack.id)
-                          ? "fill-amber-400 text-amber-400"
-                          : "text-neutral-500 hover:text-amber-400"
+                          ? "fill-amber-400 text-amber-400 opacity-100 scale-105 drop-shadow-[0_0_4px_rgba(251,191,36,0.6)]"
+                          : "fill-amber-400 text-amber-400 opacity-80 hover:opacity-100"
                       }
                     />
                   </button>
@@ -6667,7 +6726,7 @@ export default function App() {
                    <div className="text-[9px] truncate tracking-wider" style={{ color: 'var(--theme-textDim)' }}>
                      FILE: {currentTrack.fileName}
                    </div>
-                   <div className="border p-1 rounded-[1px] h-8 w-full flex items-center justify-center" style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-bg)' }}>
+                   <div className="border p-1 rounded-[1px] h-8 w-full flex items-center justify-center" style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-controlBox-bg, var(--theme-surfaceLighter))' }}>
                       <canvas 
                         ref={canvasRef} 
                         width={200} 
@@ -6687,7 +6746,7 @@ export default function App() {
         </PanelBlock>
 
         {/* 02 TRANSPORT & TIME */}
-        <PanelBlock title="02 TRANSPORT ENGINE" className="col-span-5 p-4 flex flex-col justify-between">
+        <PanelBlock title="02 TRANSPORT ENGINE" className="col-span-5 pt-5 pb-4 px-4 flex flex-col justify-between">
           {/* Progress */}
           <div className="mb-2">
             <div className="flex justify-between text-[10px] tracking-widest mb-2" style={{ color: 'var(--theme-textMuted)' }}>
@@ -6716,14 +6775,14 @@ export default function App() {
             {/* Panel 1: Play modes (Shuffle / Repeat) - Centered in panel with dark buttons */}
             <div 
               className="border h-14 flex items-center justify-center gap-3 px-2 w-full"
-              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}
+              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-controlBox-bg, var(--theme-surface))' }}
             >
               <button 
                 onClick={cycleShuffleMode}
                 className="w-12 h-9 flex items-center justify-center border transition-all relative hover:opacity-80 active:scale-95"
                 style={isShuffle 
                   ? { backgroundColor: 'var(--theme-accentMuted)', color: 'var(--theme-accent)', borderColor: 'var(--theme-borderActive)' } 
-                  : { backgroundColor: 'var(--theme-bg)', color: 'var(--theme-textMain)', borderColor: 'var(--theme-border)' }
+                  : { backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', color: 'var(--theme-button-text, var(--theme-textMain))', borderColor: 'var(--theme-border)' }
                 }
                 title={shuffleMode === 'all' ? "全曲シャッフル (ALL SHUFFLE: ライブラリ全曲からランダム)" : shuffleMode === 'list' ? "リスト内シャッフル (LIST SHUFFLE: 現在のリスト内からランダム)" : "シャッフルOFF（クリックで ALL / LIST 切替）"}
               >
@@ -6740,7 +6799,7 @@ export default function App() {
                 className="w-12 h-9 flex items-center justify-center border transition-all relative hover:opacity-80 active:scale-95"
                 style={repeatMode > 0 
                   ? { backgroundColor: 'var(--theme-accentMuted)', color: 'var(--theme-accent)', borderColor: 'var(--theme-borderActive)' } 
-                  : { backgroundColor: 'var(--theme-bg)', color: 'var(--theme-textMain)', borderColor: 'var(--theme-border)' }
+                  : { backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', color: 'var(--theme-button-text, var(--theme-textMain))', borderColor: 'var(--theme-border)' }
                 }
                 title={repeatMode === 1 ? "Repeat All (全曲リピート)" : repeatMode === 2 ? "Repeat One (1曲リピート)" : repeatMode === 3 ? "Repeat Set / List (リスト内リピート / 選択セット周回)" : "Repeat Off"}
               >
@@ -6757,12 +6816,12 @@ export default function App() {
             {/* Panel 2: Transport Core - Centered in panel with dark buttons */}
             <div 
               className="border h-14 flex items-center justify-center gap-1.5 px-2 w-full"
-              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}
+              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-controlBox-bg, var(--theme-surface))' }}
             >
               <button 
                 onClick={handlePrev} 
                 className="w-11 h-9 flex items-center justify-center border transition-all hover:opacity-80 active:scale-95"
-                style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                style={{ backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-border)', color: 'var(--theme-button-text, var(--theme-textMain))' }}
                 title="Previous Track"
               >
                 <SkipBack size={16} />
@@ -6772,7 +6831,7 @@ export default function App() {
                 className="w-14 h-9 flex items-center justify-center transition-all border hover:opacity-90 active:scale-95"
                 style={isPlaying 
                   ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accentDark)', color: 'var(--theme-accent)' } 
-                  : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }
+                  : { backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-border)', color: 'var(--theme-button-text, var(--theme-textMain))' }
                 }
                 title={isPlaying ? "Pause" : "Play"}
               >
@@ -6781,7 +6840,7 @@ export default function App() {
               <button 
                 onClick={handleNext} 
                 className="w-11 h-9 flex items-center justify-center border transition-all hover:opacity-80 active:scale-95"
-                style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                style={{ backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-border)', color: 'var(--theme-button-text, var(--theme-textMain))' }}
                 title="Next Track"
               >
                 <SkipForward size={16} />
@@ -6791,7 +6850,7 @@ export default function App() {
             {/* Panel 3: Volume Box - matching the panel's background color */}
             <div 
               className="border h-14 flex items-center gap-2 px-3 w-full"
-              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' }}
+              style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-controlBox-bg, var(--theme-surface))' }}
             >
               <button 
                 onClick={() => setIsMuted(!isMuted)} 
@@ -6821,10 +6880,10 @@ export default function App() {
             </div>
           </div>
 
-          {/* Row 2: Bottom 3 Panels (EQ Section) - Restored to theme-bg */}
+          {/* Row 2: Bottom 3 Panels (EQ Section) */}
           <div className="grid grid-cols-3 gap-4 mt-3">
             {/* Panel 4: LOW EQ */}
-            <div className="border h-14 p-2.5 flex flex-col justify-between" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)' }}>
+            <div className="border h-14 p-2.5 flex flex-col justify-between" style={{ backgroundColor: 'var(--theme-controlBox-bg, var(--theme-surfaceLighter))', borderColor: 'var(--theme-border)' }}>
               <div className="flex justify-between items-center text-[10px] font-mono tracking-widest" style={{ color: 'var(--theme-textMuted)' }}>
                 <span>01 LOW</span>
                 <span className="font-bold" style={{ color: 'var(--theme-textMain)' }}>{eqLow}</span>
@@ -6840,7 +6899,7 @@ export default function App() {
             </div>
 
             {/* Panel 5: MID EQ */}
-            <div className="border h-14 p-2.5 flex flex-col justify-between" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)' }}>
+            <div className="border h-14 p-2.5 flex flex-col justify-between" style={{ backgroundColor: 'var(--theme-controlBox-bg, var(--theme-surfaceLighter))', borderColor: 'var(--theme-border)' }}>
               <div className="flex justify-between items-center text-[10px] font-mono tracking-widest" style={{ color: 'var(--theme-textMuted)' }}>
                 <span>02 MID</span>
                 <span className="font-bold" style={{ color: 'var(--theme-textMain)' }}>{eqMid}</span>
@@ -6856,7 +6915,7 @@ export default function App() {
             </div>
 
             {/* Panel 6: HIGH EQ */}
-            <div className="border h-14 p-2.5 flex flex-col justify-between" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)' }}>
+            <div className="border h-14 p-2.5 flex flex-col justify-between" style={{ backgroundColor: 'var(--theme-controlBox-bg, var(--theme-surfaceLighter))', borderColor: 'var(--theme-border)' }}>
               <div className="flex justify-between items-center text-[10px] font-mono tracking-widest" style={{ color: 'var(--theme-textMuted)' }}>
                 <span>03 HIGH</span>
                 <span className="font-bold" style={{ color: 'var(--theme-textMain)' }}>{eqHigh}</span>
@@ -6874,46 +6933,50 @@ export default function App() {
         </PanelBlock>
 
         {/* 03 SETTINGS / ACTIONS */}
-        <PanelBlock title="03 SYSTEM ACTIONS" className="col-span-3 p-4">
+        <PanelBlock title="03 SYSTEM ACTIONS" className="col-span-3 pt-5 pb-4 px-4">
            <div className="flex flex-col gap-3 h-full pt-1">
                <button 
                   onClick={handleSelectFolder}
-                  className="flex items-center justify-center gap-2 border h-8 shrink-0 text-[10px] tracking-widest font-bold transition-colors hover:opacity-80"
-                  style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-borderActive)', color: 'var(--theme-accent)' }}
+                  className="flex items-center justify-center gap-2 border h-8 shrink-0 text-[10px] tracking-widest font-bold transition-colors hover:opacity-80 active:scale-95"
+                  style={{ backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-borderActive)', color: 'var(--theme-button-text, var(--theme-accent))' }}
                 >
-                  <FolderOpen size={14} />
+                  <FolderOpen size={14} style={{ color: 'var(--theme-button-text)' }} />
                   READ DIRECTORY
                </button>
                
                <div className="grid grid-cols-2 gap-2 shrink-0">
                  <button 
                     onClick={() => { setIsCreatingPlaylist(true); setNewPlaylistName(''); }}
-                    className="flex items-center justify-center gap-2 border h-7 text-[9px] tracking-widest transition-colors hover:opacity-80 active:scale-95"
-                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                    className="flex items-center justify-center gap-2 border h-7 text-[9px] tracking-widest transition-colors hover:opacity-80 active:scale-95 font-bold"
+                    style={{ backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-border)', color: 'var(--theme-button-text, var(--theme-textMain))' }}
                   >
-                    <Plus size={12} style={{ color: 'var(--theme-textMuted)' }} />
+                    <Plus size={12} style={{ color: 'var(--theme-button-text)' }} />
                     CREATE LIST
                  </button>
                  <button 
                     onClick={findDuplicates}
-                    className="flex items-center justify-center gap-2 border h-7 text-[9px] tracking-widest transition-colors hover:opacity-80 active:scale-95"
-                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                    className="flex items-center justify-center gap-2 border h-7 text-[9px] tracking-widest transition-colors hover:opacity-80 active:scale-95 font-bold"
+                    style={{ backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-border)', color: 'var(--theme-button-text, var(--theme-textMain))' }}
                   >
-                    <Layers size={12} style={{ color: 'var(--theme-textMuted)' }} />
+                    <Layers size={12} style={{ color: 'var(--theme-button-text)' }} />
                     FIND DUPES
                  </button>
                  <button 
                     onClick={clearActivePlaylist}
-                    className="col-span-2 flex items-center justify-center gap-2 border h-7 text-[9px] tracking-widest transition-colors hover:opacity-80 active:scale-95 disabled:opacity-50"
-                    style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)', color: 'var(--theme-textMain)' }}
+                    className="col-span-2 flex items-center justify-center gap-2 border h-7 text-[9px] tracking-widest font-bold transition-colors hover:opacity-85 active:scale-95 disabled:opacity-50 cursor-pointer rounded-[1px]"
+                    style={{ 
+                      backgroundColor: 'var(--theme-clearData-bg, var(--theme-button-bg, var(--theme-bg)))', 
+                      borderColor: 'var(--theme-clearData-border, var(--theme-border))', 
+                      color: 'var(--theme-clearData-text, var(--theme-button-text, var(--theme-textMain)))' 
+                    }}
                     disabled={displayTracks.length === 0}
                   >
-                    <Trash2 size={12} style={{ color: 'var(--theme-textMuted)' }} />
+                    <Trash2 size={12} style={{ color: 'var(--theme-clearData-text, var(--theme-button-text))' }} />
                     CLEAR ALL DATA
                  </button>
                </div>
                
-               <div className="relative mt-auto border h-8 flex items-center shrink-0" style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-border)' }}>
+               <div className="relative mt-auto border h-8 flex items-center shrink-0" style={{ backgroundColor: 'var(--theme-controlBox-bg, var(--theme-surfaceLighter))', borderColor: 'var(--theme-border)' }}>
                   <Search size={12} className="absolute left-2" style={{ color: 'var(--theme-textDim)' }} />
                   <input 
                     type="text" 
@@ -6930,9 +6993,15 @@ export default function App() {
       </div>
 
       {/* Main Content Area - Bottom half */}
-      <div className="flex gap-4 flex-1 min-h-0 border p-4 relative" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }}>
-        <div className="absolute -top-2 left-2 px-1" style={{ backgroundColor: 'var(--theme-surface)' }}>
-           <span className="text-[10px] tracking-widest uppercase" style={{ color: 'var(--theme-textMuted)' }}>04 DATA BANKS</span>
+      <div className="flex gap-4 flex-1 min-h-0 border pt-5 pb-4 px-4 relative" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)' }}>
+        <div 
+          className="absolute top-0 -translate-y-1/2 left-2 px-2 h-[23px] flex items-center justify-center z-10 border rounded-[1px] shadow-sm select-none" 
+          style={{ 
+            backgroundColor: 'var(--theme-panelTitle-bg, var(--theme-surface))', 
+            borderColor: 'var(--theme-panelTitle-border, var(--theme-border))' 
+          }}
+        >
+           <span className="text-[10px] tracking-widest uppercase font-bold leading-none -translate-y-[0.5px]" style={{ color: 'var(--theme-panelTitle-text, var(--theme-textMuted))' }}>04 DATA BANKS</span>
         </div>
 
         {/* 04 BROWSER (Playlists) */}
@@ -7135,7 +7204,7 @@ export default function App() {
                         style={
                           sidebarCategoryMode === 'tree'
                             ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
-                            : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }
+                            : { backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }
                         }
                         title="フォルダツリー展開モード (全カテゴリーをフォルダ階層で展開・D&Dで整理)"
                       >
@@ -7152,7 +7221,7 @@ export default function App() {
                         setNewCategoryName('');
                       }}
                       className="flex items-center gap-0.5 justify-center border rounded-[2px] px-1.5 h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
-                      style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }}
+                      style={{ backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }}
                       title="新規カテゴリーを作成 (+ CATEGORY)"
                     >
                       <BookmarkPlus size={10} />
@@ -7257,13 +7326,13 @@ export default function App() {
                           type="button"
                           disabled={isDisabled}
                           onClick={handleToggleCycle}
-                          className="flex items-center gap-1 justify-center border rounded-[2px] w-[56px] h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95 disabled:opacity-35 shrink-0 cursor-pointer"
+                          className="flex items-center gap-1 justify-center border rounded-[2px] w-[56px] h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95 disabled:opacity-40 shrink-0 cursor-pointer"
                           style={
                             isFullOpen
-                              ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                              ? { backgroundColor: 'var(--theme-accentDark, var(--theme-button-bg))', borderColor: 'var(--theme-accent, var(--theme-listHeader-border))', color: 'var(--theme-button-text, var(--theme-listHeader-text))' }
                               : isCatsOnlyOpen
-                              ? { backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }
-                              : { backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }
+                              ? { backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-accent, var(--theme-listHeader-border))', color: 'var(--theme-button-text, var(--theme-listHeader-text))' }
+                              : { backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }
                           }
                           title={isDisabled ? '展開可能な項目がありません' : btnTitle}
                         >
@@ -7304,7 +7373,7 @@ export default function App() {
                         }}
                         className="flex items-center justify-center border rounded-[2px] w-[54px] h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95 shrink-0 cursor-pointer"
                         style={{ 
-                          backgroundColor: 'var(--theme-bg)', 
+                          backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', 
                           borderColor: 'var(--theme-listHeader-border)', 
                           color: 'var(--theme-listHeader-text)' 
                         }}
@@ -7319,7 +7388,7 @@ export default function App() {
                       onClick={() => openCreateFavoriteModal()}
                       className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
                       style={{ 
-                        backgroundColor: favoriteTargetPlaylist ? 'var(--theme-accentMuted)' : 'var(--theme-bg)', 
+                        backgroundColor: favoriteTargetPlaylist ? 'var(--theme-accentMuted)' : 'var(--theme-button-bg, var(--theme-bg))', 
                         borderColor: favoriteTargetPlaylist ? 'var(--theme-accent)' : 'var(--theme-listHeader-border)' 
                       }}
                       title={favoriteTargetPlaylist ? `お気に入りリストを新規作成・フォルダー選択（現在: ${favoriteTargetPlaylist.name}）` : "お気に入りリストを新規作成してクイック登録先 (★ TARGET) に指定"}
@@ -7330,7 +7399,7 @@ export default function App() {
                     <button 
                       onClick={() => { setIsCreatingPlaylist(true); setNewPlaylistName(''); }}
                       className="flex items-center justify-center border rounded-[2px] w-5 h-5 transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
-                      style={{ backgroundColor: 'var(--theme-bg)', borderColor: 'var(--theme-listHeader-border)' }}
+                      style={{ backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-listHeader-border)' }}
                       title="CREATE LIST"
                     >
                       <Plus size={10} style={{ color: 'var(--theme-listHeader-text)' }} />
@@ -9460,8 +9529,8 @@ export default function App() {
                    {isSidebarCollapsed ? <PanelLeftOpen size={9} /> : <PanelLeftClose size={9} />}
                    <span>{isSidebarCollapsed ? 'SHOW' : 'SIDEBAR'}</span>
                  </button>
-                 <span className="text-[10px] uppercase tracking-wider pl-1" style={{ color: 'var(--theme-listHeader-textMuted)' }}>VIEW:</span>
-                 <span className="text-[10px] uppercase tracking-wider font-bold truncate max-w-[130px]" style={{ color: 'var(--theme-accent)' }}>{activePlaylist.name}</span>
+                 <span className="text-[10px] uppercase tracking-wider pl-1 font-bold" style={{ color: 'var(--theme-listHeader-textMuted)' }}>VIEW:</span>
+                 <span className="text-[10px] uppercase tracking-wider font-bold truncate max-w-[130px]" style={{ color: 'var(--theme-listHeader-text, var(--theme-accent))' }}>{activePlaylist.name}</span>
                </div>
 
                {/* Main Album Selection MOVE Button */}
@@ -9492,7 +9561,7 @@ export default function App() {
                    }}
                    className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors font-bold"
                    style={bankViewMode === 'tracks'
-                     ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                     ? { backgroundColor: 'var(--theme-header-control-bg, var(--theme-accentMuted))', borderColor: 'var(--theme-accent)', color: 'var(--theme-button-text, var(--theme-accent))' }
                      : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
                    title="TRACKS モード（曲リスト・並び替え・編集）"
                  >
@@ -9506,7 +9575,7 @@ export default function App() {
                    }}
                    className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors font-bold"
                    style={bankViewMode === 'album'
-                     ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                     ? { backgroundColor: 'var(--theme-header-control-bg, var(--theme-accentMuted))', borderColor: 'var(--theme-accent)', color: 'var(--theme-button-text, var(--theme-accent))' }
                      : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
                    title="ALBUM モード（ジャケット＋曲目リスト見開きカードを横にタイル敷き詰め表示）"
                  >
@@ -9520,7 +9589,7 @@ export default function App() {
                    }}
                    className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors font-bold"
                    style={bankViewMode === 'card'
-                     ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                     ? { backgroundColor: 'var(--theme-header-control-bg, var(--theme-accentMuted))', borderColor: 'var(--theme-accent)', color: 'var(--theme-button-text, var(--theme-accent))' }
                      : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
                    title="CARD モード（アルバムジャケットを横にタイル敷き詰め表示）"
                  >
@@ -9534,7 +9603,7 @@ export default function App() {
                    }}
                    className="flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 border rounded-[1px] transition-colors"
                    style={bankViewMode === 'list'
-                     ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                     ? { backgroundColor: 'var(--theme-header-control-bg, var(--theme-accentMuted))', borderColor: 'var(--theme-accent)', color: 'var(--theme-button-text, var(--theme-accent))' }
                      : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
                    title="LIST モード（コンパクト行表示）"
                  >
@@ -9569,7 +9638,7 @@ export default function App() {
                           }}
                           className="w-4 h-4 flex items-center justify-center text-[10px] font-mono border rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
                           style={{
-                            backgroundColor: 'var(--theme-bg)',
+                             backgroundColor: 'var(--theme-header-control-bg, var(--theme-button-bg, var(--theme-bg)))',
                             borderColor: 'var(--theme-listHeader-border)',
                             color: 'var(--theme-listHeader-text)',
                           }}
@@ -9625,7 +9694,7 @@ export default function App() {
                           }}
                           className="w-4 h-4 flex items-center justify-center text-[10px] font-mono border rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
                           style={{
-                            backgroundColor: 'var(--theme-bg)',
+                             backgroundColor: 'var(--theme-header-control-bg, var(--theme-button-bg, var(--theme-bg)))',
                             borderColor: 'var(--theme-listHeader-border)',
                             color: 'var(--theme-listHeader-text)',
                           }}
@@ -9648,7 +9717,7 @@ export default function App() {
                      }}
                      className="flex items-center gap-1 text-[8.5px] font-mono px-1.5 py-0.5 border rounded-[1px] transition-colors ml-1"
                      style={groupByArtist
-                       ? { backgroundColor: 'var(--theme-accentMuted)', borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)' }
+                        ? { backgroundColor: 'var(--theme-header-control-bg, var(--theme-accentMuted))', borderColor: 'var(--theme-accent)', color: 'var(--theme-button-text, var(--theme-accent))' }
                        : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
                      title={groupByArtist ? "現在：アーティスト別カードで横並びタイル表示（クリックでアルバム単体タイル表示へ切替）" : "現在：全アルバムを横並びタイル敷き詰め表示（クリックでアーティスト別タイル表示へ切替）"}
                    >
@@ -9659,15 +9728,15 @@ export default function App() {
                    {activePlaylistId !== 'all-tracks' && albumGroups.length > 1 && (
                      <button
                        onClick={handleUnifyPlaylistAlbum}
-                       className="flex items-center gap-1 text-[8.5px] font-mono px-1.5 py-0.5 border rounded-[1px] transition-colors hover:opacity-80 active:scale-95 ml-1"
+                       className="flex items-center gap-1 text-[8.5px] font-mono font-bold px-2 py-0.5 border rounded-[1px] transition-colors hover:opacity-85 active:scale-95 ml-1 shadow-sm cursor-pointer"
                        style={{
-                         backgroundColor: 'var(--theme-bg)',
-                         borderColor: 'var(--theme-accent)',
-                         color: 'var(--theme-accent)',
+                         backgroundColor: 'var(--theme-header-control-bg, var(--theme-button-bg, #47382d))',
+                         borderColor: 'var(--theme-header-control-border, var(--theme-listHeader-border))',
+                         color: 'var(--theme-button-text, #f7ece1)',
                        }}
                        title={`このリスト内の全曲を「${activePlaylist.name}」の1つのアルバムに統一してまとめる`}
                      >
-                       <Layers size={9} />
+                       <Layers size={9} style={{ color: 'var(--theme-button-text, #f7ece1)' }} />
                        <span>1 ALBUMに統一</span>
                      </button>
                    )}
@@ -9893,7 +9962,7 @@ export default function App() {
               triggerOpenBatchMoveModal={triggerOpenMainAlbumMoveModal}
             />
           ) : (
-            <div className="flex flex-col h-full overflow-hidden relative w-full" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
+            <div className="flex flex-col h-full relative w-full overflow-hidden" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
               {drillDownAlbum && (
                 <div className="flex items-center justify-between px-3 py-2 border-b shrink-0" style={{ backgroundColor: 'var(--theme-list-surfaceLighter)', borderColor: 'var(--theme-list-border)' }}>
                   <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
@@ -10059,7 +10128,6 @@ export default function App() {
                 </div>
               )}
               {/* Fixed Top Header Container: Permanent Batch Action Bar + Column Headers */}
-
               <div className="flex flex-col shrink-0 w-full z-20 overflow-visible" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
                   {/* Permanent Industrial Batch Action Bar (タイトル・アルバムの上の常駐バー) */}
                   <div
@@ -10482,8 +10550,7 @@ export default function App() {
                 {/* Scrollable Track List Items */}
                 <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-6 w-full">
                   {memoizedTrackList}
-
-              </div>
+                </div>
             </div>
           )}
         </div>
