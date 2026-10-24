@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+﻿import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Play, CheckSquare, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, VolumeX,
   Folder, FolderOpen, ListMusic, Plus, Search, ChevronUp, ChevronDown, 
@@ -219,7 +219,7 @@ const THEMES = [
     panelTitleBorder: '#453428',
     // アルバムアート回転枠の背景（若干濃いめのローストモカ）
     albumArtBg: '#221812',
-    categoryBg: '#4a3b2f',
+    categoryBg: '#36281e',
     // 04 & 05 ヘッダーバー (#59483A / #8F7663)
     listHeaderBg: '#59483a',
     listHeaderBorder: '#8f7663',
@@ -11221,3 +11221,4 @@ export default function App() {
     </div>
   );
 }
+
