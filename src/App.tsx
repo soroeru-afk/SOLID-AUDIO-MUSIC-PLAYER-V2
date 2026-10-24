@@ -218,7 +218,8 @@ const THEMES = [
     panelTitleText: '#f7ece1',
     panelTitleBorder: '#453428',
     // アルバムアート回転枠の背景（若干濃いめのローストモカ）
-    albumArtBg: '#36271e',
+    albumArtBg: '#221812',
+    categoryBg: '#4a3b2f',
     // 04 & 05 ヘッダーバー (#59483A / #8F7663)
     listHeaderBg: '#59483a',
     listHeaderBorder: '#8f7663',
@@ -5733,6 +5734,7 @@ export default function App() {
     '--theme-panelTitle-bg': (theme as any).panelTitleBg || theme.surface,
     '--theme-panelTitle-text': (theme as any).panelTitleText || theme.textMuted,
     '--theme-panelTitle-border': (theme as any).panelTitleBorder || theme.border,
+    '--theme-category-bg': (theme as any).categoryBg || (theme as any).listHeaderBg || (theme as any).listSurface || theme.surfaceLighter,
     '--theme-listHeader-bg': (theme as any).listHeaderBg || (theme as any).listSurface || theme.surfaceLighter,
     '--theme-listHeader-border': (theme as any).listHeaderBorder || (theme as any).listBorder || theme.border,
     '--theme-listHeader-text': (theme as any).listHeaderText || (theme as any).listTextMain || theme.textMain,
@@ -7329,7 +7331,7 @@ export default function App() {
                           className="flex items-center gap-1 justify-center border rounded-[2px] w-[56px] h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95 disabled:opacity-40 shrink-0 cursor-pointer"
                           style={
                             isFullOpen
-                              ? { backgroundColor: 'var(--theme-accentDark, var(--theme-button-bg))', borderColor: 'var(--theme-accent, var(--theme-listHeader-border))', color: 'var(--theme-button-text, var(--theme-listHeader-text))' }
+                                ? (isLightTheme ? { backgroundColor: '#475569', borderColor: '#334155', color: '#ffffff' } : { backgroundColor: 'var(--theme-accentDark, var(--theme-button-bg))', borderColor: 'var(--theme-accent, var(--theme-listHeader-border))', color: 'var(--theme-button-text, var(--theme-listHeader-text))' })
                               : isCatsOnlyOpen
                               ? { backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-accent, var(--theme-listHeader-border))', color: 'var(--theme-button-text, var(--theme-listHeader-text))' }
                               : { backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }
@@ -9114,7 +9116,7 @@ export default function App() {
                           }}
                           className="flex items-center justify-between px-2 py-1.5 cursor-pointer select-none transition-colors group"
                           style={{
-                            backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : (isReorderTarget ? 'var(--theme-surfaceLighter)' : 'var(--theme-listHeader-bg)'),
+                            backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : (isReorderTarget ? 'var(--theme-surfaceLighter)' : 'var(--theme-category-bg, var(--theme-listHeader-bg))'),
                             borderLeft: isDragOver ? '3px solid var(--theme-accent)' : '3px solid transparent',
                             color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-listHeader-text)'
                           }}
@@ -9331,7 +9333,7 @@ export default function App() {
                           onClick={() => toggleCategoryExpand('__UNCATEGORIZED__')}
                           className="flex items-center justify-between px-2 py-1.5 cursor-pointer select-none transition-colors group"
                           style={{
-                            backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : 'var(--theme-listHeader-bg)',
+                            backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : 'var(--theme-category-bg, var(--theme-listHeader-bg))',
                             borderLeft: isDragOver ? '3px solid var(--theme-accent)' : '3px solid transparent',
                             color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-listHeader-textMuted)'
                           }}
