@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Activity, Box, RotateCw, Pause, Play, Image as ImageIcon, Upload, RotateCcw } from 'lucide-react';
 
 interface AlbumArt3DProps {
@@ -302,7 +302,7 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      style={{ backgroundColor: 'var(--theme-bg)' }}
+      style={{ backgroundColor: 'var(--theme-albumArt-bg, var(--theme-bg))' }}
     >
       {/* Hidden File Input for Image Selection */}
       <input
@@ -664,3 +664,4 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
     </div>
   );
 };
+
