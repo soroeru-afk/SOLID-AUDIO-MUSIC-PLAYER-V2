@@ -76,36 +76,65 @@ const THEMES = [
   },
   { 
     id: 'PAPER', 
-    dotColor: '#e04f2a',
-    bg: '#f4f3ef', 
+    dotColor: '#d9532f',
+    bg: '#F2EFE6', 
     surface: '#ffffff',
-    surfaceLighter: '#fcfbf8',
-    border: '#dad7cd', 
-    borderActive: '#c8c4b7',
-    textMain: '#242424',
-    textMuted: '#66645e',
-    textDim: '#99968d',
-    accent: '#e04f2a',
+    surfaceLighter: '#f8f7f4',
+    border: '#e5ded2', 
+    borderActive: '#d9532f',
+    textMain: '#2d241e',
+    textMuted: '#5e5447',
+    textDim: '#8c8071',
+    accent: '#d9532f',
     accentDark: '#b83a1b',
-    accentMuted: '#fceee9',
-    sliderTrackBg: '#ffffff',
-    sliderTrackBorder: '#dad7cd',
-    controlBoxBg: '#ffffff',
-    listHeaderBg: '#e8e5db',
-    listHeaderBorder: '#dad7cd',
-    listHeaderText: '#242424',
-    listHeaderTextMuted: '#66645e',
+    accentMuted: '#fbeae5',
+    sliderTrackBg: '#F2EFE6',
+    sliderTrackBorder: '#ded7c8',
+    buttonBg: '#ffffff',
+    buttonBorder: '#e5ded2',
+    buttonText: '#2d241e',
+    btnActiveBg: '#d9532f',
+    btnActiveBorder: '#d9532f',
+    btnActiveText: '#ffffff',
+    controlBoxBg: '#F2EFE6',
+    headerBg: '#F2EFE6',
+    headerBorder: '#ded7c8',
+    headerText: '#2d241e',
+    headerTextMuted: '#5e5447',
+    headerControlBg: '#ffffff',
+    headerControlBorder: '#e5ded2',
+    headerControlText: '#2d241e',
+    headerControlTextMuted: '#5e5447',
+    headerMark: '#d9532f',
+    panelTitleBg: '#EBE4D5',
+    panelTitleText: '#2d241e',
+    panelTitleBorder: '#ded7c8',
+    albumArtBg: '#F2EFE6',
+    categoryBg: '#EBE4D5',
+    listHeaderBg: '#EBE4D5',
+    listHeaderBorder: '#ded7c8',
+    listHeaderText: '#2d241e',
+    listHeaderTextMuted: '#5e5447',
     listBg: '#ffffff',
-    listSurface: '#f8f7f3',
-    listSurfaceLighter: '#f2f0e9',
-    listBorder: '#dad7cd',
-    listBorderActive: '#e04f2a',
-    listTextMain: '#242424',
-    listTextMuted: '#66645e',
-    listTextDim: '#99968d',
-    listAccent: '#e04f2a',
-    listAccentMuted: '#fceee9',
-    listIconColor: '#242424',
+    listSurface: '#faf9f6',
+    listSurfaceLighter: '#f2efe6',
+    listBorder: '#e5ded2',
+    listBorderActive: '#d9532f',
+    listTextMain: '#2d241e',
+    listTextMuted: '#5e5447',
+    listTextDim: '#8c8071',
+    listAccent: '#d9532f',
+    listAccentMuted: '#fbeae5',
+    listIconColor: '#2d241e',
+    actionButtonBg: '#F2EFE6',
+    actionButtonBorder: '#e5ded2',
+    actionButtonText: '#2d241e',
+    clearDataBg: '#F2EFE6',
+    clearDataBorder: '#e5ded2',
+    clearDataText: '#d9532f',
+    canvasBg: '#F2EFE6',
+    canvasBar: '#d9532f',
+    canvasBaseline: '#ded7c8',
   },
   { 
     id: 'PINK', 
@@ -1879,7 +1908,7 @@ export default function App() {
     const colorMap: Record<string, string> = {
       NAVY: '#0d1117',
       BLACK: '#0B0C0D',
-      PAPER: '#f4f3ef',
+      PAPER: '#F2EFE6',
       PINK: '#1a1215',
       LIGHT: '#e8ecef',
       BROWN: '#1a1614',
@@ -1890,8 +1919,8 @@ export default function App() {
     const activeColor = colorMap[theme.id] || colorMap[theme.id?.toUpperCase()] || theme.bg || '#0d1117';
     metaThemeColor.setAttribute('content', activeColor);
   }, [theme.id, theme.bg]);
-  const isLightTheme = theme.id === 'LIGHT';
-  const iconColor = isLightTheme ? '#1a2530' : '#ffffff';
+  const isLightTheme = theme.id === 'LIGHT' || theme.id === 'PAPER';
+  const iconColor = isLightTheme ? (theme.id === 'PAPER' ? '#2d241e' : '#1a2530') : '#ffffff';
   const listIconColor = (theme as any).listIconColor || iconColor;
   
   // Refs for visualizer to prevent loop restarts
@@ -7897,10 +7926,10 @@ export default function App() {
                                 ? Math.round((cascadeFrostLevel / 50) * 16)
                                 : Math.round(16 + ((cascadeFrostLevel - 50) / 50) * 8);
 
-                              const frostedFgColor = isLightTheme ? '#1e293b' : '#ffffff';
-                              const frostedSubColor = isLightTheme ? '#475569' : 'rgba(255, 255, 255, 0.75)';
-                              const frostedBorderColor = isLightTheme ? 'rgba(30, 41, 59, 0.6)' : 'rgba(255, 255, 255, 0.85)';
-                              const frostedBgHighlight = isLightTheme ? 'rgba(30, 41, 59, 0.08)' : 'rgba(255, 255, 255, 0.12)';
+                              const frostedFgColor = isLightTheme ? (theme.id === 'PAPER' ? '#2d241e' : '#1e293b') : '#ffffff';
+                              const frostedSubColor = isLightTheme ? (theme.id === 'PAPER' ? '#5e5447' : '#475569') : 'rgba(255, 255, 255, 0.75)';
+                              const frostedBorderColor = isLightTheme ? (theme.id === 'PAPER' ? 'rgba(45, 36, 30, 0.35)' : 'rgba(30, 41, 59, 0.6)') : 'rgba(255, 255, 255, 0.85)';
+                              const frostedBgHighlight = isLightTheme ? (theme.id === 'PAPER' ? 'rgba(45, 36, 30, 0.06)' : 'rgba(30, 41, 59, 0.08)') : 'rgba(255, 255, 255, 0.12)';
 
                               return (
                                 <div 
