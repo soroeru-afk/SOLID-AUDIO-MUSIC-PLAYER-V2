@@ -129,9 +129,9 @@ const THEMES = [
     actionButtonBg: '#F2EFE6',
     actionButtonBorder: '#e5ded2',
     actionButtonText: '#2d241e',
-    clearDataBg: '#F2EFE6',
-    clearDataBorder: '#e5ded2',
-    clearDataText: '#d9532f',
+    clearDataBg: '#d9532f',
+    clearDataBorder: '#d9532f',
+    clearDataText: '#ffffff',
     canvasBg: '#F2EFE6',
     canvasBar: '#d9532f',
     canvasBaseline: '#ded7c8',
@@ -181,7 +181,7 @@ const THEMES = [
     textMuted: '#3a4d5e',
     textDim: '#637b8f',
     accent: '#213040',
-    accentDark: '#121c26',
+    accentDark: '#3a4d5e',
     accentMuted: '#b8c5ce',
     sliderTrackBg: '#ffffff',
     sliderTrackBorder: '#9ba9b5'
@@ -6969,9 +6969,9 @@ export default function App() {
                <button 
                   onClick={handleSelectFolder}
                   className="flex items-center justify-center gap-2 border h-8 shrink-0 text-[10px] tracking-widest font-bold transition-colors hover:opacity-80 active:scale-95"
-                  style={{ backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-borderActive)', color: 'var(--theme-button-text, var(--theme-accent))' }}
+                  style={{ backgroundColor: 'var(--theme-actionButton-bg, var(--theme-button-bg, var(--theme-bg)))', borderColor: 'var(--theme-actionButton-border, var(--theme-border))', color: 'var(--theme-actionButton-text, var(--theme-button-text, var(--theme-textMain)))' }}
                 >
-                  <FolderOpen size={14} style={{ color: 'var(--theme-button-text)' }} />
+                  <FolderOpen size={14} style={{ color: 'var(--theme-actionButton-text, var(--theme-button-text))' }} />
                   READ DIRECTORY
                </button>
                
@@ -6979,24 +6979,24 @@ export default function App() {
                  <button 
                     onClick={() => { setIsCreatingPlaylist(true); setNewPlaylistName(''); }}
                     className="flex items-center justify-center gap-2 border h-7 text-[9px] tracking-widest transition-colors hover:opacity-80 active:scale-95 font-bold"
-                    style={{ backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-border)', color: 'var(--theme-button-text, var(--theme-textMain))' }}
+                    style={{ backgroundColor: 'var(--theme-actionButton-bg, var(--theme-button-bg, var(--theme-bg)))', borderColor: 'var(--theme-actionButton-border, var(--theme-border))', color: 'var(--theme-actionButton-text, var(--theme-button-text, var(--theme-textMain)))' }}
                   >
-                    <Plus size={12} style={{ color: 'var(--theme-button-text)' }} />
+                    <Plus size={12} style={{ color: 'var(--theme-actionButton-text, var(--theme-button-text))' }} />
                     CREATE LIST
                  </button>
                  <button 
                     onClick={findDuplicates}
                     className="flex items-center justify-center gap-2 border h-7 text-[9px] tracking-widest transition-colors hover:opacity-80 active:scale-95 font-bold"
-                    style={{ backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-border)', color: 'var(--theme-button-text, var(--theme-textMain))' }}
+                    style={{ backgroundColor: 'var(--theme-actionButton-bg, var(--theme-button-bg, var(--theme-bg)))', borderColor: 'var(--theme-actionButton-border, var(--theme-border))', color: 'var(--theme-actionButton-text, var(--theme-button-text, var(--theme-textMain)))' }}
                   >
-                    <Layers size={12} style={{ color: 'var(--theme-button-text)' }} />
+                    <Layers size={12} style={{ color: 'var(--theme-actionButton-text, var(--theme-button-text))' }} />
                     FIND DUPES
                  </button>
                  <button 
                     onClick={clearActivePlaylist}
                     className="col-span-2 flex items-center justify-center gap-2 border h-7 text-[9px] tracking-widest font-bold transition-colors hover:opacity-85 active:scale-95 disabled:opacity-50 cursor-pointer rounded-[1px]"
                     style={{ 
-                      backgroundColor: 'var(--theme-clearData-bg, var(--theme-button-bg, var(--theme-bg)))', 
+                      backgroundColor: 'var(--theme-clearData-bg, var(--theme-actionButton-bg, var(--theme-button-bg, var(--theme-bg))))', 
                       borderColor: 'var(--theme-clearData-border, var(--theme-border))', 
                       color: 'var(--theme-clearData-text, var(--theme-button-text, var(--theme-textMain)))' 
                     }}
@@ -7007,7 +7007,7 @@ export default function App() {
                  </button>
                </div>
                
-               <div className="relative mt-auto border h-8 flex items-center shrink-0" style={{ backgroundColor: 'var(--theme-controlBox-bg, var(--theme-surfaceLighter))', borderColor: 'var(--theme-border)' }}>
+               <div className="relative mt-auto border h-8 flex items-center shrink-0" style={{ backgroundColor: 'var(--theme-actionButton-bg, var(--theme-controlBox-bg, var(--theme-surfaceLighter)))', borderColor: 'var(--theme-actionButton-border, var(--theme-border))' }}>
                   <Search size={12} className="absolute left-2" style={{ color: 'var(--theme-textDim)' }} />
                   <input 
                     type="text" 
