@@ -20,6 +20,7 @@ interface AlbumArt3DProps {
   cdHubStyle?: CDHubStyle;
   cdHubScale?: number;
   onToggleCDHubStyle?: () => void;
+  onChangeCDHubScale?: (scale: number) => void;
 }
 
 export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
@@ -37,6 +38,7 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
   cdHubStyle = 'black',
   cdHubScale = 1.0,
   onToggleCDHubStyle,
+  onChangeCDHubScale,
 }) => {
   // Mode state: 3D canvas slab vs realistic rotating CD disc vs flat 2D mode
   const [internalArtMode, setInternalArtMode] = useState<AlbumArtDisplayMode>(() => {
@@ -689,23 +691,51 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
           </button>
         )}
 
-        {/* Toggle CD Hub Style (Black vs Clear Acrylic) when in CD mode */}
-        {artMode === 'cd' && onToggleCDHubStyle && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleCDHubStyle();
-            }}
-            className="px-1.5 py-0.5 text-[8px] font-mono tracking-wider font-semibold border flex items-center gap-1 rounded-[1px] transition-all shadow-sm"
-            style={{
-              backgroundColor: cdHubStyle === 'clear' ? 'var(--theme-surfaceLighter)' : 'var(--theme-surface)',
-              borderColor: cdHubStyle === 'clear' ? 'var(--theme-accent)' : 'var(--theme-border)',
-              color: cdHubStyle === 'clear' ? 'var(--theme-accent)' : 'var(--theme-textMain)',
-            }}
-            title={`CDハブ切替 (現在: ${cdHubStyle === 'clear' ? '透明プラスチック' : '黒ハブ'} / クリックで切替)`}
-          >
-            <span>{cdHubStyle === 'clear' ? 'CLEAR HUB' : 'BLACK HUB'}</span>
-          </button>
+        {/* CD Hub Controls (Slider for Diameter Scale & Hub Style Switcher in Track Info CD mode) */}
+        {artMode === 'cd' && (
+          <div className="flex items-center gap-1.5 ml-1">
+            {onChangeCDHubScale && (
+              <div
+                className="flex items-center gap-1"
+                title={`CDハブサイズ調整: ${Math.round((cdHubScale ?? 1.0) * 100)}% (最小: 中心穴のみ 〜 最大: 標準ハブ)`}
+              >
+                <span
+                  className="text-[7.5px] font-mono tracking-wider font-bold opacity-70 shrink-0"
+                  style={{ color: 'var(--theme-textDim)' }}
+                >
+                  HUB
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.02}
+                  value={cdHubScale ?? 1.0}
+                  onChange={(e) => onChangeCDHubScale(parseFloat(e.target.value))}
+                  className="w-14 h-1 rounded appearance-none cursor-pointer accent-[var(--theme-accent)]"
+                  style={{ backgroundColor: 'var(--theme-border)' }}
+                  title={`CDハブサイズ調整: ${Math.round((cdHubScale ?? 1.0) * 100)}%`}
+                />
+              </div>
+            )}
+            {onToggleCDHubStyle && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleCDHubStyle();
+                }}
+                className="px-1.5 py-0.5 text-[8px] font-mono tracking-wider font-semibold border flex items-center gap-1 rounded-[1px] transition-all shadow-sm"
+                style={{
+                  backgroundColor: cdHubStyle === 'clear' ? 'var(--theme-surfaceLighter)' : 'var(--theme-surface)',
+                  borderColor: cdHubStyle === 'clear' ? 'var(--theme-accent)' : 'var(--theme-border)',
+                  color: cdHubStyle === 'clear' ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+                }}
+                title={`CDハブ切替 (現在: ${cdHubStyle === 'clear' ? '透明プラスチック' : '黒ハブ'} / クリックで切替)`}
+              >
+                <span>{cdHubStyle === 'clear' ? 'CLEAR' : 'BLACK'}</span>
+              </button>
+            )}
+          </div>
         )}
       </div>
 

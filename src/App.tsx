@@ -6830,6 +6830,7 @@ export default function App() {
                   cdHubStyle={cdHubStyle}
                   cdHubScale={cdHubScale}
                   onToggleCDHubStyle={handleToggleCDHubStyle}
+                  onChangeCDHubScale={handleSetCdHubScale}
                 />
               </div>
               <div className="flex flex-col h-full justify-between pb-1 min-w-0 flex-1">

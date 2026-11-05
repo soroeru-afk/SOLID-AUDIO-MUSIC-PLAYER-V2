@@ -954,6 +954,67 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
           )}
         </div>
 
+        {/* CD Hub Controls (Slider for Diameter Scale & Hub Style Switcher in CARD view) */}
+        {isCDSpinMode && (
+          <div
+            className="px-2 py-1 flex items-center justify-between gap-1.5 border-b select-none overflow-hidden"
+            style={{
+              borderColor: 'var(--theme-list-border)',
+              backgroundColor: 'var(--theme-list-surfaceLighter)',
+            }}
+          >
+            {/* Hub Size Slider */}
+            <div
+              className="flex items-center gap-1 min-w-0 flex-1"
+              title={`CDハブサイズ調整: ${Math.round((cdHubScale ?? 1.0) * 100)}% (最小: 中心穴のみ 〜 最大: 標準ハブ)`}
+            >
+              <span
+                className="text-[7.5px] font-mono tracking-wider font-bold opacity-70 shrink-0"
+                style={{ color: 'var(--theme-list-textDim)' }}
+              >
+                HUB
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.02}
+                value={cdHubScale ?? 1.0}
+                onChange={(e) => onChangeCDHubScale?.(parseFloat(e.target.value))}
+                className="w-full min-w-[36px] max-w-[64px] h-1 bg-[var(--theme-list-border)] rounded appearance-none cursor-pointer accent-[var(--theme-accent)]"
+                title={`CDハブサイズ調整: ${Math.round((cdHubScale ?? 1.0) * 100)}%`}
+              />
+            </div>
+
+            {/* Clear / Black Hub Switch Button */}
+            {onToggleCDHubStyle && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleCDHubStyle();
+                }}
+                className="h-[18px] px-1.5 text-[8px] font-mono font-bold tracking-wider border rounded-[1px] transition-all hover:opacity-85 active:scale-95 leading-none shrink-0"
+                style={
+                  cdHubStyle === 'clear'
+                    ? {
+                        backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))',
+                        borderColor: 'var(--theme-btn-active-border, var(--theme-accent))',
+                        color: 'var(--theme-btn-active-text, #ffffff)',
+                      }
+                    : {
+                        backgroundColor: 'var(--theme-button-bg, transparent)',
+                        borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))',
+                        color: 'var(--theme-listHeader-textMuted)',
+                      }
+                }
+                title={`CDハブ切替：現在【${cdHubStyle === 'clear' ? '透明プラスチック' : '黒ハブ'}】 (クリックで切替 / 上部プレイヤーと連動)`}
+              >
+                {cdHubStyle === 'clear' ? 'CLEAR' : 'BLACK'}
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Card Info Footer */}
         <div
           className={`${isCompact ? 'p-1.5' : 'p-2.5'} flex flex-col justify-between flex-1 border-t`}
