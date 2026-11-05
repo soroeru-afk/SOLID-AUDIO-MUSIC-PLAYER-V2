@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Disc } from 'lucide-react';
 
+export type CDHubStyle = 'black' | 'clear';
+
 interface CDDiscProps {
   coverUrl?: string;
   title?: string;
@@ -12,6 +14,18 @@ interface CDDiscProps {
    * If true, interactive hover or click stops/starts or shows detail.
    */
   interactive?: boolean;
+  /**
+   * Center clamping hub style: 'black' (opaque dark clamp) or 'clear' (transparent acrylic polycarbonate)
+   */
+  hubStyle?: CDHubStyle;
+  /**
+   * Scale factor for hub diameter (0.0: shrink to center hole ~8%, 1.0: standard full hub 22%)
+   */
+  hubScale?: number;
+  /**
+   * Callback to toggle hub style between black and clear
+   */
+  onToggleHubStyle?: () => void;
 }
 
 export const CDDisc: React.FC<CDDiscProps> = ({
@@ -21,6 +35,9 @@ export const CDDisc: React.FC<CDDiscProps> = ({
   album = '',
   isPlaying = false,
   className = '',
+  hubStyle = 'black',
+  hubScale = 1.0,
+  onToggleHubStyle,
 }) => {
   const currentAngleRef = useRef<number>(0);
   const currentSpeedRef = useRef<number>(0); // degrees per second
@@ -149,57 +166,124 @@ export const CDDisc: React.FC<CDDiscProps> = ({
 
           {/* Disc surface: pure clean cover art cropped to circle without rainbow glare */}
 
-          {/* Layer 5: Inner Clear Polycarbonate Ring (Optical Lead-in Ring without print) */}
+          {/* Layer 5: Inner Clear Polycarbonate Ring (Optical Lead-in Ring without print - High Transparency) */}
           <div
             className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[34%] h-[34%] rounded-full pointer-events-none z-15 flex items-center justify-center shadow-inner"
             style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.14)',
-              backdropFilter: 'blur(1px)',
-              border: '1.5px solid rgba(255,255,255,0.4)',
-              boxShadow: 'inset 0 0 4px rgba(0,0,0,0.5), 0 0 4px rgba(0,0,0,0.4)',
+              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+              border: '1.5px solid rgba(255,255,255,0.35)',
+              boxShadow: 'inset 0 0 3px rgba(0,0,0,0.3), 0 0 3px rgba(0,0,0,0.25)',
             }}
           >
             {/* Fine laser data mirror track mark */}
             <div
               className="w-[82%] h-[82%] rounded-full border border-dashed pointer-events-none"
-              style={{ borderColor: 'rgba(255,255,255,0.3)' }}
+              style={{ borderColor: 'rgba(255,255,255,0.25)' }}
             />
           </div>
 
-          {/* Layer 6: Center Clamping Spindle / Hub (Chucking Mechanism from User Photo) */}
-          <div
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[22%] h-[22%] rounded-full pointer-events-none z-30 flex items-center justify-center shadow-2xl"
-            style={{
-              background: 'radial-gradient(circle at 40% 40%, #3a424e 0%, #181d24 60%, #0b0d11 100%)',
-              border: '1.5px solid #4a5568',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.4), inset 0 -2px 4px rgba(0,0,0,0.9)',
-            }}
-          >
-            {/* Mechanical Chuck Rubber Teeth / Grip Accents */}
-            <div
-              className="w-[72%] h-[72%] rounded-full border flex items-center justify-center"
-              style={{
-                borderColor: '#11141a',
-                backgroundColor: '#1b2028',
-                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.8)',
-              }}
-            >
-              {/* Center hole through which the spindle motor pin attaches */}
-              <div
-                className="w-[36%] h-[36%] rounded-full shadow-inner"
-                style={{
-                  backgroundColor: '#05070a',
-                  border: '1px solid #2d3748',
-                  boxShadow: 'inset 0 2px 5px rgba(0,0,0,0.95)',
-                }}
-              />
-            </div>
+          {/* Layer 6: Center Clamping Spindle / Hub (Switchable: Black Opaque vs Clear Acrylic Plastic, Scalable via Slider) */}
+          {(() => {
+            const clampedScale = typeof hubScale === 'number' ? Math.max(0, Math.min(1, hubScale)) : 1.0;
+            // Scale between center black spindle hole (8%) and full hub clamp (22%)
+            const minHubPct = 8;
+            const maxHubPct = 22;
+            const hubDiameterPct = minHubPct + clampedScale * (maxHubPct - minHubPct);
+            // Center spindle hole maintains consistent physical diameter relative to disc
+            const holeSizePct = Math.min(100, Math.max(32, (minHubPct / hubDiameterPct) * 100));
+            const innerRingPct = Math.min(100, Math.max(holeSizePct + 8, 72));
+            const showDetails = clampedScale > 0.15;
 
-            {/* 3 Chuck Notch Marks */}
-            <div className="absolute top-[12%] w-[2px] h-[3px] bg-black/80 rounded-full" />
-            <div className="absolute bottom-[12%] left-[24%] w-[2px] h-[3px] bg-black/80 rounded-full rotate-45" />
-            <div className="absolute bottom-[12%] right-[24%] w-[2px] h-[3px] bg-black/80 rounded-full -rotate-45" />
-          </div>
+            return (
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleHubStyle?.();
+                }}
+                className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full z-30 flex items-center justify-center transition-all ${
+                  onToggleHubStyle ? 'cursor-pointer hover:opacity-90 active:scale-95' : 'pointer-events-none'
+                }`}
+                title="CDセンターハブ切替：黒 ⇄ 透明プラスチック (クリックで切替)"
+                style={{
+                  width: `${hubDiameterPct}%`,
+                  height: `${hubDiameterPct}%`,
+                  ...(hubStyle === 'clear'
+                    ? {
+                        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                        border: clampedScale > 0.05 ? '1px solid rgba(255, 255, 255, 0.45)' : 'none',
+                        boxShadow: clampedScale > 0.05
+                          ? 'inset 0 1px 2px rgba(255,255,255,0.65), inset 0 -1px 2px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.3)'
+                          : 'none',
+                      }
+                    : {
+                        background: clampedScale > 0.05
+                          ? 'radial-gradient(circle at 40% 40%, #3a424e 0%, #181d24 60%, #0b0d11 100%)'
+                          : '#05070a',
+                        border: clampedScale > 0.05 ? '1.5px solid #4a5568' : 'none',
+                        boxShadow: clampedScale > 0.05
+                          ? '0 2px 8px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.4), inset 0 -2px 4px rgba(0,0,0,0.9)'
+                          : 'none',
+                      }),
+                }}
+              >
+                {/* Inner Ring / Grip Notch Border (Visible when hub is scaled up) */}
+                <div
+                  className="rounded-full flex items-center justify-center transition-all"
+                  style={{
+                    width: `${innerRingPct}%`,
+                    height: `${innerRingPct}%`,
+                    ...(hubStyle === 'clear'
+                      ? {
+                          border: clampedScale > 0.25 ? '1px solid rgba(255, 255, 255, 0.35)' : 'none',
+                          backgroundColor: clampedScale > 0.25 ? 'rgba(255, 255, 255, 0.04)' : 'transparent',
+                          boxShadow: clampedScale > 0.25 ? 'inset 0 1px 1px rgba(255,255,255,0.4), 0 0 2px rgba(0,0,0,0.2)' : 'none',
+                        }
+                      : {
+                          border: clampedScale > 0.25 ? '1px solid #11141a' : 'none',
+                          backgroundColor: clampedScale > 0.25 ? '#1b2028' : 'transparent',
+                          boxShadow: clampedScale > 0.25 ? 'inset 0 1px 3px rgba(0,0,0,0.8)' : 'none',
+                        }),
+                  }}
+                >
+                  {/* Innermost Spindle Hole (Retained as dark motor spindle pin hole in all modes/sizes) */}
+                  <div
+                    className="rounded-full shadow-inner"
+                    style={{
+                      width: `${holeSizePct}%`,
+                      height: `${holeSizePct}%`,
+                      backgroundColor: '#05070a',
+                      border: hubStyle === 'clear' ? '1px solid rgba(255,255,255,0.4)' : '1px solid #2d3748',
+                      boxShadow: 'inset 0 2px 5px rgba(0,0,0,0.95), 0 0 1px rgba(0,0,0,0.5)',
+                    }}
+                  />
+                </div>
+
+                {/* 3 Chuck Notch Marks (Fades out when scaled down towards center hole) */}
+                {showDetails && (
+                  <>
+                    <div
+                      className={`absolute top-[12%] w-[2px] h-[3px] rounded-full transition-opacity ${
+                        hubStyle === 'clear' ? 'bg-white/50 shadow-inner' : 'bg-black/80'
+                      }`}
+                      style={{ opacity: clampedScale }}
+                    />
+                    <div
+                      className={`absolute bottom-[12%] left-[24%] w-[2px] h-[3px] rounded-full rotate-45 transition-opacity ${
+                        hubStyle === 'clear' ? 'bg-white/50 shadow-inner' : 'bg-black/80'
+                      }`}
+                      style={{ opacity: clampedScale }}
+                    />
+                    <div
+                      className={`absolute bottom-[12%] right-[24%] w-[2px] h-[3px] rounded-full -rotate-45 transition-opacity ${
+                        hubStyle === 'clear' ? 'bg-white/50 shadow-inner' : 'bg-black/80'
+                      }`}
+                      style={{ opacity: clampedScale }}
+                    />
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Ambient Top Light Reflection on the outer bezel window */}

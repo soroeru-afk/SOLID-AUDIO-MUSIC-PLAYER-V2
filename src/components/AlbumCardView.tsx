@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Play, Pause, Disc, User, ChevronRight, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, GripVertical, ListMusic, Music, ArrowLeft, Folder, List, Maximize2, Minimize2, Trash2, X, Edit2, Check, Star } from 'lucide-react';
-import { CDDisc } from './CDDisc';
+import { CDDisc, CDHubStyle } from './CDDisc';
 
 export interface AlbumGroup {
   id: string;
@@ -56,6 +56,10 @@ interface AlbumCardViewProps {
   onSelectedAlbumsChange?: (selectedAlbums: AlbumGroup[]) => void;
   triggerOpenBatchMoveModal?: number;
   isCDSpinMode?: boolean;
+  cdHubStyle?: CDHubStyle;
+  cdHubScale?: number;
+  onToggleCDHubStyle?: () => void;
+  onChangeCDHubScale?: (scale: number) => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -106,6 +110,10 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   onSelectedAlbumsChange,
   triggerOpenBatchMoveModal,
   isCDSpinMode = false,
+  cdHubStyle = 'black',
+  cdHubScale = 1.0,
+  onToggleCDHubStyle,
+  onChangeCDHubScale,
 }) => {
   const reorderHandler = onReorderAlbum || onReorderAlbums;
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -895,6 +903,9 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
               artist={album.artist}
               album={album.album}
               isPlaying={isThisAlbumActive && isPlaying}
+              hubStyle={cdHubStyle}
+              hubScale={cdHubScale}
+              onToggleHubStyle={onToggleCDHubStyle}
             />
           ) : (
             renderArtwork(album.coverUrl, album.album, isCompact)
@@ -1520,6 +1531,9 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                 artist={album.artist}
                 album={album.album}
                 isPlaying={isThisAlbumPlaying && isPlaying}
+                hubStyle={cdHubStyle}
+                hubScale={cdHubScale}
+                onToggleHubStyle={onToggleCDHubStyle}
               />
             ) : (
               renderArtwork(album.coverUrl, album.album, activeCoverWidthPx < 110)
@@ -1554,6 +1568,67 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
               </div>
             )}
           </div>
+
+          {/* CD Hub Controls (Slider for Diameter Scale & Hub Style Switcher - Positioned per user markup) */}
+          {isCDSpinMode && (
+            <div
+              className="px-2 py-1.5 flex items-center justify-end gap-2 border-b select-none"
+              style={{
+                borderColor: 'var(--theme-list-border)',
+                backgroundColor: 'var(--theme-list-surfaceLighter)',
+              }}
+            >
+              {/* Hub Size Slider */}
+              <div
+                className="flex items-center gap-1.5 min-w-0"
+                title={`CDハブサイズ調整: ${Math.round((cdHubScale ?? 1.0) * 100)}% (最小: 中心穴のみ 〜 最大: 標準ハブ)`}
+              >
+                <span
+                  className="text-[7.5px] font-mono tracking-wider font-bold opacity-70 shrink-0"
+                  style={{ color: 'var(--theme-list-textDim)' }}
+                >
+                  HUB
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.02}
+                  value={cdHubScale ?? 1.0}
+                  onChange={(e) => onChangeCDHubScale?.(parseFloat(e.target.value))}
+                  className="w-16 h-1 bg-[var(--theme-list-border)] rounded appearance-none cursor-pointer accent-[var(--theme-accent)]"
+                  title={`CDハブサイズ調整: ${Math.round((cdHubScale ?? 1.0) * 100)}% (最小: 中心穴のみ 〜 最大: 標準ハブ)`}
+                />
+              </div>
+
+              {/* Clear / Black Hub Switch Button */}
+              {onToggleCDHubStyle && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleCDHubStyle();
+                  }}
+                  className="h-[19px] px-1.5 text-[8px] font-mono font-bold tracking-wider border rounded-[1px] transition-all hover:opacity-85 active:scale-95 leading-none shrink-0"
+                  style={
+                    cdHubStyle === 'clear'
+                      ? {
+                          backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))',
+                          borderColor: 'var(--theme-btn-active-border, var(--theme-accent))',
+                          color: 'var(--theme-btn-active-text, #ffffff)',
+                        }
+                      : {
+                          backgroundColor: 'var(--theme-button-bg, transparent)',
+                          borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))',
+                          color: 'var(--theme-listHeader-textMuted)',
+                        }
+                  }
+                  title={`CDハブ切替：現在【${cdHubStyle === 'clear' ? '透明プラスチック' : '黒ハブ'}】 (クリックで切替 / 上部プレイヤーと連動)`}
+                >
+                  {cdHubStyle === 'clear' ? 'CLEAR' : 'BLACK'}
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Quick info & Play Album button under artwork */}
           <div className={`${isZoomed ? 'p-3.5 gap-2.5' : 'p-2 gap-1.5'} flex flex-col mt-auto`}>

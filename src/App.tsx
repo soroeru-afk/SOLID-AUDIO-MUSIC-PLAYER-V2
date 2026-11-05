@@ -12,6 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { get, set, del } from 'idb-keyval';
 import * as mm from 'music-metadata-browser';
 import { AlbumArt3D, AlbumArtDisplayMode } from './components/AlbumArt3D';
+import { CDHubStyle } from './components/CDDisc';
 import { AlbumCardView, AlbumGroup, ArtistGroup } from './components/AlbumCardView';
 
 // --- Types ---
@@ -929,6 +930,45 @@ export default function App() {
     } catch {}
     return '3d';
   });
+
+  // CDセンターハブのスタイル: 'black' (不透明な黒クランプ) または 'clear' (透明なアクリルプラスチック)
+  const [cdHubStyle, setCdHubStyle] = useState<CDHubStyle>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solid_cd_hub_style');
+      if (saved === 'black' || saved === 'clear') return saved;
+    } catch {}
+    return 'black';
+  });
+
+  const handleToggleCDHubStyle = () => {
+    setCdHubStyle(prev => {
+      const next: CDHubStyle = prev === 'black' ? 'clear' : 'black';
+      try {
+        localStorage.setItem('v2_solid_cd_hub_style', next);
+      } catch {}
+      return next;
+    });
+  };
+
+  // CDセンターハブの大きさスケール (0.0: 中心黒点8% 〜 1.0: 最大標準ハブ22%)
+  const [cdHubScale, setCdHubScale] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solid_cd_hub_scale');
+      if (saved !== null) {
+        const val = parseFloat(saved);
+        if (!isNaN(val) && val >= 0 && val <= 1) return val;
+      }
+    } catch {}
+    return 1.0;
+  });
+
+  const handleSetCdHubScale = (scale: number) => {
+    const clamped = Math.max(0, Math.min(1, scale));
+    setCdHubScale(clamped);
+    try {
+      localStorage.setItem('v2_solid_cd_hub_scale', clamped.toString());
+    } catch {}
+  };
 
   // Toggle CD Spin Mode: 下をCDモードにした時は、上のTrack Infoを強制的に通常アルバムカバー（2D）にする！
   const handleToggleAlbumCDSpinMode = () => {
@@ -6787,6 +6827,9 @@ export default function App() {
                   onDisplayModeChange={handleTopArtModeChange}
                   onDropImage={handleUpdateArtwork}
                   onResetArtwork={handleResetArtwork}
+                  cdHubStyle={cdHubStyle}
+                  cdHubScale={cdHubScale}
+                  onToggleCDHubStyle={handleToggleCDHubStyle}
                 />
               </div>
               <div className="flex flex-col h-full justify-between pb-1 min-w-0 flex-1">
@@ -10104,6 +10147,10 @@ export default function App() {
               onSelectedAlbumsChange={handleSelectedAlbumsChange}
               triggerOpenBatchMoveModal={triggerOpenMainAlbumMoveModal}
               isCDSpinMode={isAlbumCDSpinMode}
+              cdHubStyle={cdHubStyle}
+              cdHubScale={cdHubScale}
+              onToggleCDHubStyle={handleToggleCDHubStyle}
+              onChangeCDHubScale={handleSetCdHubScale}
             />
           ) : (
             <div className="flex flex-col h-full relative w-full overflow-hidden" style={{ backgroundColor: 'var(--theme-list-bg)' }}>

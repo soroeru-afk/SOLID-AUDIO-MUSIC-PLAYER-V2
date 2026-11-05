@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Activity, Box, RotateCw, Pause, Play, Image as ImageIcon, Upload, RotateCcw, Disc } from 'lucide-react';
-import { CDDisc } from './CDDisc';
+import { CDDisc, CDHubStyle } from './CDDisc';
 
 export type AlbumArtDisplayMode = '3d' | 'cd' | '2d';
 
@@ -17,6 +17,9 @@ interface AlbumArt3DProps {
   onDisplayModeChange?: (mode: AlbumArtDisplayMode) => void;
   onDropImage?: (file: File) => Promise<number | void> | void;
   onResetArtwork?: () => Promise<number | boolean | void> | void;
+  cdHubStyle?: CDHubStyle;
+  cdHubScale?: number;
+  onToggleCDHubStyle?: () => void;
 }
 
 export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
@@ -31,6 +34,9 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
   onDisplayModeChange,
   onDropImage,
   onResetArtwork,
+  cdHubStyle = 'black',
+  cdHubScale = 1.0,
+  onToggleCDHubStyle,
 }) => {
   // Mode state: 3D canvas slab vs realistic rotating CD disc vs flat 2D mode
   const [internalArtMode, setInternalArtMode] = useState<AlbumArtDisplayMode>(() => {
@@ -357,6 +363,9 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
             artist={artist}
             album={album}
             isPlaying={isPlaying && !forcePauseRotate}
+            hubStyle={cdHubStyle}
+            hubScale={cdHubScale}
+            onToggleHubStyle={onToggleCDHubStyle}
           />
         </div>
       )}
@@ -677,6 +686,25 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
             title={autoRotate ? (isPlaying ? '自動回転をOFF' : '再生時に回転（現在一時停止中）') : '自動回転をON'}
           >
             {autoRotate ? <RotateCw size={9} className={isPlaying ? "animate-spin-slow" : ""} /> : <Play size={9} />}
+          </button>
+        )}
+
+        {/* Toggle CD Hub Style (Black vs Clear Acrylic) when in CD mode */}
+        {artMode === 'cd' && onToggleCDHubStyle && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCDHubStyle();
+            }}
+            className="px-1.5 py-0.5 text-[8px] font-mono tracking-wider font-semibold border flex items-center gap-1 rounded-[1px] transition-all shadow-sm"
+            style={{
+              backgroundColor: cdHubStyle === 'clear' ? 'var(--theme-surfaceLighter)' : 'var(--theme-surface)',
+              borderColor: cdHubStyle === 'clear' ? 'var(--theme-accent)' : 'var(--theme-border)',
+              color: cdHubStyle === 'clear' ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+            }}
+            title={`CDハブ切替 (現在: ${cdHubStyle === 'clear' ? '透明プラスチック' : '黒ハブ'} / クリックで切替)`}
+          >
+            <span>{cdHubStyle === 'clear' ? 'CLEAR HUB' : 'BLACK HUB'}</span>
           </button>
         )}
       </div>
