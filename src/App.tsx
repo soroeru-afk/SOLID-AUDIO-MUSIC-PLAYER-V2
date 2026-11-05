@@ -970,6 +970,26 @@ export default function App() {
     } catch {}
   };
 
+  // CDジャケット写真の拡大・フィット倍率マップ（アルバムごとに永続保存）
+  const [cdArtZoomMap, setCdArtZoomMap] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solid_cd_art_zoom_map');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {};
+  });
+
+  const handleSetAlbumArtZoom = (albumKey: string, zoom: number) => {
+    const clamped = Math.max(0.8, Math.min(2.0, zoom));
+    setCdArtZoomMap(prev => {
+      const next = { ...prev, [albumKey]: clamped };
+      try {
+        localStorage.setItem('v2_solid_cd_art_zoom_map', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
   // Toggle CD Spin Mode: 下をCDモードにした時は、上のTrack Infoを強制的に通常アルバムカバー（2D）にする！
   const handleToggleAlbumCDSpinMode = () => {
     const next = !isAlbumCDSpinMode;
@@ -2028,6 +2048,30 @@ export default function App() {
     metaThemeColor.setAttribute('content', activeColor);
   }, [theme.id, theme.bg]);
   const isLightTheme = theme.id === 'LIGHT' || theme.id === 'PAPER';
+  const isFaderLightTheme = theme.id === 'PAPER' || theme.id === 'MOCHA' || theme.id === 'PINK' || theme.id === 'LIGHT';
+
+  const faderThumbBg = isFaderLightTheme
+    ? (theme.id === 'PAPER'
+        ? 'linear-gradient(180deg, #FAF7F0 0%, #E8E0D2 60%, #D8CFC0 100%)'
+        : theme.id === 'MOCHA'
+        ? 'linear-gradient(180deg, #FAF4ED 0%, #EDE0D2 60%, #DFCEBE 100%)'
+        : theme.id === 'PINK'
+        ? 'linear-gradient(180deg, #FDF7F8 0%, #F5E4E8 60%, #E8D3D8 100%)'
+        : 'linear-gradient(180deg, #FFFFFF 0%, #E8ECEF 60%, #D8DFE4 100%)')
+    : 'linear-gradient(180deg, #424b5a 0%, #1c212a 45%, #0a0d12 100%)';
+
+  const faderThumbBorder = isLightTheme
+    ? (theme.id === 'PAPER' ? '#c8bfae' : theme.id === 'MOCHA' ? '#c4b09f' : theme.id === 'PINK' ? '#d9b6c0' : '#b2c0cc')
+    : '#080a0e';
+
+  const faderTrackBg = isLightTheme
+    ? (theme.id === 'PAPER' ? '#ded7c8' : theme.id === 'MOCHA' ? '#cfbaaa' : theme.id === 'PINK' ? '#e0b8c3' : '#9ba9b5')
+    : '#181c22';
+
+  const faderThumbShadow = isLightTheme
+    ? '0 1px 2px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.9)'
+    : '0 1px 3px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.3)';
+
   const iconColor = isLightTheme ? (theme.id === 'PAPER' ? '#2d241e' : '#1a2530') : '#ffffff';
   const listIconColor = (theme as any).listIconColor || iconColor;
   
@@ -5851,6 +5895,10 @@ export default function App() {
     '--theme-accentMuted': theme.accentMuted,
     '--theme-sliderTrackBg': theme.sliderTrackBg,
     '--theme-sliderTrackBorder': theme.sliderTrackBorder,
+    '--theme-faderThumbBg': faderThumbBg,
+    '--theme-faderThumbBorder': faderThumbBorder,
+    '--theme-faderTrackBg': faderTrackBg,
+    '--theme-faderThumbShadow': faderThumbShadow,
     '--theme-albumArt-bg': (theme as any).albumArtBg || theme.bg,
     // Accent dark boxes & list headers (#363D47 in GRAY theme)
     '--theme-controlBox-bg': (theme as any).controlBoxBg || theme.surface,
@@ -6829,6 +6877,7 @@ export default function App() {
                   onResetArtwork={handleResetArtwork}
                   cdHubStyle={cdHubStyle}
                   cdHubScale={cdHubScale}
+                  cdArtScale={currentTrack ? (cdArtZoomMap[`${currentTrack.artist}_${currentTrack.album}`] ?? cdArtZoomMap[currentTrack.album] ?? 1.0) : 1.0}
                   onToggleCDHubStyle={handleToggleCDHubStyle}
                   onChangeCDHubScale={handleSetCdHubScale}
                 />
@@ -10152,6 +10201,8 @@ export default function App() {
               cdHubScale={cdHubScale}
               onToggleCDHubStyle={handleToggleCDHubStyle}
               onChangeCDHubScale={handleSetCdHubScale}
+              cdArtZoomMap={cdArtZoomMap}
+              onChangeAlbumArtZoom={handleSetAlbumArtZoom}
             />
           ) : (
             <div className="flex flex-col h-full relative w-full overflow-hidden" style={{ backgroundColor: 'var(--theme-list-bg)' }}>

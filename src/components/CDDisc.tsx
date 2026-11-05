@@ -23,6 +23,10 @@ interface CDDiscProps {
    */
   hubScale?: number;
   /**
+   * Zoom / scale factor for album cover artwork (1.0 = standard, 1.0 ~ 1.6 = zoom to crop out outer borders)
+   */
+  artScale?: number;
+  /**
    * Callback to toggle hub style between black and clear
    */
   onToggleHubStyle?: () => void;
@@ -37,6 +41,7 @@ export const CDDisc: React.FC<CDDiscProps> = ({
   className = '',
   hubStyle = 'black',
   hubScale = 1.0,
+  artScale = 1.0,
   onToggleHubStyle,
 }) => {
   const currentAngleRef = useRef<number>(0);
@@ -139,12 +144,16 @@ export const CDDisc: React.FC<CDDiscProps> = ({
             }}
           />
 
-          {/* Layer 2: Disc Artwork (Picture Label Disc Surface) */}
+          {/* Layer 2: Disc Artwork (Picture Label Disc Surface with adjustable zoom/fit scale) */}
           {coverUrl ? (
             <img
               src={coverUrl}
               alt={title || album || 'CD Disc'}
-              className="w-full h-full object-cover pointer-events-none"
+              className="w-full h-full object-cover pointer-events-none transition-transform duration-150 ease-out"
+              style={{
+                transform: `scale(${typeof artScale === 'number' && !isNaN(artScale) ? Math.max(0.5, Math.min(2.5, artScale)) : 1.0})`,
+                transformOrigin: 'center center',
+              }}
               draggable={false}
             />
           ) : (

@@ -19,6 +19,7 @@ interface AlbumArt3DProps {
   onResetArtwork?: () => Promise<number | boolean | void> | void;
   cdHubStyle?: CDHubStyle;
   cdHubScale?: number;
+  cdArtScale?: number;
   onToggleCDHubStyle?: () => void;
   onChangeCDHubScale?: (scale: number) => void;
 }
@@ -37,6 +38,7 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
   onResetArtwork,
   cdHubStyle = 'black',
   cdHubScale = 1.0,
+  cdArtScale = 1.0,
   onToggleCDHubStyle,
   onChangeCDHubScale,
 }) => {
@@ -367,6 +369,7 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
             isPlaying={isPlaying && !forcePauseRotate}
             hubStyle={cdHubStyle}
             hubScale={cdHubScale}
+            artScale={cdArtScale}
             onToggleHubStyle={onToggleCDHubStyle}
           />
         </div>
@@ -712,8 +715,7 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
                   step={0.02}
                   value={cdHubScale ?? 1.0}
                   onChange={(e) => onChangeCDHubScale(parseFloat(e.target.value))}
-                  className="w-14 h-1 rounded appearance-none cursor-pointer accent-[var(--theme-accent)]"
-                  style={{ backgroundColor: 'var(--theme-border)' }}
+                  className="w-14 cd-fader-slider"
                   title={`CDハブサイズ調整: ${Math.round((cdHubScale ?? 1.0) * 100)}%`}
                 />
               </div>
@@ -732,7 +734,7 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
                 }}
                 title={`CDハブ切替 (現在: ${cdHubStyle === 'clear' ? '透明プラスチック' : '黒ハブ'} / クリックで切替)`}
               >
-                <span>{cdHubStyle === 'clear' ? 'CLEAR' : 'BLACK'}</span>
+                <span>{cdHubStyle === 'clear' ? 'CLR' : 'BLK'}</span>
               </button>
             )}
           </div>

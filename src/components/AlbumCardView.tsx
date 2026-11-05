@@ -60,6 +60,8 @@ interface AlbumCardViewProps {
   cdHubScale?: number;
   onToggleCDHubStyle?: () => void;
   onChangeCDHubScale?: (scale: number) => void;
+  cdArtZoomMap?: Record<string, number>;
+  onChangeAlbumArtZoom?: (albumKey: string, zoom: number) => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -114,6 +116,8 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   cdHubScale = 1.0,
   onToggleCDHubStyle,
   onChangeCDHubScale,
+  cdArtZoomMap = {},
+  onChangeAlbumArtZoom,
 }) => {
   const reorderHandler = onReorderAlbum || onReorderAlbums;
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -905,6 +909,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
               isPlaying={isThisAlbumActive && isPlaying}
               hubStyle={cdHubStyle}
               hubScale={cdHubScale}
+              artScale={cdArtZoomMap[album.id] ?? cdArtZoomMap[`${album.artist}_${album.album}`] ?? cdArtZoomMap[album.album] ?? 1.0}
               onToggleHubStyle={onToggleCDHubStyle}
             />
           ) : (
@@ -954,66 +959,128 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
           )}
         </div>
 
-        {/* CD Hub Controls (Slider for Diameter Scale & Hub Style Switcher in CARD view) */}
-        {isCDSpinMode && (
-          <div
-            className="px-2 py-1 flex items-center justify-between gap-1.5 border-b select-none overflow-hidden"
-            style={{
-              borderColor: 'var(--theme-list-border)',
-              backgroundColor: 'var(--theme-list-surfaceLighter)',
-            }}
-          >
-            {/* Hub Size Slider */}
-            <div
-              className="flex items-center gap-1 min-w-0 flex-1"
-              title={`CDハブサイズ調整: ${Math.round((cdHubScale ?? 1.0) * 100)}% (最小: 中心穴のみ 〜 最大: 標準ハブ)`}
-            >
-              <span
-                className="text-[7.5px] font-mono tracking-wider font-bold opacity-70 shrink-0"
-                style={{ color: 'var(--theme-list-textDim)' }}
-              >
-                HUB
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.02}
-                value={cdHubScale ?? 1.0}
-                onChange={(e) => onChangeCDHubScale?.(parseFloat(e.target.value))}
-                className="w-full min-w-[36px] max-w-[64px] h-1 bg-[var(--theme-list-border)] rounded appearance-none cursor-pointer accent-[var(--theme-accent)]"
-                title={`CDハブサイズ調整: ${Math.round((cdHubScale ?? 1.0) * 100)}%`}
-              />
-            </div>
+        {/* CD Controls: Single-Row Horizontal Industrial Console in CARD view */}
+        {isCDSpinMode && (() => {
+          const albumKey = `${album.artist}_${album.album}`;
+          const currentArtZoom = cdArtZoomMap[album.id] ?? cdArtZoomMap[albumKey] ?? cdArtZoomMap[album.album] ?? 1.0;
 
-            {/* Clear / Black Hub Switch Button */}
-            {onToggleCDHubStyle && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleCDHubStyle();
-                }}
-                className="h-[18px] px-1.5 text-[8px] font-mono font-bold tracking-wider border rounded-[1px] transition-all hover:opacity-85 active:scale-95 leading-none shrink-0"
-                style={
-                  cdHubStyle === 'clear'
-                    ? {
-                        backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))',
-                        borderColor: 'var(--theme-btn-active-border, var(--theme-accent))',
-                        color: 'var(--theme-btn-active-text, #ffffff)',
-                      }
-                    : {
-                        backgroundColor: 'var(--theme-button-bg, transparent)',
-                        borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))',
-                        color: 'var(--theme-listHeader-textMuted)',
-                      }
-                }
-                title={`CDハブ切替：現在【${cdHubStyle === 'clear' ? '透明プラスチック' : '黒ハブ'}】 (クリックで切替 / 上部プレイヤーと連動)`}
-              >
-                {cdHubStyle === 'clear' ? 'CLEAR' : 'BLACK'}
-              </button>
-            )}
-          </div>
-        )}
+          return (
+            <div
+              className="px-2 py-1 flex items-center justify-between gap-1.5 border-b select-none overflow-hidden text-[7.5px] font-mono"
+              style={{
+                borderColor: 'var(--theme-list-border)',
+                backgroundColor: 'var(--theme-list-surfaceLighter)',
+              }}
+            >
+              {/* Slot 1: HUB Size Slider + Clear/Black Switch Button */}
+              <div className="flex items-center gap-1 min-w-0 flex-1">
+                <span
+                  className="text-[7px] font-mono tracking-tighter font-bold opacity-75 shrink-0"
+                  style={{ color: 'var(--theme-list-textDim)' }}
+                  title="CDセンターハブの大きさ"
+                >
+                  HUB
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.02}
+                  value={cdHubScale ?? 1.0}
+                  onChange={(e) => onChangeCDHubScale?.(parseFloat(e.target.value))}
+                  className="flex-1 min-w-[24px] cd-fader-slider"
+                  title={`CDハブサイズ調整: ${Math.round((cdHubScale ?? 1.0) * 100)}% (最小: 中心穴のみ 〜 最大: 標準ハブ)`}
+                />
+                {onToggleCDHubStyle && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleCDHubStyle();
+                    }}
+                    className="h-[17px] px-1 text-[7px] font-mono font-bold tracking-wider border rounded-[1px] transition-all hover:opacity-85 active:scale-95 leading-none shrink-0"
+                    style={
+                      cdHubStyle === 'clear'
+                        ? {
+                            backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))',
+                            borderColor: 'var(--theme-btn-active-border, var(--theme-accent))',
+                            color: 'var(--theme-btn-active-text, #ffffff)',
+                          }
+                        : {
+                            backgroundColor: 'var(--theme-button-bg, transparent)',
+                            borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))',
+                            color: 'var(--theme-listHeader-textMuted)',
+                          }
+                    }
+                    title={`CDハブ切替：現在【${cdHubStyle === 'clear' ? '透明プラスチック' : '黒ハブ'}】 (クリックで切替 / 上部プレイヤーと連動)`}
+                  >
+                    {cdHubStyle === 'clear' ? 'CLR' : 'BLK'}
+                  </button>
+                )}
+              </div>
+
+              {/* Subtle Divider */}
+              <div className="w-[1px] h-3 bg-[var(--theme-list-border)] shrink-0 opacity-60" />
+
+              {/* Slot 2: Artwork Fit/Zoom Slider + AUTO FIT Button */}
+              <div className="flex items-center gap-1 min-w-0 flex-1">
+                <span
+                  className="text-[7px] font-mono tracking-tighter font-bold opacity-75 shrink-0"
+                  style={{ color: 'var(--theme-list-textDim)' }}
+                  title="ジャケット画像の拡大・余白調整"
+                >
+                  FIT
+                </span>
+                <input
+                  type="range"
+                  min={0.9}
+                  max={1.6}
+                  step={0.01}
+                  value={currentArtZoom}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    onChangeAlbumArtZoom?.(album.id, val);
+                    onChangeAlbumArtZoom?.(albumKey, val);
+                  }}
+                  onDoubleClick={() => {
+                    onChangeAlbumArtZoom?.(album.id, 1.0);
+                    onChangeAlbumArtZoom?.(albumKey, 1.0);
+                  }}
+                  className="flex-1 min-w-[24px] cd-fader-slider"
+                  title={`絵柄拡大/余白調整: ${Math.round(currentArtZoom * 100)}% (ダブルクリックで100%リセット)`}
+                />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const nextZoom = currentArtZoom > 1.08 ? 1.0 : 1.25;
+                    onChangeAlbumArtZoom?.(album.id, nextZoom);
+                    onChangeAlbumArtZoom?.(albumKey, nextZoom);
+                  }}
+                  className="h-[17px] px-1 text-[7px] font-mono font-bold tracking-wider border rounded-[1px] transition-all hover:opacity-85 active:scale-95 leading-none shrink-0"
+                  style={
+                    currentArtZoom > 1.05
+                      ? {
+                          backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))',
+                          borderColor: 'var(--theme-btn-active-border, var(--theme-accent))',
+                          color: 'var(--theme-btn-active-text, #ffffff)',
+                        }
+                      : {
+                          backgroundColor: 'var(--theme-button-bg, transparent)',
+                          borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))',
+                          color: 'var(--theme-listHeader-textMuted)',
+                        }
+                  }
+                  title={
+                    currentArtZoom > 1.05
+                      ? `自動フィット解除 (現在: ${Math.round(currentArtZoom * 100)}% / クリックで標準100%へ)`
+                      : `自動フィット：円形CDの四隅余白を飛ばしてぴったり満たす (1.25倍に拡大 / アルバムごとに保存)`
+                  }
+                >
+                  {currentArtZoom > 1.05 ? 'FIT' : 'AUTO'}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Card Info Footer */}
         <div
@@ -1594,6 +1661,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                 isPlaying={isThisAlbumPlaying && isPlaying}
                 hubStyle={cdHubStyle}
                 hubScale={cdHubScale}
+                artScale={cdArtZoomMap[album.id] ?? cdArtZoomMap[`${album.artist}_${album.album}`] ?? cdArtZoomMap[album.album] ?? 1.0}
                 onToggleHubStyle={onToggleCDHubStyle}
               />
             ) : (
@@ -1630,66 +1698,129 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
             )}
           </div>
 
-          {/* CD Hub Controls (Slider for Diameter Scale & Hub Style Switcher - Positioned per user markup) */}
-          {isCDSpinMode && (
-            <div
-              className="px-2 py-1.5 flex items-center justify-end gap-2 border-b select-none"
-              style={{
-                borderColor: 'var(--theme-list-border)',
-                backgroundColor: 'var(--theme-list-surfaceLighter)',
-              }}
-            >
-              {/* Hub Size Slider */}
-              <div
-                className="flex items-center gap-1.5 min-w-0"
-                title={`CDハブサイズ調整: ${Math.round((cdHubScale ?? 1.0) * 100)}% (最小: 中心穴のみ 〜 最大: 標準ハブ)`}
-              >
-                <span
-                  className="text-[7.5px] font-mono tracking-wider font-bold opacity-70 shrink-0"
-                  style={{ color: 'var(--theme-list-textDim)' }}
-                >
-                  HUB
-                </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.02}
-                  value={cdHubScale ?? 1.0}
-                  onChange={(e) => onChangeCDHubScale?.(parseFloat(e.target.value))}
-                  className="w-16 h-1 bg-[var(--theme-list-border)] rounded appearance-none cursor-pointer accent-[var(--theme-accent)]"
-                  title={`CDハブサイズ調整: ${Math.round((cdHubScale ?? 1.0) * 100)}% (最小: 中心穴のみ 〜 最大: 標準ハブ)`}
-                />
-              </div>
+          {/* CD Controls: Single-Row Horizontal Industrial Console (Matching audio hardware faders) */}
+          {isCDSpinMode && (() => {
+            const albumKey = `${album.artist}_${album.album}`;
+            const currentArtZoom = cdArtZoomMap[album.id] ?? cdArtZoomMap[albumKey] ?? cdArtZoomMap[album.album] ?? 1.0;
 
-              {/* Clear / Black Hub Switch Button */}
-              {onToggleCDHubStyle && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleCDHubStyle();
-                  }}
-                  className="h-[19px] px-1.5 text-[8px] font-mono font-bold tracking-wider border rounded-[1px] transition-all hover:opacity-85 active:scale-95 leading-none shrink-0"
-                  style={
-                    cdHubStyle === 'clear'
-                      ? {
-                          backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))',
-                          borderColor: 'var(--theme-btn-active-border, var(--theme-accent))',
-                          color: 'var(--theme-btn-active-text, #ffffff)',
-                        }
-                      : {
-                          backgroundColor: 'var(--theme-button-bg, transparent)',
-                          borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))',
-                          color: 'var(--theme-listHeader-textMuted)',
-                        }
-                  }
-                  title={`CDハブ切替：現在【${cdHubStyle === 'clear' ? '透明プラスチック' : '黒ハブ'}】 (クリックで切替 / 上部プレイヤーと連動)`}
-                >
-                  {cdHubStyle === 'clear' ? 'CLEAR' : 'BLACK'}
-                </button>
-              )}
-            </div>
-          )}
+            return (
+              <div
+                className="px-2 py-1 flex items-center justify-between gap-1.5 border-b select-none overflow-hidden text-[7.5px] font-mono"
+                style={{
+                  borderColor: 'var(--theme-list-border)',
+                  backgroundColor: 'var(--theme-list-surfaceLighter)',
+                }}
+              >
+                {/* Slot 1: HUB Size Slider + Clear/Black Switch Button */}
+                <div className="flex items-center gap-1 min-w-0 flex-1">
+                  <span
+                    className="text-[7px] font-mono tracking-tighter font-bold opacity-75 shrink-0"
+                    style={{ color: 'var(--theme-list-textDim)' }}
+                    title="CDセンターハブの大きさ"
+                  >
+                    HUB
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.02}
+                    value={cdHubScale ?? 1.0}
+                    onChange={(e) => onChangeCDHubScale?.(parseFloat(e.target.value))}
+                    className="flex-1 min-w-[28px] cd-fader-slider"
+                    title={`CDハブサイズ調整: ${Math.round((cdHubScale ?? 1.0) * 100)}% (最小: 中心穴のみ 〜 最大: 標準ハブ)`}
+                  />
+                  {onToggleCDHubStyle && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleCDHubStyle();
+                      }}
+                      className="h-[17px] px-1 text-[7px] font-mono font-bold tracking-wider border rounded-[1px] transition-all hover:opacity-85 active:scale-95 leading-none shrink-0"
+                      style={
+                        cdHubStyle === 'clear'
+                          ? {
+                              backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))',
+                              borderColor: 'var(--theme-btn-active-border, var(--theme-accent))',
+                              color: 'var(--theme-btn-active-text, #ffffff)',
+                            }
+                          : {
+                              backgroundColor: 'var(--theme-button-bg, transparent)',
+                              borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))',
+                              color: 'var(--theme-listHeader-textMuted)',
+                            }
+                      }
+                      title={`CDハブ切替：現在【${cdHubStyle === 'clear' ? '透明プラスチック' : '黒ハブ'}】 (クリックで切替 / 上部プレイヤーと連動)`}
+                    >
+                      {cdHubStyle === 'clear' ? 'CLR' : 'BLK'}
+                    </button>
+                  )}
+                </div>
+
+                {/* Subtle Divider */}
+                <div className="w-[1px] h-3 bg-[var(--theme-list-border)] shrink-0 opacity-60" />
+
+                {/* Slot 2: Artwork Fit/Zoom Slider + AUTO FIT Button */}
+                <div className="flex items-center gap-1 min-w-0 flex-1">
+                  <span
+                    className="text-[7px] font-mono tracking-tighter font-bold opacity-75 shrink-0"
+                    style={{ color: 'var(--theme-list-textDim)' }}
+                    title="ジャケット画像の拡大・余白調整"
+                  >
+                    FIT
+                  </span>
+                  <input
+                    type="range"
+                    min={0.9}
+                    max={1.6}
+                    step={0.01}
+                    value={currentArtZoom}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      onChangeAlbumArtZoom?.(album.id, val);
+                      onChangeAlbumArtZoom?.(albumKey, val);
+                    }}
+                    onDoubleClick={() => {
+                      onChangeAlbumArtZoom?.(album.id, 1.0);
+                      onChangeAlbumArtZoom?.(albumKey, 1.0);
+                    }}
+                    className="flex-1 min-w-[28px] cd-fader-slider"
+                    title={`絵柄拡大/余白調整: ${Math.round(currentArtZoom * 100)}% (ダブルクリックで100%リセット)`}
+                  />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // AUTO FIT: 余白や切れ端をちょうど円形いっぱいに飛ばす最適な拡大率（1.25倍 または 1.0倍 トグル）
+                      const nextZoom = currentArtZoom > 1.08 ? 1.0 : 1.25;
+                      onChangeAlbumArtZoom?.(album.id, nextZoom);
+                      onChangeAlbumArtZoom?.(albumKey, nextZoom);
+                    }}
+                    className="h-[17px] px-1 text-[7px] font-mono font-bold tracking-wider border rounded-[1px] transition-all hover:opacity-85 active:scale-95 leading-none shrink-0"
+                    style={
+                      currentArtZoom > 1.05
+                        ? {
+                            backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))',
+                            borderColor: 'var(--theme-btn-active-border, var(--theme-accent))',
+                            color: 'var(--theme-btn-active-text, #ffffff)',
+                          }
+                        : {
+                            backgroundColor: 'var(--theme-button-bg, transparent)',
+                            borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))',
+                            color: 'var(--theme-listHeader-textMuted)',
+                          }
+                    }
+                    title={
+                      currentArtZoom > 1.05
+                        ? `自動フィット解除 (現在: ${Math.round(currentArtZoom * 100)}% / クリックで標準100%へ)`
+                        : `自動フィット：円形CDの四隅余白を飛ばしてぴったり満たす (1.25倍に拡大 / アルバムごとに保存)`
+                    }
+                  >
+                    {currentArtZoom > 1.05 ? 'FIT' : 'AUTO'}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Quick info & Play Album button under artwork */}
           <div className={`${isZoomed ? 'p-3.5 gap-2.5' : 'p-2 gap-1.5'} flex flex-col mt-auto`}>
