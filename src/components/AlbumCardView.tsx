@@ -1822,8 +1822,8 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
             );
           })()}
 
-          {/* Quick info & Play Album button under artwork */}
-          <div className={`${isZoomed ? 'p-3.5 gap-2.5' : 'p-2 gap-1.5'} flex flex-col mt-auto`}>
+          {/* Quick info & Play Album button under artwork - Always positioned directly under CD / controls console */}
+          <div className={`${isZoomed ? 'p-3.5 gap-2.5' : 'p-2 gap-1.5'} flex flex-col`}>
             <button
               onClick={() => onPlayAlbum(album)}
               className={`w-full flex items-center justify-center gap-1.5 ${isZoomed ? 'py-2 text-[11.5px]' : 'py-1 text-[8.5px]'} border font-mono font-bold tracking-wider transition-colors hover:opacity-80 active:scale-95 rounded-[1px]`}
