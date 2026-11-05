@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Play, Pause, Disc, User, ChevronRight, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, GripVertical, ListMusic, Music, ArrowLeft, Folder, List, Maximize2, Minimize2, Trash2, X, Edit2, Check, Star } from 'lucide-react';
+import { CDDisc } from './CDDisc';
 
 export interface AlbumGroup {
   id: string;
@@ -54,6 +55,7 @@ interface AlbumCardViewProps {
   onMoveAlbumsToNewPlaylist?: (albums: AlbumGroup[], newPlaylistName: string, category: string | undefined) => void;
   onSelectedAlbumsChange?: (selectedAlbums: AlbumGroup[]) => void;
   triggerOpenBatchMoveModal?: number;
+  isCDSpinMode?: boolean;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -103,6 +105,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   onMoveAlbumsToNewPlaylist,
   onSelectedAlbumsChange,
   triggerOpenBatchMoveModal,
+  isCDSpinMode = false,
 }) => {
   const reorderHandler = onReorderAlbum || onReorderAlbums;
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -885,7 +888,17 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
             </div>
           </div>
 
-          {renderArtwork(album.coverUrl, album.album, isCompact)}
+          {isCDSpinMode ? (
+            <CDDisc
+              coverUrl={album.coverUrl}
+              title={album.album}
+              artist={album.artist}
+              album={album.album}
+              isPlaying={isThisAlbumActive && isPlaying}
+            />
+          ) : (
+            renderArtwork(album.coverUrl, album.album, isCompact)
+          )}
 
           {/* Top-left Artist badge */}
           {!isCompact && (
@@ -1500,7 +1513,17 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                 <Check size={11} strokeWidth={3} className={isSelected ? 'opacity-100' : 'opacity-0'} />
               </div>
             </div>
-            {renderArtwork(album.coverUrl, album.album, activeCoverWidthPx < 110)}
+            {isCDSpinMode ? (
+              <CDDisc
+                coverUrl={album.coverUrl}
+                title={album.album}
+                artist={album.artist}
+                album={album.album}
+                isPlaying={isThisAlbumPlaying && isPlaying}
+              />
+            ) : (
+              renderArtwork(album.coverUrl, album.album, activeCoverWidthPx < 110)
+            )}
 
             {/* Hover Zoom Indicator Overlay */}
             <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/art:opacity-100 transition-opacity flex items-center justify-center">

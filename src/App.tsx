@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Play, CheckSquare, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, VolumeX,
   Folder, FolderOpen, ListMusic, Plus, Search, ChevronUp, ChevronDown, 
@@ -11,7 +11,7 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import { get, set, del } from 'idb-keyval';
 import * as mm from 'music-metadata-browser';
-import { AlbumArt3D } from './components/AlbumArt3D';
+import { AlbumArt3D, AlbumArtDisplayMode } from './components/AlbumArt3D';
 import { AlbumCardView, AlbumGroup, ArtistGroup } from './components/AlbumCardView';
 
 // --- Types ---
@@ -246,8 +246,9 @@ const THEMES = [
     panelTitleBg: '#261c16',
     panelTitleText: '#f7ece1',
     panelTitleBorder: '#453428',
-    // アルバムアート回転枠の背景（若干濃いめのローストモカ）
+    // アルバムアート回転枠の背景（深煎りエスプレッソ深色）
     albumArtBg: '#221812',
+    // サイドバー・カテゴリー行背景（ビターダークモカ）
     categoryBg: '#36281e',
     // 04 & 05 ヘッダーバー (#59483A / #8F7663)
     listHeaderBg: '#59483a',
@@ -910,6 +911,73 @@ export default function App() {
     }
   });
   const [drillDownAlbum, setDrillDownAlbum] = useState<{ artist: string; album: string } | null>(null);
+  const [isAlbumCDSpinMode, setIsAlbumCDSpinMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('v2_solid_album_cd_spin_mode');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const [topArtMode, setTopArtMode] = useState<AlbumArtDisplayMode>(() => {
+    try {
+      const saved = localStorage.getItem('v2_cover_display_mode');
+      if (saved === '3d' || saved === 'cd' || saved === '2d') return saved;
+      const legacy3D = localStorage.getItem('v2_cover_3d_enabled');
+      if (legacy3D !== null) return legacy3D === 'true' ? '3d' : '2d';
+    } catch {}
+    return '3d';
+  });
+
+  // Toggle CD Spin Mode: 下をCDモードにした時は、上のTrack Infoを強制的に通常アルバムカバー（2D）にする！
+  const handleToggleAlbumCDSpinMode = () => {
+    const next = !isAlbumCDSpinMode;
+    setIsAlbumCDSpinMode(next);
+    try {
+      localStorage.setItem('v2_solid_album_cd_spin_mode', String(next));
+    } catch {}
+
+    // カオルさまのご指定：下がCDモードになった時は、上のTrack Infoは強制的にアルバムのカバー（2D）にする
+    if (next) {
+      setTopArtMode('2d');
+      try {
+        localStorage.setItem('v2_cover_display_mode', '2d');
+      } catch {}
+    }
+  };
+
+  // 上のTrack Infoの表示モード変更ハンドラー：上がCDになった時は下を通常カバーにする
+  const handleTopArtModeChange = (mode: AlbumArtDisplayMode) => {
+    setTopArtMode(mode);
+    if (mode === 'cd') {
+      setIsAlbumCDSpinMode(false);
+      try {
+        localStorage.setItem('v2_solid_album_cd_spin_mode', 'false');
+      } catch {}
+    }
+  };
+
+  // Swap CD Mode: Seamlessly toggle between [Top: CD / Bottom: Cover] and [Top: Cover / Bottom: CD]
+  const handleSwapCDMode = () => {
+    if (isAlbumCDSpinMode) {
+      // Current: Bottom is CD -> Swap to: Top is CD, Bottom is Cover
+      setIsAlbumCDSpinMode(false);
+      setTopArtMode('cd');
+      try {
+        localStorage.setItem('v2_solid_album_cd_spin_mode', 'false');
+        localStorage.setItem('v2_cover_display_mode', 'cd');
+      } catch {}
+    } else {
+      // Current: Top is CD (or neither) -> Swap to: Bottom is CD, Top is 2D Cover
+      setIsAlbumCDSpinMode(true);
+      setTopArtMode('2d');
+      try {
+        localStorage.setItem('v2_solid_album_cd_spin_mode', 'true');
+        localStorage.setItem('v2_cover_display_mode', '2d');
+      } catch {}
+    }
+  };
   const [focusedAlbumId, setFocusedAlbumId] = useState<string | null>(null);
   const [expandedSidebarFolderIds, setExpandedSidebarFolderIds] = useState<Set<string>>(() => {
     try {
@@ -5770,11 +5838,11 @@ export default function App() {
     '--theme-panelTitle-bg': (theme as any).panelTitleBg || theme.surface,
     '--theme-panelTitle-text': (theme as any).panelTitleText || theme.textMuted,
     '--theme-panelTitle-border': (theme as any).panelTitleBorder || theme.border,
-    '--theme-category-bg': (theme as any).categoryBg || (theme as any).listHeaderBg || (theme as any).listSurface || theme.surfaceLighter,
     '--theme-listHeader-bg': (theme as any).listHeaderBg || (theme as any).listSurface || theme.surfaceLighter,
     '--theme-listHeader-border': (theme as any).listHeaderBorder || (theme as any).listBorder || theme.border,
     '--theme-listHeader-text': (theme as any).listHeaderText || (theme as any).listTextMain || theme.textMain,
     '--theme-listHeader-textMuted': (theme as any).listHeaderTextMuted || (theme as any).listTextMuted || theme.textMuted,
+    '--theme-category-bg': (theme as any).categoryBg || (theme as any).listHeaderBg || theme.surfaceLighter,
     // List Area variables
     '--theme-list-bg': (theme as any).listBg || theme.bg,
     '--theme-list-surface': (theme as any).listSurface || theme.surfaceLighter,
@@ -6715,6 +6783,8 @@ export default function App() {
                   duration={currentTrack.duration}
                   fileName={currentTrack.fileName}
                   isPlaying={isPlaying}
+                  displayMode={topArtMode}
+                  onDisplayModeChange={handleTopArtModeChange}
                   onDropImage={handleUpdateArtwork}
                   onResetArtwork={handleResetArtwork}
                 />
@@ -7298,19 +7368,19 @@ export default function App() {
 
                       let btnLabel = 'OPEN';
                       let btnTitle = '';
-                      let btnIcon = <Folder size={10} className="shrink-0" />;
+                      let btnIcon = <Folder size={10} className="shrink-0" style={{ color: 'currentColor' }} />;
 
                       if (isFullOpen) {
                         btnLabel = 'CLOSE';
-                        btnIcon = <FolderOpen size={10} className="shrink-0" />;
+                        btnIcon = <FolderOpen size={10} className="shrink-0" style={{ color: 'currentColor' }} />;
                         btnTitle = isTreeMode ? 'すべて閉じる (カテゴリーのみ表示)' : 'すべてのアルバムフォルダを閉じる';
                       } else if (isCatsOnlyOpen) {
                         btnLabel = 'OPEN+';
-                        btnIcon = <FolderTree size={10} className="shrink-0" />;
+                        btnIcon = <FolderTree size={10} className="shrink-0" style={{ color: 'currentColor' }} />;
                         btnTitle = 'サブカテゴリー（アルバムフォルダ）もすべて開く (全開)';
                       } else {
                         btnLabel = 'OPEN';
-                        btnIcon = <Folder size={10} className="shrink-0" />;
+                        btnIcon = <Folder size={10} className="shrink-0" style={{ color: 'currentColor' }} />;
                         btnTitle = isTreeMode ? 'カテゴリーを開く (サブカテゴリーは閉じた状態)' : 'すべてのアルバムフォルダを開く';
                       }
 
@@ -7367,7 +7437,10 @@ export default function App() {
                           className="flex items-center gap-1 justify-center border rounded-[2px] w-[56px] h-5 text-[9px] font-mono tracking-wider transition-colors hover:opacity-80 active:scale-95 disabled:opacity-40 shrink-0 cursor-pointer"
                           style={
                             isFullOpen
-                                ? (isLightTheme ? { backgroundColor: '#475569', borderColor: '#334155', color: '#ffffff' } : { backgroundColor: 'var(--theme-accentDark, var(--theme-button-bg))', borderColor: 'var(--theme-accent, var(--theme-listHeader-border))', color: 'var(--theme-button-text, var(--theme-listHeader-text))' })
+                              ? (isLightTheme
+                                  ? { backgroundColor: '#475569', borderColor: '#334155', color: '#ffffff' }
+                                  : { backgroundColor: 'var(--theme-accentDark, var(--theme-button-bg))', borderColor: 'var(--theme-accent, var(--theme-listHeader-border))', color: '#ffffff' }
+                                )
                               : isCatsOnlyOpen
                               ? { backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-accent, var(--theme-listHeader-border))', color: 'var(--theme-button-text, var(--theme-listHeader-text))' }
                               : { backgroundColor: 'var(--theme-button-bg, var(--theme-bg))', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-text)' }
@@ -9371,7 +9444,7 @@ export default function App() {
                           style={{
                             backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : 'var(--theme-category-bg, var(--theme-listHeader-bg))',
                             borderLeft: isDragOver ? '3px solid var(--theme-accent)' : '3px solid transparent',
-                            color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-listHeader-textMuted)'
+                            color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-listHeader-text)'
                           }}
                           title="UNCATEGORIZED (未分類) - クリックで開閉 / ドロップで未分類に移動"
                         >
@@ -9591,16 +9664,16 @@ export default function App() {
                )}
 
                {/* View Mode Switcher: TRACKS | ALBUM | CARDS | LIST */}
-               <div className="flex items-center gap-0.5 border-l pl-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
+               <div className="flex items-center gap-1 border-l pl-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
                  <button
                    onClick={() => {
                      setBankViewMode('tracks');
                      localStorage.setItem('v2_solid_bank_view_mode', 'tracks');
                    }}
-                   className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors font-bold"
+                   className="h-[21px] flex items-center gap-1 text-[9px] font-mono px-2 border rounded-[1px] transition-colors font-bold leading-none box-border"
                    style={bankViewMode === 'tracks'
-                     ? { backgroundColor: 'var(--theme-header-control-bg, var(--theme-accentMuted))', borderColor: 'var(--theme-accent)', color: 'var(--theme-button-text, var(--theme-accent))' }
-                     : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
+                     ? { backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))', borderColor: 'var(--theme-btn-active-border, var(--theme-accent))', color: 'var(--theme-btn-active-text, #ffffff)' }
+                     : { backgroundColor: 'var(--theme-button-bg, transparent)', borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))', color: 'var(--theme-listHeader-textMuted)' }}
                    title="TRACKS モード（曲リスト・並び替え・編集）"
                  >
                    <ListMusic size={9} />
@@ -9611,10 +9684,10 @@ export default function App() {
                      setBankViewMode('album');
                      localStorage.setItem('v2_solid_bank_view_mode', 'album');
                    }}
-                   className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors font-bold"
+                   className="h-[21px] flex items-center gap-1 text-[9px] font-mono px-2 border rounded-[1px] transition-colors font-bold leading-none box-border"
                    style={bankViewMode === 'album'
-                     ? { backgroundColor: 'var(--theme-header-control-bg, var(--theme-accentMuted))', borderColor: 'var(--theme-accent)', color: 'var(--theme-button-text, var(--theme-accent))' }
-                     : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
+                     ? { backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))', borderColor: 'var(--theme-btn-active-border, var(--theme-accent))', color: 'var(--theme-btn-active-text, #ffffff)' }
+                     : { backgroundColor: 'var(--theme-button-bg, transparent)', borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))', color: 'var(--theme-listHeader-textMuted)' }}
                    title="ALBUM モード（ジャケット＋曲目リスト見開きカードを横にタイル敷き詰め表示）"
                  >
                    <Disc size={9} />
@@ -9625,10 +9698,10 @@ export default function App() {
                      setBankViewMode('card');
                      localStorage.setItem('v2_solid_bank_view_mode', 'card');
                    }}
-                   className="flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 border rounded-[1px] transition-colors font-bold"
+                   className="h-[21px] flex items-center gap-1 text-[9px] font-mono px-2 border rounded-[1px] transition-colors font-bold leading-none box-border"
                    style={bankViewMode === 'card'
-                     ? { backgroundColor: 'var(--theme-header-control-bg, var(--theme-accentMuted))', borderColor: 'var(--theme-accent)', color: 'var(--theme-button-text, var(--theme-accent))' }
-                     : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
+                     ? { backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))', borderColor: 'var(--theme-btn-active-border, var(--theme-accent))', color: 'var(--theme-btn-active-text, #ffffff)' }
+                     : { backgroundColor: 'var(--theme-button-bg, transparent)', borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))', color: 'var(--theme-listHeader-textMuted)' }}
                    title="CARD モード（アルバムジャケットを横にタイル敷き詰め表示）"
                  >
                    <LayoutGrid size={9} />
@@ -9639,10 +9712,10 @@ export default function App() {
                      setBankViewMode('list');
                      localStorage.setItem('v2_solid_bank_view_mode', 'list');
                    }}
-                   className="flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 border rounded-[1px] transition-colors"
+                   className="h-[21px] flex items-center gap-1 text-[9px] font-mono px-1.5 border rounded-[1px] transition-colors font-bold leading-none box-border"
                    style={bankViewMode === 'list'
-                     ? { backgroundColor: 'var(--theme-header-control-bg, var(--theme-accentMuted))', borderColor: 'var(--theme-accent)', color: 'var(--theme-button-text, var(--theme-accent))' }
-                     : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
+                     ? { backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))', borderColor: 'var(--theme-btn-active-border, var(--theme-accent))', color: 'var(--theme-btn-active-text, #ffffff)' }
+                     : { backgroundColor: 'var(--theme-button-bg, transparent)', borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))', color: 'var(--theme-listHeader-textMuted)' }}
                    title="LIST モード（コンパクト行表示）"
                  >
                    <List size={9} />
@@ -9652,9 +9725,10 @@ export default function App() {
 
                {/* Album Mode Extra Controls: Global Tile Size Zoom & Artist Grouping */}
                {bankViewMode !== 'tracks' && (
-                 <div className="flex items-center gap-1.5 border-l pl-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>                     {(bankViewMode === 'card' || bankViewMode === 'album' || bankViewMode === 'list') && (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[8.5px] font-mono font-bold tracking-wider" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
+                 <div className="flex items-center gap-2 border-l pl-2 shrink-0" style={{ borderColor: 'var(--theme-listHeader-border)' }}>
+                    {(bankViewMode === 'card' || bankViewMode === 'album' || bankViewMode === 'list') && (
+                      <div className="flex items-center gap-1.5 h-[21px]">
+                        <span className="text-[8.5px] font-mono font-bold tracking-wider leading-none" style={{ color: 'var(--theme-listHeader-textMuted)' }}>
                            {bankViewMode === 'list' ? 'JACKET SIZE:' : bankViewMode === 'album' ? 'ALBUM SIZE:' : 'CARD SIZE:'}
                         </span>
                         
@@ -9674,7 +9748,7 @@ export default function App() {
                               localStorage.setItem('v2_solid_scale_card', String(next));
                             }
                           }}
-                          className="w-4 h-4 flex items-center justify-center text-[10px] font-mono border rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
+                          className="w-[21px] h-[21px] flex items-center justify-center text-[11px] font-mono border rounded-[1px] hover:opacity-80 active:scale-95 transition-colors leading-none box-border"
                           style={{
                              backgroundColor: 'var(--theme-header-control-bg, var(--theme-button-bg, var(--theme-bg)))',
                             borderColor: 'var(--theme-listHeader-border)',
@@ -9730,7 +9804,7 @@ export default function App() {
                               localStorage.setItem('v2_solid_scale_card', String(next));
                             }
                           }}
-                          className="w-4 h-4 flex items-center justify-center text-[10px] font-mono border rounded-[1px] hover:opacity-80 active:scale-95 transition-colors"
+                          className="w-[21px] h-[21px] flex items-center justify-center text-[11px] font-mono border rounded-[1px] hover:opacity-80 active:scale-95 transition-colors leading-none box-border"
                           style={{
                              backgroundColor: 'var(--theme-header-control-bg, var(--theme-button-bg, var(--theme-bg)))',
                             borderColor: 'var(--theme-listHeader-border)',
@@ -9741,29 +9815,60 @@ export default function App() {
                           +
                         </button>
 
-                        <span className="text-[8.5px] font-mono w-8 text-right font-bold" style={{ color: 'var(--theme-accent)' }}>
+                        <span className="text-[8.5px] font-mono w-8 text-right font-bold leading-none" style={{ color: 'var(--theme-accent)' }}>
                           {bankViewMode === 'list' ? listScale : bankViewMode === 'album' ? albumScale : cardScale}px
                         </span>
                       </div>
                     )}
 
-                   <button
-                     onClick={() => {
-                       const next = !groupByArtist;
-                       setGroupByArtist(next);
-                       localStorage.setItem('v2_solid_group_by_artist_v2', String(next));
-                     }}
-                     className="flex items-center gap-1 text-[8.5px] font-mono px-1.5 py-0.5 border rounded-[1px] transition-colors ml-1"
-                     style={groupByArtist
-                        ? { backgroundColor: 'var(--theme-header-control-bg, var(--theme-accentMuted))', borderColor: 'var(--theme-accent)', color: 'var(--theme-button-text, var(--theme-accent))' }
-                       : { backgroundColor: 'transparent', borderColor: 'var(--theme-listHeader-border)', color: 'var(--theme-listHeader-textMuted)' }}
-                     title={groupByArtist ? "現在：アーティスト別カードで横並びタイル表示（クリックでアルバム単体タイル表示へ切替）" : "現在：全アルバムを横並びタイル敷き詰め表示（クリックでアーティスト別タイル表示へ切替）"}
-                   >
-                     <User size={9} />
-                     <span>BY ARTIST</span>
-                   </button>
+                  <button
+                    onClick={() => {
+                      const next = !groupByArtist;
+                      setGroupByArtist(next);
+                      localStorage.setItem('v2_solid_group_by_artist_v2', String(next));
+                    }}
+                    className="h-[21px] flex items-center gap-1 text-[8.5px] font-mono font-bold px-2 border rounded-[1px] transition-colors leading-none box-border ml-1"
+                    style={groupByArtist
+                       ? { backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))', borderColor: 'var(--theme-btn-active-border, var(--theme-accent))', color: 'var(--theme-btn-active-text, #ffffff)' }
+                      : { backgroundColor: 'var(--theme-button-bg, transparent)', borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))', color: 'var(--theme-listHeader-textMuted)' }}
+                    title={groupByArtist ? "現在：アーティスト別カードで横並びタイル表示（クリックでアルバム単体タイル表示へ切替）" : "現在：全アルバムを横並びタイル敷き詰め表示（クリックでアーティスト別タイル表示へ切替）"}
+                  >
+                    <User size={9} />
+                    <span>BY ARTIST</span>
+                  </button>
 
-                   {activePlaylistId !== 'all-tracks' && albumGroups.length > 1 && (
+                  {(bankViewMode === 'album' || bankViewMode === 'card') && (
+                    <div className="flex items-center ml-1">
+                      <button
+                        onClick={handleToggleAlbumCDSpinMode}
+                        className="h-[21px] flex items-center gap-1 text-[8.5px] font-mono font-bold px-2 border rounded-l-[1px] transition-colors leading-none box-border"
+                        style={isAlbumCDSpinMode
+                          ? { backgroundColor: 'var(--theme-btn-active-bg, var(--theme-accent))', borderColor: 'var(--theme-btn-active-border, var(--theme-accent))', color: 'var(--theme-btn-active-text, #ffffff)' }
+                          : { backgroundColor: 'var(--theme-button-bg, transparent)', borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))', color: 'var(--theme-listHeader-textMuted)' }}
+                        title={isAlbumCDSpinMode ? "CD回転モード：ON（再生中のアルバムがリアルなCDディスクになり回転／クリックで通常ジャケットへ）" : "CD回転モード：OFF（通常の四角いジャケット写真を表示／クリックでCD回転モードへ）"}
+                      >
+                        <Disc size={9} className={isAlbumCDSpinMode && isPlaying ? "animate-spin-slow" : ""} />
+                        <span>CD SPIN</span>
+                      </button>
+
+                      <button
+                        onClick={handleSwapCDMode}
+                        className="h-[21px] flex items-center justify-center px-1.5 border border-l-0 rounded-r-[1px] transition-all hover:opacity-80 active:scale-95 shadow-sm leading-none box-border"
+                        style={{
+                          backgroundColor: 'var(--theme-button-bg, transparent)',
+                          borderColor: 'var(--theme-button-border, var(--theme-listHeader-border))',
+                          color: 'var(--theme-accent)',
+                        }}
+                        title={isAlbumCDSpinMode
+                          ? "上下入替：上をCD表示・下を通常カバー表示に一発切替 (SWAP)"
+                          : "上下入替：下をCD表示・上を通常カバー表示に一発切替 (SWAP)"}
+                      >
+                        <ArrowLeftRight size={9} />
+                      </button>
+                    </div>
+                  )}
+
+               {activePlaylistId !== 'all-tracks' && albumGroups.length > 1 && (
                      <button
                        onClick={handleUnifyPlaylistAlbum}
                        className="flex items-center gap-1 text-[8.5px] font-mono font-bold px-2 py-0.5 border rounded-[1px] transition-colors hover:opacity-85 active:scale-95 ml-1 shadow-sm cursor-pointer"
@@ -9998,6 +10103,7 @@ export default function App() {
               onMoveAlbumsToNewPlaylist={handleMoveAlbumsToNewPlaylist}
               onSelectedAlbumsChange={handleSelectedAlbumsChange}
               triggerOpenBatchMoveModal={triggerOpenMainAlbumMoveModal}
+              isCDSpinMode={isAlbumCDSpinMode}
             />
           ) : (
             <div className="flex flex-col h-full relative w-full overflow-hidden" style={{ backgroundColor: 'var(--theme-list-bg)' }}>
@@ -11257,4 +11363,3 @@ export default function App() {
     </div>
   );
 }
-

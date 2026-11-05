@@ -1,5 +1,8 @@
-﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Activity, Box, RotateCw, Pause, Play, Image as ImageIcon, Upload, RotateCcw } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Activity, Box, RotateCw, Pause, Play, Image as ImageIcon, Upload, RotateCcw, Disc } from 'lucide-react';
+import { CDDisc } from './CDDisc';
+
+export type AlbumArtDisplayMode = '3d' | 'cd' | '2d';
 
 interface AlbumArt3DProps {
   coverUrl?: string;
@@ -9,6 +12,9 @@ interface AlbumArt3DProps {
   duration?: number;
   fileName?: string;
   isPlaying?: boolean;
+  forcePauseRotate?: boolean;
+  displayMode?: AlbumArtDisplayMode;
+  onDisplayModeChange?: (mode: AlbumArtDisplayMode) => void;
   onDropImage?: (file: File) => Promise<number | void> | void;
   onResetArtwork?: () => Promise<number | boolean | void> | void;
 }
@@ -20,18 +26,25 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
   album = 'Unknown Album',
   duration = 0,
   isPlaying = false,
+  forcePauseRotate = false,
+  displayMode,
+  onDisplayModeChange,
   onDropImage,
   onResetArtwork,
 }) => {
-  // Mode state: 3D mode vs flat 2D mode
-  const [is3D, setIs3D] = useState<boolean>(() => {
+  // Mode state: 3D canvas slab vs realistic rotating CD disc vs flat 2D mode
+  const [internalArtMode, setInternalArtMode] = useState<AlbumArtDisplayMode>(() => {
     try {
-      const saved = localStorage.getItem('v2_cover_3d_enabled');
-      return saved !== null ? saved === 'true' : true;
-    } catch {
-      return true;
-    }
+      const saved = localStorage.getItem('v2_cover_display_mode');
+      if (saved === '3d' || saved === 'cd' || saved === '2d') return saved;
+      const legacy3D = localStorage.getItem('v2_cover_3d_enabled');
+      if (legacy3D !== null) return legacy3D === 'true' ? '3d' : '2d';
+    } catch {}
+    return '3d';
   });
+
+  const artMode = displayMode !== undefined ? displayMode : internalArtMode;
+  const is3D = artMode === '3d';
 
   const [autoRotate, setAutoRotate] = useState<boolean>(true);
   const [isHovered, setIsHovered] = useState<boolean>(false);
@@ -82,17 +95,23 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
   const shadowRef = useRef<HTMLDivElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
-  // Persist 3D preference
-  const toggle3D = useCallback((e: React.MouseEvent) => {
+  // Cycle through display modes: 3D -> CD -> 2D -> 3D
+  const toggleArtMode = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    setIs3D((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('v2_cover_3d_enabled', String(next));
-      } catch {}
-      return next;
-    });
-  }, []);
+    const current = displayMode !== undefined ? displayMode : internalArtMode;
+    let next: AlbumArtDisplayMode = '3d';
+    if (current === '3d') next = 'cd';
+    else if (current === 'cd') next = '2d';
+    else next = '3d';
+    try {
+      localStorage.setItem('v2_cover_display_mode', next);
+      localStorage.setItem('v2_cover_3d_enabled', String(next === '3d'));
+    } catch {}
+    setInternalArtMode(next);
+    if (onDisplayModeChange) {
+      onDisplayModeChange(next);
+    }
+  }, [displayMode, internalArtMode, onDisplayModeChange]);
 
   const toggleAutoRotate = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -141,7 +160,7 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
     };
   }, [is3D, updateTransform]);
 
-  // Continuous animation loop for slow, elegant 3D rotation (active when music is playing)
+  // Continuous animation loop for slow, elegant 3D rotation (active when music is playing and not frozen by lower spinner)
   useEffect(() => {
     if (!is3D) return;
 
@@ -151,9 +170,8 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
       const delta = (currentTime - lastTime) / 1000;
       lastTime = currentTime;
 
-      // Rotate only while music is playing and autoRotate is enabled
-      // When paused, stays still at the current angle
-      if (isPlaying && autoRotate && !isDragging) {
+      // Rotate only while music is playing, autoRotate is enabled, and not force-paused by lower CD player
+      if (isPlaying && !forcePauseRotate && autoRotate && !isDragging) {
         const speed = isHovered ? 10 : 18; // degrees per second
         angleYRef.current = (angleYRef.current + speed * delta) % 360;
         updateTransform();
@@ -169,7 +187,7 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
         cancelAnimationFrame(animFrameRef.current);
       }
     };
-  }, [is3D, isPlaying, autoRotate, isDragging, isHovered, updateTransform]);
+  }, [is3D, isPlaying, forcePauseRotate, autoRotate, isDragging, isHovered, updateTransform]);
 
   // Pointer drag to interactively rotate in 3D
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -314,7 +332,7 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
       />
 
       {/* 2D Flat Mode */}
-      {!is3D && (
+      {artMode === '2d' && (
         <div className="absolute inset-0 w-full h-full flex items-center justify-center">
           {coverUrl ? (
             <img
@@ -327,6 +345,19 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
               <Activity size={24} style={{ color: 'var(--theme-textDim)' }} />
             </div>
           )}
+        </div>
+      )}
+
+      {/* Realistic Rotating CD Disc Mode */}
+      {artMode === 'cd' && (
+        <div className="absolute inset-0 w-full h-full flex items-center justify-center">
+          <CDDisc
+            coverUrl={coverUrl}
+            title={title}
+            artist={artist}
+            album={album}
+            isPlaying={isPlaying && !forcePauseRotate}
+          />
         </div>
       )}
 
@@ -616,19 +647,21 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
           </button>
         )}
 
-        {/* Toggle 3D / 2D Button */}
+        {/* Toggle 3D / CD / 2D Mode Button */}
         <button
-          onClick={toggle3D}
+          onClick={toggleArtMode}
           className="px-1.5 py-0.5 text-[8px] font-mono tracking-wider font-semibold border flex items-center gap-1 rounded-[1px] transition-all shadow-sm"
           style={{
-            backgroundColor: is3D ? 'var(--theme-surfaceLighter)' : 'var(--theme-surface)',
-            borderColor: is3D ? 'var(--theme-accent)' : 'var(--theme-border)',
-            color: is3D ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+            backgroundColor: artMode !== '2d' ? 'var(--theme-surfaceLighter)' : 'var(--theme-surface)',
+            borderColor: artMode !== '2d' ? 'var(--theme-accent)' : 'var(--theme-border)',
+            color: artMode !== '2d' ? 'var(--theme-accent)' : 'var(--theme-textMain)',
           }}
-          title={is3D ? '2Dフラット表示に切替' : '3Dキャンバス表示に切替'}
+          title={`表示モード切替 (現在: ${artMode.toUpperCase()} / クリックで 3D → CD → 2D)`}
         >
-          {is3D ? <Box size={9} /> : <ImageIcon size={9} />}
-          <span>{is3D ? '3D' : '2D'}</span>
+          {artMode === '3d' && <Box size={9} />}
+          {artMode === 'cd' && <Disc size={9} />}
+          {artMode === '2d' && <ImageIcon size={9} />}
+          <span>{artMode.toUpperCase()}</span>
         </button>
 
         {/* Toggle Auto Spin Button (only in 3D mode) */}
@@ -664,4 +697,3 @@ export const AlbumArt3D: React.FC<AlbumArt3DProps> = ({
     </div>
   );
 };
-
