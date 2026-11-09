@@ -1009,24 +1009,7 @@ export default function App() {
     } catch {}
   };
 
-  const getEffectiveDropCategory = React.useCallback((): string | undefined => {
-    if (dropTargetCategoryPreference === '__UNCATEGORIZED__') {
-      return undefined;
-    }
-    if (dropTargetCategoryPreference !== '__AUTO__') {
-      if (categories.includes(dropTargetCategoryPreference)) {
-        return dropTargetCategoryPreference;
-      }
-    }
-    // '__AUTO__' mode: resolve from active playlist
-    if (activePlaylist?.category) {
-      return activePlaylist.category;
-    }
-    if (focusedCategoryId && categories.includes(focusedCategoryId)) {
-      return focusedCategoryId;
-    }
-    return undefined;
-  }, [dropTargetCategoryPreference, categories, activePlaylist, focusedCategoryId]);
+
 
   // Toggle CD Spin Mode: 下をCDモードにした時は、上のTrack Infoを強制的に通常アルバムカバー（2D）にする！
   const handleToggleAlbumCDSpinMode = () => {
@@ -2135,6 +2118,24 @@ export default function App() {
     if (!favoriteTargetPlaylist) return new Set<string>();
     return new Set(favoriteTargetPlaylist.tracks.map(t => t.id));
   }, [favoriteTargetPlaylist]);
+
+  const getEffectiveDropCategory = React.useCallback((): string | undefined => {
+    if (dropTargetCategoryPreference === '__UNCATEGORIZED__') {
+      return undefined;
+    }
+    if (dropTargetCategoryPreference !== '__AUTO__') {
+      if (categories.includes(dropTargetCategoryPreference)) {
+        return dropTargetCategoryPreference;
+      }
+    }
+    if (selectedCategoryFilter !== '__ALL__' && selectedCategoryFilter !== '__UNCATEGORIZED__' && categories.includes(selectedCategoryFilter)) {
+      return selectedCategoryFilter;
+    }
+    if (activePlaylist && activePlaylist.category && categories.includes(activePlaylist.category)) {
+      return activePlaylist.category;
+    }
+    return undefined;
+  }, [dropTargetCategoryPreference, categories, selectedCategoryFilter, activePlaylist]);
 
   const getSortedTracks = (tracks: Track[]) => {
     if (activeSortConfig.key === 'none') return tracks;
