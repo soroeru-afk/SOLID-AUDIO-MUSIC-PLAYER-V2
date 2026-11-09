@@ -990,6 +990,44 @@ export default function App() {
     });
   };
 
+  // User-configured drop destination category preference
+  // '__AUTO__': automatically follows currently opened category / playlist's category
+  // '__UNCATEGORIZED__': imports to uncategorized
+  // '[Category Name]': imports to that specific category
+  const [dropTargetCategoryPreference, setDropTargetCategoryPreference] = useState<string>(() => {
+    try {
+      return localStorage.getItem('v2_solid_drop_target_cat_pref') || '__AUTO__';
+    } catch {
+      return '__AUTO__';
+    }
+  });
+
+  const handleSetDropTargetCategoryPreference = (pref: string) => {
+    setDropTargetCategoryPreference(pref);
+    try {
+      localStorage.setItem('v2_solid_drop_target_cat_pref', pref);
+    } catch {}
+  };
+
+  const getEffectiveDropCategory = React.useCallback((): string | undefined => {
+    if (dropTargetCategoryPreference === '__UNCATEGORIZED__') {
+      return undefined;
+    }
+    if (dropTargetCategoryPreference !== '__AUTO__') {
+      if (categories.includes(dropTargetCategoryPreference)) {
+        return dropTargetCategoryPreference;
+      }
+    }
+    // '__AUTO__' mode: resolve from active playlist
+    if (activePlaylist?.category) {
+      return activePlaylist.category;
+    }
+    if (focusedCategoryId && categories.includes(focusedCategoryId)) {
+      return focusedCategoryId;
+    }
+    return undefined;
+  }, [dropTargetCategoryPreference, categories, activePlaylist, focusedCategoryId]);
+
   // Toggle CD Spin Mode: 下をCDモードにした時は、上のTrack Infoを強制的に通常アルバムカバー（2D）にする！
   const handleToggleAlbumCDSpinMode = () => {
     const next = !isAlbumCDSpinMode;
@@ -1192,6 +1230,7 @@ export default function App() {
     });
   }, []);
   const [triggerOpenMainAlbumMoveModal, setTriggerOpenMainAlbumMoveModal] = useState<number>(0);
+  const [triggerOpenMainAlbumMergeModal, setTriggerOpenMainAlbumMergeModal] = useState<number>(0);
 
   // --- Create Folder Directly Inside Category State ---
   const [creatingPlaylistInCat, setCreatingPlaylistInCat] = useState<string | null>(null);
@@ -3356,9 +3395,9 @@ export default function App() {
     e.stopPropagation();
     resetDragOverState();
 
-    const targetCat = dropTargetCategory !== undefined
-      ? dropTargetCategory
-      : (selectedCategoryFilter !== '__ALL__' && selectedCategoryFilter !== '__UNCATEGORIZED__' ? selectedCategoryFilter : undefined);
+      const targetCat = dropTargetCategory !== undefined
+        ? dropTargetCategory
+        : getEffectiveDropCategory();
 
     const items = e.dataTransfer.items;
     
@@ -7830,6 +7869,11 @@ export default function App() {
                                       </div>
                                       <Bookmark size={listFontSize >= 13 ? 11 : 9.5} style={{ color: 'var(--theme-accent)' }} fill={isCurrentActive || isSelected ? 'currentColor' : 'none'} />
                                       <span className="truncate">{cat}</span>
+                                      {isTargetDragOver && (
+                                        <span className="text-[7.5px] font-mono px-1 border rounded-[1px] font-bold shrink-0 ml-1" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
+                                          ↳ 「{cat}」に追加
+                                        </span>
+                                      )}
                                     </span>
                                     <div className="flex items-center gap-1 shrink-0">
                                       <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({count})</span>
@@ -7876,7 +7920,12 @@ export default function App() {
                                     <div className="w-[10px] h-[10px]" />
                                   </div>
                                   <Bookmark size={listFontSize >= 13 ? 11 : 9.5} style={{ color: 'var(--theme-listHeader-textMuted)' }} strokeDasharray="2 2" />
-                                  <span className="truncate">UNCATEGORIZED</span>
+                                    <span className="truncate">UNCATEGORIZED</span>
+                                    {isTargetDragOver && (
+                                      <span className="text-[7.5px] font-mono px-1 border rounded-[1px] font-bold shrink-0 ml-1" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
+                                        ↳ 「未分類」に追加
+                                      </span>
+                                    )}
                                 </span>
                                 <div className="flex items-center gap-1 shrink-0">
                                   <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({playlists.filter(p => p.id !== 'all-tracks' && !p.category).length})</span>
@@ -9590,41 +9639,77 @@ export default function App() {
             })()}
 
             {/* Dedicated Industrial Drag & Drop Zone Box at bottom of list */}
-            <div
-              onDragEnter={handleDragEnter}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => {
-                resetDragOverState();
-                const targetCat = sidebarCategoryMode === 'dropdown' && selectedCategoryFilter !== '__ALL__' && selectedCategoryFilter !== '__UNCATEGORIZED__'
-                  ? selectedCategoryFilter
-                  : undefined;
-                handleDrop(e, targetCat);
-              }}
-              onClick={() => fileInputRef.current?.click()}
-              className="m-2 p-3 border-2 border-dashed rounded-[2px] flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer select-none relative overflow-hidden"
-              style={{
-                borderColor: isDragOver ? 'var(--theme-accent)' : 'var(--theme-listHeader-border)',
-                backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : 'var(--theme-list-surface)',
-                color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-list-textMuted)',
-                boxShadow: isDragOver ? '0 0 12px rgba(0, 0, 0, 0.2), inset 0 0 8px var(--theme-accentMuted)' : 'none'
-              }}
-              title="クリックまたはドラッグ＆ドロップで音楽フォルダ・音源ファイルを追加"
-            >
-              <FolderPlus size={isDragOver ? 18 : 14} className={`transition-transform ${isDragOver ? 'scale-110 animate-bounce' : ''}`} style={{ color: 'var(--theme-accent)' }} />
-              <span className="text-[9.5px] font-mono tracking-wider font-bold uppercase text-center" style={{ color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-list-textMain)' }}>
-                {isDragOver ? '■ RELEASE TO IMPORT AUDIO' : '+ DROP AUDIO FOLDERS / FILES'}
-              </span>
-              <span className="text-[8px] font-mono text-center leading-tight font-medium" style={{ color: isDragOver ? 'var(--theme-textMain)' : 'var(--theme-list-textDim)' }}>
-                {isDragOver 
-                  ? 'ここにドロップして音源フォルダ・ファイルを読み込み'
-                  : sidebarCategoryMode === 'tree'
-                  ? 'ここにD&Dで新規リスト作成 (上の各カテゴリー枠へ直接D&Dも可能)'
-                  : (selectedCategoryFilter === '__ALL__' || selectedCategoryFilter === '__UNCATEGORIZED__'
-                    ? 'ここにD&Dで新規リスト作成'
-                    : `「${selectedCategoryFilter}」カテゴリーに追加`)}
-              </span>
-            </div>
+            {(() => {
+              const effectiveDropCat = getEffectiveDropCategory();
+              const catDisplayLabel = effectiveDropCat ? `「${effectiveDropCat}」` : '未分類 (UNCATEGORIZED)';
+
+              return (
+                <div
+                  onDragEnter={handleDragEnter}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => {
+                    resetDragOverState();
+                    handleDrop(e, effectiveDropCat);
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="m-2.5 p-3.5 min-h-[105px] border-2 border-dashed rounded-[2px] flex flex-col items-center justify-center gap-2 transition-all cursor-pointer select-none relative overflow-hidden shrink-0 group"
+                  style={{
+                    borderColor: isDragOver ? 'var(--theme-accent)' : 'var(--theme-listHeader-border)',
+                    backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : 'var(--theme-list-surface)',
+                    color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-list-textMuted)',
+                    boxShadow: isDragOver ? '0 0 16px rgba(0, 0, 0, 0.3), inset 0 0 10px var(--theme-accentMuted)' : 'none',
+                  }}
+                  title="クリックまたはドラッグ＆ドロップで音楽フォルダ・音源ファイルを追加"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <FolderPlus size={isDragOver ? 18 : 15} className={`transition-transform ${isDragOver ? 'scale-110 animate-bounce' : ''}`} style={{ color: 'var(--theme-accent)' }} />
+                    <span className="text-[10px] font-mono tracking-wider font-bold uppercase text-center" style={{ color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-list-textMain)' }}>
+                      {isDragOver ? '■ RELEASE TO IMPORT AUDIO' : '+ DROP AUDIO FOLDERS / FILES'}
+                    </span>
+                  </div>
+
+                  {/* Destination Category Display & Selector */}
+                  <div
+                    className="flex items-center gap-1 px-2 py-0.5 border rounded-[1px] text-[8.5px] font-mono max-w-full truncate shadow-sm transition-colors"
+                    style={{
+                      backgroundColor: 'var(--theme-list-bg)',
+                      borderColor: isDragOver ? 'var(--theme-accent)' : 'var(--theme-list-border)',
+                      color: 'var(--theme-list-textMain)',
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    title="ドラッグ＆ドロップ時の追加先カテゴリーを変更"
+                  >
+                    <Bookmark size={9} style={{ color: 'var(--theme-accent)' }} className="shrink-0" />
+                    <span className="text-[7.5px] uppercase font-bold tracking-wider shrink-0" style={{ color: 'var(--theme-list-textDim)' }}>
+                      行き先:
+                    </span>
+                    <select
+                      value={dropTargetCategoryPreference}
+                      onChange={(e) => handleSetDropTargetCategoryPreference(e.target.value)}
+                      className="bg-transparent font-bold font-mono outline-none cursor-pointer text-[8.5px] truncate min-w-0"
+                      style={{ color: 'var(--theme-accent)' }}
+                    >
+                      <option value="__AUTO__">
+                        自動 ({effectiveDropCat ? `「${effectiveDropCat}」` : '未分類'})
+                      </option>
+                      <option value="__UNCATEGORIZED__">未分類 (UNCATEGORIZED)</option>
+                      {categories.map((c) => (
+                        <option key={c} value={c}>
+                          「{c}」カテゴリー
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <span className="text-[8px] font-mono text-center leading-tight font-medium" style={{ color: isDragOver ? 'var(--theme-textMain)' : 'var(--theme-list-textDim)' }}>
+                    {isDragOver 
+                      ? `【${catDisplayLabel}】カテゴリーに追加します`
+                      : 'ここにフォルダをD&Dで読み込み（上の各カテゴリー枠へ直接D&Dも可能）'}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
           {/* Resize Handle */}
           <div
@@ -9677,17 +9762,30 @@ export default function App() {
               >
                 <FolderPlus size={28} style={{ color: 'var(--theme-accent)' }} />
               </div>
-              <div className="text-center font-mono flex flex-col gap-1 px-4 select-none">
-                <div className="text-xs font-bold tracking-widest uppercase" style={{ color: 'var(--theme-accent)' }}>
-                  ■ RELEASE TO IMPORT AUDIO FOLDERS / FILES
+                <div className="text-center font-mono flex flex-col gap-1.5 px-4 select-none items-center">
+                  <div className="text-xs font-bold tracking-widest uppercase" style={{ color: 'var(--theme-accent)' }}>
+                    ■ RELEASE TO IMPORT AUDIO FOLDERS / FILES
+                  </div>
+                  <div className="text-[10px] tracking-wider font-semibold" style={{ color: 'var(--theme-textMain)' }}>
+                    フォルダ・音楽ファイルをここにドロップしてください
+                  </div>
+                  <div
+                    className="px-2.5 py-1 border rounded-[1px] text-[9px] font-bold tracking-wider inline-flex items-center gap-1.5 shadow-sm"
+                    style={{
+                      backgroundColor: 'var(--theme-bg)',
+                      borderColor: 'var(--theme-accent)',
+                      color: 'var(--theme-accent)',
+                    }}
+                  >
+                    <Bookmark size={10} />
+                    <span>
+                      行き先カテゴリー: 【{getEffectiveDropCategory() ? `「${getEffectiveDropCategory()}」` : '未分類 (UNCATEGORIZED)'}】
+                    </span>
+                  </div>
+                  <div className="text-[9px] tracking-wider opacity-70 mt-0.5" style={{ color: 'var(--theme-textMuted)' }}>
+                    [ ALL MP3 / WAV / FLAC / M4A / AAC FILES SUPPORTED ]
+                  </div>
                 </div>
-                <div className="text-[10px] tracking-wider font-semibold" style={{ color: 'var(--theme-textMain)' }}>
-                  音源フォルダ・音楽ファイルをここにドロップしてください
-                </div>
-                <div className="text-[9px] tracking-wider opacity-70 mt-1" style={{ color: 'var(--theme-textMuted)' }}>
-                  [ ALL MP3 / WAV / FLAC / M4A / AAC FILES SUPPORTED ]
-                </div>
-              </div>
 
               {/* Industrial Cancel Button */}
               <button
@@ -9753,6 +9851,21 @@ export default function App() {
                      <Folder size={10} />
                      <span>MOVE ({mainSelectedAlbums.length}件)</span>
                    </button>
+                     {mainSelectedAlbums.length >= 2 && (
+                       <button
+                         onClick={() => setTriggerOpenMainAlbumMergeModal(Date.now())}
+                         className="flex items-center gap-1.5 text-[9px] font-mono font-bold px-2 py-0.5 border rounded-[1px] transition-colors hover:opacity-90 active:scale-95 cursor-pointer shadow-sm ml-1"
+                         style={{
+                           backgroundColor: 'var(--theme-list-bg)',
+                           borderColor: 'var(--theme-accent)',
+                           color: 'var(--theme-accent)'
+                         }}
+                         title="選択したアルバム同士だけを1つに結合・統合 (MERGE)"
+                       >
+                         <Disc size={10} />
+                         <span>結合 ({mainSelectedAlbums.length}件)</span>
+                       </button>
+                     )}
                  </div>
                )}
 
@@ -10196,6 +10309,7 @@ export default function App() {
               onMoveAlbumsToNewPlaylist={handleMoveAlbumsToNewPlaylist}
               onSelectedAlbumsChange={handleSelectedAlbumsChange}
               triggerOpenBatchMoveModal={triggerOpenMainAlbumMoveModal}
+              triggerOpenBatchMergeModal={triggerOpenMainAlbumMergeModal}
               isCDSpinMode={isAlbumCDSpinMode}
               cdHubStyle={cdHubStyle}
               cdHubScale={cdHubScale}

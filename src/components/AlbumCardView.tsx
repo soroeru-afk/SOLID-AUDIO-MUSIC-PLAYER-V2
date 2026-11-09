@@ -55,6 +55,7 @@ interface AlbumCardViewProps {
   onMoveAlbumsToNewPlaylist?: (albums: AlbumGroup[], newPlaylistName: string, category: string | undefined) => void;
   onSelectedAlbumsChange?: (selectedAlbums: AlbumGroup[]) => void;
   triggerOpenBatchMoveModal?: number;
+  triggerOpenBatchMergeModal?: number;
   isCDSpinMode?: boolean;
   cdHubStyle?: CDHubStyle;
   cdHubScale?: number;
@@ -111,6 +112,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
   onMoveAlbumsToNewPlaylist,
   onSelectedAlbumsChange,
   triggerOpenBatchMoveModal,
+  triggerOpenBatchMergeModal,
   isCDSpinMode = false,
   cdHubStyle = 'black',
   cdHubScale = 1.0,
@@ -152,6 +154,13 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     label: string;
   } | null>(null);
 
+  // Modal state for merging selected albums into one single album
+  const [mergeSelectedModal, setMergeSelectedModal] = useState<{
+    albums: AlbumGroup[];
+    targetAlbumId: string;
+    mergedAlbumName: string;
+  } | null>(null);
+
   // Reset manual zoom override and selection when switching sidebar playlists or display modes
   const firstAlbumId = albums[0]?.id || null;
   useEffect(() => {
@@ -160,6 +169,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     setRenamingAlbumId(null);
     setSelectedAlbumIds(new Set());
     setConfirmDeleteSelected(false);
+    setMergeSelectedModal(null);
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -190,6 +200,19 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
       });
     }
   }, [triggerOpenBatchMoveModal]);
+
+  // Listen to parent trigger for opening the batch merge modal
+  useEffect(() => {
+    if (triggerOpenBatchMergeModal && selectedAlbumIds.size >= 2) {
+      const selected = albums.filter(a => selectedAlbumIds.has(a.id));
+      const first = selected[0];
+      setMergeSelectedModal({
+        albums: selected,
+        targetAlbumId: first.id,
+        mergedAlbumName: first.album,
+      });
+    }
+  }, [triggerOpenBatchMergeModal]);
 
   const toggleSelectAlbum = (albumId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -290,6 +313,31 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
             >
               <Folder size={11} />
               <span>別リスト・カテゴリーへ移動 ({selectedAlbumIds.size})</span>
+            </button>
+          )}
+
+          {onMoveTracksToAlbum && selectedAlbumIds.size >= 2 && (
+            <button
+              type="button"
+              onClick={() => {
+                const selected = albums.filter(a => selectedAlbumIds.has(a.id));
+                const first = selected[0];
+                setMergeSelectedModal({
+                  albums: selected,
+                  targetAlbumId: first.id,
+                  mergedAlbumName: first.album,
+                });
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-[9px] font-mono font-bold border rounded-[1px] transition-colors hover:opacity-90 active:scale-95 cursor-pointer shadow-sm"
+              style={{
+                backgroundColor: 'var(--theme-list-bg)',
+                borderColor: 'var(--theme-accent)',
+                color: 'var(--theme-accent)',
+              }}
+              title="選択したアルバム同士だけを1つのアルバムに結合・統合"
+            >
+              <Disc size={11} />
+              <span>選択したアルバムを結合 ({selectedAlbumIds.size})</span>
             </button>
           )}
 
@@ -698,10 +746,10 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                   borderColor: 'var(--theme-list-border)',
                   color: 'var(--theme-list-textDim)',
                 }}
-                title={`このアルバムの全曲（${album.tracks.length}曲）を同リスト内の別アルバムへ統合`}
+                title={`このアルバムの全曲（${album.tracks.length}曲）をリスト内の別のアルバムへ合流・統合`}
               >
                 <Disc size={isZoomed ? 11 : 8} />
-                {(!compactMode || isZoomed) && <span>同一リスト結合</span>}
+                {(!compactMode || isZoomed) && <span>別アルバムへ合流</span>}
               </button>
             )}
             {(onMoveAlbumsToPlaylist || onExtractAlbumsToCategory) && (
@@ -2420,6 +2468,218 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     );
   };
 
+  const renderMergeSelectedModal = () => {
+    if (!mergeSelectedModal || !onMoveTracksToAlbum) return null;
+    const { albums: selAlbums, targetAlbumId, mergedAlbumName } = mergeSelectedModal;
+    const targetAlbum = selAlbums.find((a) => a.id === targetAlbumId) || selAlbums[0];
+    const totalTracks = selAlbums.reduce((sum, a) => sum + (a.tracks?.length || 0), 0);
+
+    return (
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4"
+        onClick={() => setMergeSelectedModal(null)}
+      >
+        <div
+          className="w-full max-w-lg border rounded-[2px] shadow-2xl flex flex-col overflow-hidden font-mono"
+          style={{
+            backgroundColor: 'var(--theme-surface)',
+            borderColor: 'var(--theme-accent)',
+            color: 'var(--theme-textMain)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div
+            className="px-4 py-2.5 border-b flex items-center justify-between"
+            style={{
+              backgroundColor: 'var(--theme-surfaceLighter)',
+              borderColor: 'var(--theme-border)',
+            }}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Disc size={14} style={{ color: 'var(--theme-accent)' }} className="shrink-0" />
+              <span className="text-[11px] font-bold tracking-wider truncate">
+                選択した {selAlbums.length} 件のアルバムを結合
+              </span>
+            </div>
+            <button
+              onClick={() => setMergeSelectedModal(null)}
+              className="px-2 py-0.5 text-[10px] border rounded-[1px] hover:opacity-80 cursor-pointer"
+              style={{
+                borderColor: 'var(--theme-border)',
+                color: 'var(--theme-textMuted)',
+              }}
+            >
+              閉じる
+            </button>
+          </div>
+
+          {/* Explanation */}
+          <div
+            className="px-4 py-2 border-b text-[9.5px] leading-relaxed flex flex-col gap-1"
+            style={{
+              backgroundColor: 'var(--theme-bg)',
+              borderColor: 'var(--theme-border)',
+              color: 'var(--theme-textMuted)',
+            }}
+          >
+            <div>
+              チェックした <span className="font-bold" style={{ color: 'var(--theme-accent)' }}>{selAlbums.length} 件</span>のアルバム（計 {totalTracks} 曲）を1つのアルバムに結合します。
+            </div>
+            <div className="text-[8.5px] opacity-75">
+              ※ 結合先のベースアルバムをクリックして選択してください（そのジャケット写真や情報が優先されます）。
+            </div>
+          </div>
+
+          {/* Selected Albums List */}
+          <div className="max-h-60 overflow-y-auto divide-y" style={{ borderColor: 'var(--theme-border)' }}>
+            {selAlbums.map((alb) => {
+              const isTarget = alb.id === targetAlbumId;
+              return (
+                <div
+                  key={alb.id}
+                  onClick={() => {
+                    setMergeSelectedModal((prev) =>
+                      prev ? { ...prev, targetAlbumId: alb.id, mergedAlbumName: alb.album } : null
+                    );
+                  }}
+                  className="px-4 py-2 flex items-center justify-between gap-3 cursor-pointer transition-colors"
+                  style={{
+                    backgroundColor: isTarget ? 'var(--theme-accentMuted)' : 'transparent',
+                    borderLeft: isTarget ? '3px solid var(--theme-accent)' : '3px solid transparent',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isTarget) e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isTarget) e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div
+                      className="w-10 h-10 shrink-0 border rounded-[1px] overflow-hidden flex items-center justify-center bg-black/40"
+                      style={{ borderColor: 'var(--theme-border)' }}
+                    >
+                      {alb.coverUrl ? (
+                        <img src={alb.coverUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <Disc size={14} style={{ color: 'var(--theme-textDim)' }} />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-bold truncate flex items-center gap-1.5">
+                        <span className="truncate">{alb.album}</span>
+                        {isTarget && (
+                          <span
+                            className="text-[7.5px] px-1 py-0.2 border rounded-[1px] font-bold shrink-0"
+                            style={{
+                              borderColor: 'var(--theme-accent)',
+                              backgroundColor: 'var(--theme-accent)',
+                              color: '#ffffff',
+                            }}
+                          >
+                            結合先
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[9px] truncate" style={{ color: 'var(--theme-textMuted)' }}>
+                        {alb.artist} • {alb.tracks.length} TRACKS
+                      </div>
+                    </div>
+                  </div>
+                  <div className="shrink-0">
+                    <div
+                      className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                        isTarget ? 'border-[var(--theme-accent)] bg-[var(--theme-accent)] text-white' : 'border-neutral-500'
+                      }`}
+                    >
+                      {isTarget && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Merged Album Name Input */}
+          <div
+            className="p-3 border-t flex flex-col gap-1.5"
+            style={{
+              backgroundColor: 'var(--theme-surfaceLighter)',
+              borderColor: 'var(--theme-border)',
+            }}
+          >
+            <label className="text-[8.5px] uppercase font-bold tracking-wider" style={{ color: 'var(--theme-textMuted)' }}>
+              結合後のアルバム名:
+            </label>
+            <input
+              type="text"
+              value={mergedAlbumName}
+              onChange={(e) => {
+                const val = e.target.value;
+                setMergeSelectedModal((prev) => (prev ? { ...prev, mergedAlbumName: val } : null));
+              }}
+              className="px-2 py-1 text-[11px] font-mono border rounded-[1px] outline-none"
+              style={{
+                backgroundColor: 'var(--theme-bg)',
+                borderColor: 'var(--theme-border)',
+                color: 'var(--theme-textMain)',
+              }}
+              placeholder="結合後のアルバム名..."
+            />
+          </div>
+
+          {/* Action Buttons */}
+          <div
+            className="p-3 border-t flex items-center justify-between gap-2"
+            style={{
+              backgroundColor: 'var(--theme-surface)',
+              borderColor: 'var(--theme-border)',
+            }}
+          >
+            <button
+              onClick={() => setMergeSelectedModal(null)}
+              className="px-3 py-1.5 text-[9.5px] font-bold border rounded-[1px] hover:opacity-80 cursor-pointer"
+              style={{
+                borderColor: 'var(--theme-border)',
+                color: 'var(--theme-textMuted)',
+              }}
+            >
+              キャンセル
+            </button>
+            <button
+              onClick={() => {
+                if (!targetAlbum) return;
+                const finalName = mergedAlbumName.trim() || targetAlbum.album;
+                const otherSelectedAlbums = selAlbums.filter((a) => a.id !== targetAlbum.id);
+                const tracksToMove = otherSelectedAlbums.flatMap((a) => a.tracks.map((t: any) => t.id));
+
+                if (tracksToMove.length > 0) {
+                  onMoveTracksToAlbum(tracksToMove, { ...targetAlbum, album: finalName });
+                }
+                if (finalName !== targetAlbum.album && onRenameAlbum) {
+                  onRenameAlbum(targetAlbum, finalName);
+                }
+
+                setSelectedAlbumIds(new Set());
+                setMergeSelectedModal(null);
+              }}
+              className="px-4 py-1.5 text-[10px] font-bold border rounded-[1px] transition-all hover:opacity-90 active:scale-95 flex items-center gap-1.5 shadow-sm cursor-pointer"
+              style={{
+                backgroundColor: 'var(--theme-accent)',
+                borderColor: 'var(--theme-accent)',
+                color: '#ffffff',
+              }}
+            >
+              <Disc size={12} />
+              <span>選択した {selAlbums.length} 件を「{mergedAlbumName.trim() || targetAlbum?.album}」に結合</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (albums.length === 0) {
     return (
       <div
@@ -2448,6 +2708,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
         {renderMoveTargetModal()}
         {renderMovePlaylistModal()}
+        {renderMergeSelectedModal()}
         {renderSelectionBanner()}
         <div
           className="flex items-center justify-between pb-2 mb-3 border-b text-[9px] font-mono shrink-0"
@@ -2627,6 +2888,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
         {renderMoveTargetModal()}
         {renderMovePlaylistModal()}
+        {renderMergeSelectedModal()}
         {renderSelectionBanner()}
         <div
           className="flex items-center justify-between pb-2 border-b text-[9px] font-mono shrink-0 mb-3"
@@ -2687,6 +2949,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
         {renderMoveTargetModal()}
         {renderMovePlaylistModal()}
+        {renderMergeSelectedModal()}
         {renderSelectionBanner()}
         <div
           className="flex items-center justify-between pb-2 border-b text-[9px] font-mono shrink-0 mb-3"
@@ -2738,6 +3001,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
     <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-3 w-full">
       {renderMoveTargetModal()}
       {renderMovePlaylistModal()}
+      {renderMergeSelectedModal()}
       {renderSelectionBanner()}
       <div
         className="flex items-center justify-between pb-2 border-b text-[9px] font-mono shrink-0 mb-3"
