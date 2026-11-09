@@ -432,6 +432,179 @@ export const repairMojibake = (text: string | undefined): string => {
 };
 
 // Clean title/artist/album text: repairs mojibake + normalizes full-width English/numbers
+export interface WavMetadata {
+  title?: string;
+  artist?: string;
+  album?: string;
+  trackNumber?: string;
+  year?: string;
+  genre?: string;
+  coverBuffer?: ArrayBuffer;
+  coverMime?: string;
+}
+
+export const decodeRawAudioBytes = (raw: Uint8Array): string => {
+  if (!raw || raw.length === 0) return '';
+  let end = raw.length;
+  while (end > 0 && raw[end - 1] === 0) end--;
+  if (end === 0) return '';
+  const slice = raw.subarray(0, end);
+
+  // Attempt 1: Shift_JIS (CP932 / Windows-31J) - standard for Japanese WAV tags from EAC / Windows Media Player
+  try {
+    const sjisDecoder = new TextDecoder('shift-jis', { fatal: false });
+    const textSjis = sjisDecoder.decode(slice);
+    const hasJapanese = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(textSjis);
+    const hasControl = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(textSjis);
+    const replacementCount = (textSjis.match(/\uFFFD/g) || []).length;
+    if (hasJapanese && !hasControl && replacementCount === 0) {
+      return textSjis.trim();
+    }
+  } catch (e) {}
+
+  // Attempt 2: UTF-8
+  try {
+    const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+    const textUtf8 = utf8Decoder.decode(slice);
+    const hasControl = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(textUtf8);
+    if (!hasControl) {
+      return textUtf8.trim();
+    }
+  } catch (e) {}
+
+  // Attempt 3: Shift-JIS fallback
+  try {
+    const sjisDecoder = new TextDecoder('shift-jis', { fatal: false });
+    const textSjis = sjisDecoder.decode(slice);
+    const hasControl = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(textSjis);
+    if (!hasControl && !textSjis.includes('\uFFFD')) {
+      return textSjis.trim();
+    }
+  } catch (e) {}
+
+  // Attempt 4: Clean UTF-8 fallback
+  return new TextDecoder('utf-8', { fatal: false }).decode(slice).replace(/[\u0000-\u001F\uFFFD]/g, '').trim();
+};
+
+export const parseWavMetadata = async (file: File): Promise<WavMetadata | null> => {
+  try {
+    const isWav = file.name.toLowerCase().endsWith('.wav') || file.type === 'audio/wav';
+    if (!isWav) return null;
+
+    const result: WavMetadata = {};
+
+    // Read first 131072 bytes (128KB)
+    const headerBlob = file.slice(0, 131072);
+    const headerBuf = await headerBlob.arrayBuffer();
+    if (headerBuf.byteLength < 12) return null;
+
+    const view = new DataView(headerBuf);
+    const riff = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+    const wave = String.fromCharCode(view.getUint8(8), view.getUint8(9), view.getUint8(10), view.getUint8(11));
+    if (riff !== 'RIFF' || wave !== 'WAVE') return null;
+
+    let dataChunkEndOffset: number | null = null;
+
+    const parseInfoList = (buffer: ArrayBuffer, startOffset: number, listSize: number) => {
+      const v = new DataView(buffer);
+      let off = startOffset;
+      const end = Math.min(startOffset + listSize, buffer.byteLength);
+      while (off + 8 <= end) {
+        const subId = String.fromCharCode(v.getUint8(off), v.getUint8(off + 1), v.getUint8(off + 2), v.getUint8(off + 3));
+        const subSize = v.getUint32(off + 4, true);
+        const dataOff = off + 8;
+        if (dataOff + subSize <= buffer.byteLength) {
+          const rawBytes = new Uint8Array(buffer, dataOff, subSize);
+          const val = decodeRawAudioBytes(rawBytes);
+          if (val) {
+            if (subId === 'INAM') result.title = val;
+            else if (subId === 'IART') result.artist = val;
+            else if (subId === 'IPRD') result.album = val;
+            else if (subId === 'ITRK') result.trackNumber = val;
+            else if (subId === 'ICRD') result.year = val;
+            else if (subId === 'IGNR') result.genre = val;
+          }
+        }
+        off += 8 + subSize + (subSize % 2);
+      }
+    };
+
+    // Scan chunks in header
+    let offset = 12;
+    while (offset + 8 <= headerBuf.byteLength) {
+      const chunkId = String.fromCharCode(view.getUint8(offset), view.getUint8(offset + 1), view.getUint8(offset + 2), view.getUint8(offset + 3));
+      const chunkSize = view.getUint32(offset + 4, true);
+      const chunkDataOff = offset + 8;
+
+      if (chunkId === 'data') {
+        dataChunkEndOffset = chunkDataOff + chunkSize + (chunkSize % 2);
+      } else if (chunkId === 'LIST' && chunkDataOff + 4 <= headerBuf.byteLength) {
+        const listType = String.fromCharCode(view.getUint8(chunkDataOff), view.getUint8(chunkDataOff + 1), view.getUint8(chunkDataOff + 2), view.getUint8(chunkDataOff + 3));
+        if (listType === 'INFO') {
+          parseInfoList(headerBuf, chunkDataOff + 4, chunkSize - 4);
+        }
+      } else if ((chunkId === 'ID3 ' || chunkId === 'id3 ') && chunkDataOff + chunkSize <= headerBuf.byteLength) {
+        try {
+          const id3Blob = file.slice(chunkDataOff, chunkDataOff + chunkSize);
+          const id3Meta = await mm.parseBlob(id3Blob, { skipCovers: false });
+          if (id3Meta.common.title) result.title = cleanAudioTag(id3Meta.common.title);
+          if (id3Meta.common.artist) result.artist = cleanAudioTag(id3Meta.common.artist);
+          if (id3Meta.common.album) result.album = cleanAudioTag(id3Meta.common.album);
+          if (id3Meta.common.track?.no) result.trackNumber = String(id3Meta.common.track.no);
+          if (id3Meta.common.picture?.[0]) {
+            result.coverBuffer = id3Meta.common.picture[0].data.buffer;
+            result.coverMime = id3Meta.common.picture[0].format;
+          }
+        } catch (e) {}
+      }
+
+      offset += 8 + chunkSize + (chunkSize % 2);
+    }
+
+    // Check trailing chunks after PCM data if title or artist wasn't in the header
+    if ((!result.title || !result.artist) && dataChunkEndOffset && dataChunkEndOffset < file.size) {
+      const tailBlob = file.slice(dataChunkEndOffset);
+      const tailBuf = await tailBlob.arrayBuffer();
+      if (tailBuf.byteLength >= 8) {
+        const tailView = new DataView(tailBuf);
+        let tailOff = 0;
+        while (tailOff + 8 <= tailBuf.byteLength) {
+          const chunkId = String.fromCharCode(tailView.getUint8(tailOff), tailView.getUint8(tailOff + 1), tailView.getUint8(tailOff + 2), tailView.getUint8(tailOff + 3));
+          const chunkSize = tailView.getUint32(tailOff + 4, true);
+          const chunkDataOff = tailOff + 8;
+
+          if (chunkId === 'LIST' && chunkDataOff + 4 <= tailBuf.byteLength) {
+            const listType = String.fromCharCode(tailView.getUint8(chunkDataOff), tailView.getUint8(chunkDataOff + 1), tailView.getUint8(chunkDataOff + 2), tailView.getUint8(chunkDataOff + 3));
+            if (listType === 'INFO') {
+              parseInfoList(tailBuf, chunkDataOff + 4, chunkSize - 4);
+            }
+          } else if ((chunkId === 'ID3 ' || chunkId === 'id3 ') && chunkDataOff + chunkSize <= tailBuf.byteLength) {
+            try {
+              const id3Blob = file.slice(dataChunkEndOffset + chunkDataOff, dataChunkEndOffset + chunkDataOff + chunkSize);
+              const id3Meta = await mm.parseBlob(id3Blob, { skipCovers: false });
+              if (id3Meta.common.title) result.title = cleanAudioTag(id3Meta.common.title);
+              if (id3Meta.common.artist) result.artist = cleanAudioTag(id3Meta.common.artist);
+              if (id3Meta.common.album) result.album = cleanAudioTag(id3Meta.common.album);
+              if (id3Meta.common.track?.no) result.trackNumber = String(id3Meta.common.track.no);
+              if (id3Meta.common.picture?.[0]) {
+                result.coverBuffer = id3Meta.common.picture[0].data.buffer;
+                result.coverMime = id3Meta.common.picture[0].format;
+              }
+            } catch (e) {}
+          }
+          tailOff += 8 + chunkSize + (chunkSize % 2);
+        }
+      }
+    }
+
+    return result;
+  } catch (err) {
+    console.error('Error parsing WAV metadata:', err);
+    return null;
+  }
+};
+
+
 export const cleanAudioTag = (rawText: string | undefined): string => {
   if (!rawText) return '';
   const repaired = repairMojibake(rawText.trim());
@@ -728,6 +901,17 @@ const PanelBlock = ({ title, children, className = "", styleVars, action }: { ti
 
 const getEmbeddedCover = async (file: File): Promise<string | null> => {
   try {
+    const isWav = file.name.toLowerCase().endsWith('.wav') || file.type === 'audio/wav';
+    if (isWav) {
+      try {
+        const wavMeta = await parseWavMetadata(file);
+        if (wavMeta?.coverBuffer) {
+          let mime = wavMeta.coverMime || 'image/jpeg';
+          if (!mime.startsWith('image/')) mime = `image/${mime}`;
+          return URL.createObjectURL(new Blob([wavMeta.coverBuffer], { type: mime }));
+        }
+      } catch (e) {}
+    }
     const metadata = await mm.parseBlob(file, { skipCovers: false });
     const picture = metadata.common.picture?.[0];
     if (!picture) return null;
@@ -736,9 +920,10 @@ const getEmbeddedCover = async (file: File): Promise<string | null> => {
     if (!mimeType.startsWith('image/')) {
       mimeType = `image/${mimeType}`;
     }
-    return URL.createObjectURL(new Blob([picture.data], { type: mimeType }));
+    const blob = new Blob([picture.data], { type: mimeType });
+    return URL.createObjectURL(blob);
   } catch (err) {
-    console.error("Error reading metadata", err);
+    console.error("Error reading cover art:", file.name, err);
     return null;
   }
 };
@@ -1008,6 +1193,8 @@ export default function App() {
       localStorage.setItem('v2_solid_drop_target_cat_pref', pref);
     } catch {}
   };
+
+  const [showDropCategoryMenu, setShowDropCategoryMenu] = useState<boolean>(false);
 
 
 
@@ -1727,6 +1914,20 @@ export default function App() {
             t.title = cleanAudioTag(t.title);
             t.artist = cleanAudioTag(t.artist);
             t.album = cleanAudioTag(t.album);
+            if (looksLikeMojibake(t.title) || !t.title) {
+              const parsed = parseFilename(t.fileName);
+              t.title = parsed.title;
+              if ((!t.artist || t.artist === 'Unknown Artist' || looksLikeMojibake(t.artist)) && parsed.artist !== 'Unknown Artist') {
+                t.artist = parsed.artist;
+              }
+            }
+            if (looksLikeMojibake(t.artist)) {
+              const parsed = parseFilename(t.fileName);
+              t.artist = (parsed.artist && parsed.artist !== 'Unknown Artist') ? parsed.artist : 'Unknown Artist';
+            }
+            if (looksLikeMojibake(t.album)) {
+              t.album = 'Unknown Album';
+            }
             libraryMap.set(t.id, t);
             return t;
           }));
@@ -3093,29 +3294,64 @@ export default function App() {
     let blobUrl = '';
     let coverUrl: string | undefined = undefined;
 
+    const isWavFile = file.name.toLowerCase().endsWith('.wav') || file.type === 'audio/wav';
+    let wavMeta: WavMetadata | null = null;
+    if (isWavFile) {
+      try {
+        wavMeta = await parseWavMetadata(file);
+      } catch (e) {
+        console.warn("Custom WAV metadata parse failed:", e);
+      }
+    }
+
     try {
       const metadata = await mm.parseBlob(file, { skipCovers: false });
-      const rawTitle = metadata.common.title || '';
-      const rawArtist = metadata.common.artist || metadata.common.albumartist || '';
-      const rawAlbum = metadata.common.album || '';
+      const rawTitle = (wavMeta && wavMeta.title) ? wavMeta.title : (metadata.common.title || '');
+      const rawArtist = (wavMeta && wavMeta.artist) ? wavMeta.artist : (metadata.common.artist || metadata.common.albumartist || '');
+      const rawAlbum = (wavMeta && wavMeta.album) ? wavMeta.album : (metadata.common.album || '');
 
       title = cleanAudioTag(rawTitle);
       artist = cleanAudioTag(rawArtist) || 'Unknown Artist';
       album = cleanAudioTag(rawAlbum) || 'Unknown Album';
-      trackNumber = metadata.common.track?.no?.toString() || '';
+      trackNumber = (wavMeta && wavMeta.trackNumber) ? wavMeta.trackNumber : (metadata.common.track?.no?.toString() || '');
       duration = metadata.format.duration || 0;
 
-      const picture = metadata.common.picture?.[0];
-      if (picture) {
-        let mimeType = picture.format;
+      // Extract cover art: custom wavMeta first, then metadata.common.picture
+      let coverBuffer: ArrayBuffer | null = null;
+      let mimeType = 'image/jpeg';
+      if (wavMeta && wavMeta.coverBuffer) {
+        coverBuffer = wavMeta.coverBuffer;
+        if (wavMeta.coverMime) mimeType = wavMeta.coverMime;
+      } else {
+        const picture = metadata.common.picture?.[0];
+        if (picture) {
+          mimeType = picture.format;
+          if (!mimeType.startsWith('image/')) mimeType = `image/${mimeType}`;
+          coverBuffer = picture.data.buffer.slice(picture.data.byteOffset, picture.data.byteOffset + picture.data.byteLength);
+        }
+      }
+
+      if (coverBuffer) {
         if (!mimeType.startsWith('image/')) mimeType = `image/${mimeType}`;
-        const coverBuffer = picture.data.buffer.slice(picture.data.byteOffset, picture.data.byteOffset + picture.data.byteLength);
         await set(`v2_track_cover_${trackId}`, { buffer: coverBuffer, type: mimeType });
         await set(`v2_track_original_cover_${trackId}`, { buffer: coverBuffer, type: mimeType });
         coverUrl = URL.createObjectURL(new Blob([coverBuffer], { type: mimeType }));
       }
     } catch (err) {
       console.error("Error reading metadata:", file.name, err);
+      if (wavMeta) {
+        if (wavMeta.title) title = cleanAudioTag(wavMeta.title);
+        if (wavMeta.artist) artist = cleanAudioTag(wavMeta.artist) || 'Unknown Artist';
+        if (wavMeta.album) album = cleanAudioTag(wavMeta.album) || 'Unknown Album';
+        if (wavMeta.trackNumber) trackNumber = wavMeta.trackNumber;
+        if (wavMeta.coverBuffer) {
+          let mimeType = wavMeta.coverMime || 'image/jpeg';
+          if (!mimeType.startsWith('image/')) mimeType = `image/${mimeType}`;
+          await set(`v2_track_cover_${trackId}`, { buffer: wavMeta.coverBuffer, type: mimeType });
+          await set(`v2_track_original_cover_${trackId}`, { buffer: wavMeta.coverBuffer, type: mimeType });
+          coverUrl = URL.createObjectURL(new Blob([wavMeta.coverBuffer], { type: mimeType }));
+        }
+      }
     }
 
     // If title was missing or still looks like garbled mojibake, safely fall back to the clean filename
@@ -3131,8 +3367,21 @@ export default function App() {
     } else {
       title = normalizeZenkakuAlphanumeric(title);
     }
-    artist = normalizeZenkakuAlphanumeric(artist);
-    album = normalizeZenkakuAlphanumeric(album);
+
+    // Guard against garbled mojibake in artist
+    if (!artist || artist === 'Unknown Artist' || looksLikeMojibake(artist)) {
+      const parsed = parseFilename(file.name);
+      artist = (parsed.artist && parsed.artist !== 'Unknown Artist') ? parsed.artist : 'Unknown Artist';
+    } else {
+      artist = normalizeZenkakuAlphanumeric(artist);
+    }
+
+    // Guard against garbled mojibake in album
+    if (!album || album === 'Unknown Album' || looksLikeMojibake(album)) {
+      album = 'Unknown Album';
+    } else {
+      album = normalizeZenkakuAlphanumeric(album);
+    }
 
     // Deduce Album and Artist from Directory Structure (e.g. "Artist/Album/Song.mp3" or "Folder/Song.mp3")
     // Always prioritize the immediate folder name as the Album name so tracks in the same folder aren't split by varying MP3 album tags!
@@ -9644,6 +9893,14 @@ export default function App() {
               const effectiveDropCat = getEffectiveDropCategory();
               const catDisplayLabel = effectiveDropCat ? `「${effectiveDropCat}」` : '未分類 (UNCATEGORIZED)';
 
+              // Label for current preference
+              let currentPrefLabel = `自動 (${effectiveDropCat ? `「${effectiveDropCat}」` : '未分類'})`;
+              if (dropTargetCategoryPreference === '__UNCATEGORIZED__') {
+                currentPrefLabel = '未分類 (UNCATEGORIZED)';
+              } else if (dropTargetCategoryPreference !== '__AUTO__') {
+                currentPrefLabel = `「${dropTargetCategoryPreference}」カテゴリー`;
+              }
+
               return (
                 <div
                   onDragEnter={handleDragEnter}
@@ -9654,7 +9911,7 @@ export default function App() {
                     handleDrop(e, effectiveDropCat);
                   }}
                   onClick={() => fileInputRef.current?.click()}
-                  className="m-2.5 p-3.5 min-h-[105px] border-2 border-dashed rounded-[2px] flex flex-col items-center justify-center gap-2 transition-all cursor-pointer select-none relative overflow-hidden shrink-0 group"
+                  className="m-2.5 p-3 min-h-[105px] border-2 border-dashed rounded-[2px] flex flex-col items-center justify-center gap-2 transition-all cursor-pointer select-none relative overflow-visible shrink-0 group"
                   style={{
                     borderColor: isDragOver ? 'var(--theme-accent)' : 'var(--theme-listHeader-border)',
                     backgroundColor: isDragOver ? 'var(--theme-accentMuted)' : 'var(--theme-list-surface)',
@@ -9663,47 +9920,171 @@ export default function App() {
                   }}
                   title="クリックまたはドラッグ＆ドロップで音楽フォルダ・音源ファイルを追加"
                 >
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 pointer-events-none">
                     <FolderPlus size={isDragOver ? 18 : 15} className={`transition-transform ${isDragOver ? 'scale-110 animate-bounce' : ''}`} style={{ color: 'var(--theme-accent)' }} />
                     <span className="text-[10px] font-mono tracking-wider font-bold uppercase text-center" style={{ color: isDragOver ? 'var(--theme-accent)' : 'var(--theme-list-textMain)' }}>
                       {isDragOver ? '■ RELEASE TO IMPORT AUDIO' : '+ DROP AUDIO FOLDERS / FILES'}
                     </span>
                   </div>
 
-                  {/* Destination Category Display & Selector */}
-                  <div
-                    className="flex items-center gap-1 px-2 py-0.5 border rounded-[1px] text-[8.5px] font-mono max-w-full truncate shadow-sm transition-colors"
-                    style={{
-                      backgroundColor: 'var(--theme-list-bg)',
-                      borderColor: isDragOver ? 'var(--theme-accent)' : 'var(--theme-list-border)',
-                      color: 'var(--theme-list-textMain)',
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    title="ドラッグ＆ドロップ時の追加先カテゴリーを変更"
-                  >
-                    <Bookmark size={9} style={{ color: 'var(--theme-accent)' }} className="shrink-0" />
-                    <span className="text-[7.5px] uppercase font-bold tracking-wider shrink-0" style={{ color: 'var(--theme-list-textDim)' }}>
-                      行き先:
-                    </span>
-                    <select
-                      value={dropTargetCategoryPreference}
-                      onChange={(e) => handleSetDropTargetCategoryPreference(e.target.value)}
-                      className="bg-transparent font-bold font-mono outline-none cursor-pointer text-[8.5px] truncate min-w-0"
-                      style={{ color: 'var(--theme-accent)' }}
+                  {/* Destination Category Display & Custom Pulldown Selector */}
+                  <div className="relative w-full max-w-[280px]" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDropCategoryMenu(prev => !prev);
+                      }}
+                      className="w-full flex items-center justify-between gap-1.5 px-2.5 py-1 border rounded-[2px] shadow-sm transition-all cursor-pointer hover:brightness-105 active:scale-[0.99]"
+                      style={{
+                        backgroundColor: 'var(--theme-list-bg)',
+                        borderColor: showDropCategoryMenu || isDragOver ? 'var(--theme-accent)' : 'var(--theme-list-border)',
+                        color: 'var(--theme-list-textMain)',
+                      }}
+                      title="クリックしてドラッグ＆ドロップ時の行き先カテゴリーを変更"
                     >
-                      <option value="__AUTO__">
-                        自動 ({effectiveDropCat ? `「${effectiveDropCat}」` : '未分類'})
-                      </option>
-                      <option value="__UNCATEGORIZED__">未分類 (UNCATEGORIZED)</option>
-                      {categories.map((c) => (
-                        <option key={c} value={c}>
-                          「{c}」カテゴリー
-                        </option>
-                      ))}
-                    </select>
+                      <div className="flex items-center gap-1.5 truncate min-w-0">
+                        <Bookmark size={11} style={{ color: 'var(--theme-accent)' }} className="shrink-0" />
+                        <span className="text-[9.5px] uppercase font-bold tracking-wider shrink-0" style={{ color: 'var(--theme-list-textDim)' }}>
+                          行き先:
+                        </span>
+                        <span className="text-[11px] sm:text-[11.5px] font-bold font-mono truncate" style={{ color: 'var(--theme-accent)' }}>
+                          {currentPrefLabel}
+                        </span>
+                      </div>
+                      <span className="shrink-0 ml-1" style={{ color: 'var(--theme-list-textDim)' }}>
+                        {showDropCategoryMenu ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </span>
+                    </button>
+
+                    {/* Custom Popover Menu (Opens upward above the button with high-contrast, larger font) */}
+                    {showDropCategoryMenu && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowDropCategoryMenu(false);
+                          }}
+                        />
+                        <div
+                          className="absolute bottom-full mb-1.5 left-0 right-0 z-50 border rounded-[2px] shadow-2xl py-1 flex flex-col font-mono overflow-hidden text-[11px]"
+                          style={{
+                            backgroundColor: 'var(--theme-surface)',
+                            borderColor: 'var(--theme-border)',
+                            color: 'var(--theme-textMain)',
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="px-2.5 py-1.5 text-[8.5px] uppercase tracking-wider border-b font-bold flex items-center justify-between" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', backgroundColor: 'var(--theme-surfaceLighter)' }}>
+                            <span>D&D 行き先カテゴリー設定</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowDropCategoryMenu(false);
+                              }}
+                              className="hover:opacity-80 p-0.5"
+                              style={{ color: 'var(--theme-textDim)' }}
+                            >
+                              <X size={11} />
+                            </button>
+                          </div>
+
+                          <div className="flex flex-col overflow-y-auto max-h-64 divide-y" style={{ borderColor: 'var(--theme-border)' }}>
+                            {/* Auto Option */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleSetDropTargetCategoryPreference('__AUTO__');
+                                setShowDropCategoryMenu(false);
+                              }}
+                              className="text-left px-3 py-2 text-[11.5px] font-bold flex items-center justify-between transition-colors cursor-pointer w-full"
+                              style={{
+                                backgroundColor: dropTargetCategoryPreference === '__AUTO__' ? 'var(--theme-accentMuted)' : 'transparent',
+                                color: dropTargetCategoryPreference === '__AUTO__' ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+                              }}
+                              onMouseEnter={(e) => {
+                                if (dropTargetCategoryPreference !== '__AUTO__') e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)';
+                              }}
+                              onMouseLeave={(e) => {
+                                if (dropTargetCategoryPreference !== '__AUTO__') e.currentTarget.style.backgroundColor = 'transparent';
+                              }}
+                            >
+                              <span className="truncate">
+                                自動 ({effectiveDropCat ? `「${effectiveDropCat}」` : '未分類'})
+                              </span>
+                              {dropTargetCategoryPreference === '__AUTO__' && (
+                                <Check size={13} style={{ color: 'var(--theme-accent)' }} className="shrink-0 ml-2" />
+                              )}
+                            </button>
+
+                            {/* Uncategorized Option */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleSetDropTargetCategoryPreference('__UNCATEGORIZED__');
+                                setShowDropCategoryMenu(false);
+                              }}
+                              className="text-left px-3 py-2 text-[11.5px] font-bold flex items-center justify-between transition-colors cursor-pointer w-full"
+                              style={{
+                                backgroundColor: dropTargetCategoryPreference === '__UNCATEGORIZED__' ? 'var(--theme-accentMuted)' : 'transparent',
+                                color: dropTargetCategoryPreference === '__UNCATEGORIZED__' ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+                              }}
+                              onMouseEnter={(e) => {
+                                if (dropTargetCategoryPreference !== '__UNCATEGORIZED__') e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)';
+                              }}
+                              onMouseLeave={(e) => {
+                                if (dropTargetCategoryPreference !== '__UNCATEGORIZED__') e.currentTarget.style.backgroundColor = 'transparent';
+                              }}
+                            >
+                              <span className="truncate">
+                                未分類 (UNCATEGORIZED)
+                              </span>
+                              {dropTargetCategoryPreference === '__UNCATEGORIZED__' && (
+                                <Check size={13} style={{ color: 'var(--theme-accent)' }} className="shrink-0 ml-2" />
+                              )}
+                            </button>
+
+                            {/* Defined Categories */}
+                            {categories.map((c) => {
+                              const isSelected = dropTargetCategoryPreference === c;
+                              return (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  onClick={() => {
+                                    handleSetDropTargetCategoryPreference(c);
+                                    setShowDropCategoryMenu(false);
+                                  }}
+                                  className="text-left px-3 py-2 text-[11.5px] font-bold flex items-center justify-between transition-colors cursor-pointer w-full"
+                                  style={{
+                                    backgroundColor: isSelected ? 'var(--theme-accentMuted)' : 'transparent',
+                                    color: isSelected ? 'var(--theme-accent)' : 'var(--theme-textMain)',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--theme-surfaceLighter)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+                                  }}
+                                >
+                                  <span className="truncate">
+                                    「{c}」カテゴリー
+                                  </span>
+                                  {isSelected && (
+                                    <Check size={13} style={{ color: 'var(--theme-accent)' }} className="shrink-0 ml-2" />
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
 
-                  <span className="text-[8px] font-mono text-center leading-tight font-medium" style={{ color: isDragOver ? 'var(--theme-textMain)' : 'var(--theme-list-textDim)' }}>
+                  <span className="text-[8.5px] font-mono text-center leading-tight font-medium" style={{ color: isDragOver ? 'var(--theme-textMain)' : 'var(--theme-list-textDim)' }}>
                     {isDragOver 
                       ? `【${catDisplayLabel}】カテゴリーに追加します`
                       : 'ここにフォルダをD&Dで読み込み（上の各カテゴリー枠へ直接D&Dも可能）'}
