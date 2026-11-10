@@ -76,6 +76,70 @@ const THEMES = [
     sliderTrackBorder: '#353c48'
   },
   { 
+    id: 'T-BLACK', 
+    label: 'TRUE BLACK',
+    shortName: 'T-BLACK',
+    dotColor: '#000000',
+    bg: '#000000', 
+    surface: '#050505',
+    surfaceLighter: '#101010',
+    border: '#1f1f1f', 
+    borderActive: '#3f3f46',
+    textMain: '#ffffff',
+    textMuted: '#a1a1aa',
+    textDim: '#52525b',
+    accent: '#e4e4e7',
+    accentDark: '#71717a',
+    accentMuted: '#1a1a1a',
+    sliderTrackBg: '#000000',
+    sliderTrackBorder: '#27272a',
+    controlBoxBg: '#080808',
+    buttonBg: '#080808',
+    buttonBorder: '#222222',
+    buttonText: '#ffffff',
+    btnActiveBg: '#27272a',
+    btnActiveBorder: '#52525b',
+    btnActiveText: '#ffffff',
+    headerBg: '#000000',
+    headerBorder: '#1c1c1c',
+    headerText: '#ffffff',
+    headerTextMuted: '#a1a1aa',
+    headerControlBg: '#0a0a0a',
+    headerControlBorder: '#222222',
+    headerControlText: '#ffffff',
+    headerControlTextMuted: '#71717a',
+    headerMark: '#ffffff',
+    panelTitleBg: '#050505',
+    panelTitleText: '#a1a1aa',
+    panelTitleBorder: '#1c1c1c',
+    albumArtBg: '#000000',
+    categoryBg: '#080808',
+    listHeaderBg: '#080808',
+    listHeaderBorder: '#1c1c1c',
+    listHeaderText: '#ffffff',
+    listHeaderTextMuted: '#71717a',
+    listBg: '#000000',
+    listSurface: '#050505',
+    listSurfaceLighter: '#121212',
+    listBorder: '#1c1c1c',
+    listBorderActive: '#3f3f46',
+    listTextMain: '#ffffff',
+    listTextMuted: '#a1a1aa',
+    listTextDim: '#52525b',
+    listAccent: '#ffffff',
+    listAccentMuted: '#1a1a1a',
+    listIconColor: '#ffffff',
+    actionButtonBg: '#080808',
+    actionButtonBorder: '#222222',
+    actionButtonText: '#ffffff',
+    clearDataBg: '#18181b',
+    clearDataBorder: '#27272a',
+    clearDataText: '#ffffff',
+    canvasBg: '#000000',
+    canvasBar: '#ffffff',
+    canvasBaseline: '#222222',
+  },
+  { 
     id: 'PAPER', 
     dotColor: '#d9532f',
     bg: '#F2EFE6', 
@@ -1012,7 +1076,7 @@ export default function App() {
     try {
       const savedThemeId = localStorage.getItem('v2_solidThemeId');
       if (savedThemeId) {
-        const foundIdx = THEMES.findIndex(t => t.id === savedThemeId);
+        const foundIdx = THEMES.findIndex(t => t.id === savedThemeId || (t as any).label === savedThemeId || (t as any).shortName === savedThemeId);
         if (foundIdx !== -1) return foundIdx;
       }
       const savedThemeIdx = localStorage.getItem('v2_solidThemeIndex');
@@ -1885,7 +1949,7 @@ export default function App() {
         if (savedActivePlaylistId) setActivePlaylistId(savedActivePlaylistId);
         const savedThemeId = await get('v2_solidThemeId');
         if (savedThemeId) {
-          const foundIdx = THEMES.findIndex(t => t.id === savedThemeId);
+          const foundIdx = THEMES.findIndex(t => t.id === savedThemeId || (t as any).label === savedThemeId || (t as any).shortName === savedThemeId);
           if (foundIdx !== -1) setThemeIndex(foundIdx);
         } else if (savedThemeIndex !== undefined && savedThemeIndex < THEMES.length) {
           setThemeIndex(savedThemeIndex);
@@ -2272,6 +2336,7 @@ export default function App() {
   }, [theme.id, theme.bg]);
   const isLightTheme = theme.id === 'LIGHT' || theme.id === 'PAPER';
   const isFaderLightTheme = theme.id === 'PAPER' || theme.id === 'MOCHA' || theme.id === 'PINK' || theme.id === 'LIGHT';
+  const isTrueBlack = theme.id === 'T-BLACK' || (theme as any).label === 'TRUE BLACK';
 
   const faderThumbBg = isFaderLightTheme
     ? (theme.id === 'PAPER'
@@ -2281,18 +2346,26 @@ export default function App() {
         : theme.id === 'PINK'
         ? 'linear-gradient(180deg, #FDF7F8 0%, #F5E4E8 60%, #E8D3D8 100%)'
         : 'linear-gradient(180deg, #FFFFFF 0%, #E8ECEF 60%, #D8DFE4 100%)')
+    : isTrueBlack
+    ? 'linear-gradient(180deg, #2e2e2e 0%, #161616 50%, #060606 100%)'
     : 'linear-gradient(180deg, #424b5a 0%, #1c212a 45%, #0a0d12 100%)';
 
   const faderThumbBorder = isLightTheme
     ? (theme.id === 'PAPER' ? '#c8bfae' : theme.id === 'MOCHA' ? '#c4b09f' : theme.id === 'PINK' ? '#d9b6c0' : '#b2c0cc')
+    : isTrueBlack
+    ? '#2a2a2a'
     : '#080a0e';
 
   const faderTrackBg = isLightTheme
     ? (theme.id === 'PAPER' ? '#ded7c8' : theme.id === 'MOCHA' ? '#cfbaaa' : theme.id === 'PINK' ? '#e0b8c3' : '#9ba9b5')
+    : isTrueBlack
+    ? '#000000'
     : '#181c22';
 
   const faderThumbShadow = isLightTheme
     ? '0 1px 2px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.9)'
+    : isTrueBlack
+    ? '0 1px 3px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.15)'
     : '0 1px 3px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.3)';
 
   const iconColor = isLightTheme ? (theme.id === 'PAPER' ? '#2d241e' : '#1a2530') : '#ffffff';
