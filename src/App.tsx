@@ -7019,13 +7019,13 @@ export default function App() {
                   className="w-2.5 h-2.5 rounded-full mr-1.5 shrink-0 border"
                   style={{
                     backgroundColor: theme.dotColor || theme.accent,
-                    borderColor: 'rgba(0,0,0,0.3)',
-                    boxShadow: '0 0 2px rgba(0,0,0,0.3)',
+                    borderColor: theme.id === 'T-BLACK' ? '#52525b' : 'rgba(0,0,0,0.3)',
+                    boxShadow: theme.id === 'T-BLACK' ? '0 0 2px rgba(255,255,255,0.2)' : '0 0 2px rgba(0,0,0,0.3)',
                   }}
                 />
                 {/* Current Theme Name */}
                 <span className="text-[10px] font-mono font-bold tracking-wider truncate" style={{ color: 'var(--theme-header-control-text, var(--theme-textMain))' }}>
-                  {theme.id}
+                  {(theme as any).shortName || theme.id}
                 </span>
               </button>
 
@@ -7085,7 +7085,9 @@ export default function App() {
                         }}
                         className="w-full flex items-center justify-between px-3 py-1.5 text-[10.5px] font-mono font-bold tracking-wider text-left transition-colors cursor-pointer"
                         style={{
-                          backgroundColor: isSelected ? 'var(--theme-accent)' : 'transparent',
+                          backgroundColor: isSelected 
+                            ? (t.id === 'T-BLACK' ? 'rgba(255,255,255,0.15)' : 'var(--theme-accent)') 
+                            : 'transparent',
                           color: isSelected ? '#ffffff' : 'var(--theme-header-control-text, var(--theme-textMain))',
                         }}
                         onMouseEnter={(e) => {
@@ -7105,11 +7107,11 @@ export default function App() {
                             className="w-3 h-3 rounded-full shrink-0 border"
                             style={{
                               backgroundColor: t.dotColor || t.accent,
-                              borderColor: 'rgba(0,0,0,0.3)',
+                              borderColor: t.id === 'T-BLACK' ? '#52525b' : 'rgba(0,0,0,0.3)',
                               boxShadow: isSelected ? `0 0 4px ${t.dotColor || t.accent}` : 'none',
                             }}
                           />
-                          <span className="truncate">{t.id}</span>
+                          <span className="truncate">{(t as any).label || t.id}</span>
                         </div>
                         {isSelected && (
                           <Check size={12} style={{ color: '#ffffff' }} />
