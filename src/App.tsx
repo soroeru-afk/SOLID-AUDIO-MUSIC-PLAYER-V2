@@ -992,6 +992,66 @@ const getEmbeddedCover = async (file: File): Promise<string | null> => {
   }
 };
 
+class CascadeMenuErrorBoundary extends React.Component<
+  { children: React.ReactNode; onClose: () => void },
+  { hasError: boolean; message: string }
+> {
+  declare props: { children: React.ReactNode; onClose: () => void };
+  declare state: { hasError: boolean; message: string };
+  declare setState: (nextState: Partial<{ hasError: boolean; message: string }>) => void;
+
+  constructor(props: { children: React.ReactNode; onClose: () => void }) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, message: error?.message || 'Menu render error' };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[SOLID AUDIO] Cascade menu error:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          className="p-3 border font-mono text-[10px] flex flex-col gap-2 shadow-2xl rounded-[2px]"
+          style={{
+            backgroundColor: 'var(--theme-surface)',
+            borderColor: 'var(--theme-accent)',
+            color: 'var(--theme-textMain)',
+            width: '280px',
+          }}
+        >
+          <div className="font-bold uppercase tracking-wider" style={{ color: 'var(--theme-accent)' }}>
+            MENU RECOVERY
+          </div>
+          <div className="text-[9px] opacity-80 break-all">{this.state.message}</div>
+          <button
+            type="button"
+            onClick={() => {
+              this.setState({ hasError: false, message: '' });
+              this.props.onClose();
+            }}
+            className="px-2 py-1 border text-[9px] uppercase tracking-wider cursor-pointer"
+            style={{
+              backgroundColor: 'var(--theme-bg)',
+              borderColor: 'var(--theme-border)',
+              color: 'var(--theme-textMain)',
+            }}
+          >
+            CLOSE MENU
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+
 export default function App() {
   // --- State ---
   const [library, setLibrary] = useState<Track[]>([]);
@@ -1239,26 +1299,7 @@ export default function App() {
     });
   };
 
-  // User-configured drop destination category preference
-  // '__AUTO__': automatically follows currently opened category / playlist's category
-  // '__UNCATEGORIZED__': imports to uncategorized
-  // '[Category Name]': imports to that specific category
-  const [dropTargetCategoryPreference, setDropTargetCategoryPreference] = useState<string>(() => {
-    try {
-      return localStorage.getItem('v2_solid_drop_target_cat_pref') || '__AUTO__';
-    } catch {
-      return '__AUTO__';
-    }
-  });
 
-  const handleSetDropTargetCategoryPreference = (pref: string) => {
-    setDropTargetCategoryPreference(pref);
-    try {
-      localStorage.setItem('v2_solid_drop_target_cat_pref', pref);
-    } catch {}
-  };
-
-  const [showDropCategoryMenu, setShowDropCategoryMenu] = useState<boolean>(false);
 
 
 
@@ -1491,7 +1532,7 @@ export default function App() {
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('v2_solidSelectedCategoryFilter');
-      if (saved) return saved;
+      if (saved && saved !== 'null' && saved !== 'undefined') return saved;
     } catch {}
     return '__ALL__';
   });
@@ -1524,6 +1565,48 @@ export default function App() {
   const [hoveredCategoryInMenu, setHoveredCategoryInMenu] = useState<string | null>(null);
   const [hoveredPlaylistInMenu, setHoveredPlaylistInMenu] = useState<string | null>(null);
   const categoryCascadeMenuRef = useRef<HTMLDivElement>(null);
+  const cascadePortalRef = useRef<HTMLDivElement>(null);
+  const [cascadeMenuAnchor, setCascadeMenuAnchor] = useState<{ top: number; left: number; maxWidth: number; maxHeight: number }>({
+    top: 160,
+    left: 16,
+    maxWidth: 960,
+    maxHeight: 585,
+  });
+
+  const computeCascadeMenuAnchor = React.useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const triggerEl = categoryCascadeMenuRef.current;
+    if (!triggerEl) return;
+    const rect = triggerEl.getBoundingClientRect();
+    const vw = window.innerWidth || 1024;
+    const vh = window.innerHeight || 768;
+    const left = Math.max(8, Math.min(Math.round(rect.left), Math.max(8, vw - 360)));
+    const top = Math.max(8, Math.min(Math.round(rect.bottom + 4), Math.max(8, vh - 240)));
+    const maxWidth = Math.max(320, vw - left - 12);
+    const maxHeight = Math.max(220, vh - top - 12);
+    setCascadeMenuAnchor({ top, left, maxWidth, maxHeight });
+  }, []);
+
+  // User-configured drop destination category preference
+  // '__AUTO__': automatically follows currently opened category / playlist's category
+  // '__UNCATEGORIZED__': imports to uncategorized
+  // '[Category Name]': imports to that specific category
+  const [dropTargetCategoryPreference, setDropTargetCategoryPreference] = useState<string>(() => {
+    try {
+      return localStorage.getItem('v2_solid_drop_target_cat') || '__AUTO__';
+    } catch {
+      return '__AUTO__';
+    }
+  });
+
+  const handleSetDropTargetCategoryPreference = (pref: string) => {
+    setDropTargetCategoryPreference(pref);
+    try {
+      localStorage.setItem('v2_solid_drop_target_cat', pref);
+    } catch {}
+  };
+
+  const [showDropCategoryMenu, setShowDropCategoryMenu] = useState<boolean>(false);
 
   // Cascading Category Menu column widths with hand-grip resizing support
   const [cascadeColWidths, setCascadeColWidths] = useState<{ cat: number; pl: number; album: number }>(() => {
@@ -1532,9 +1615,9 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
-          cat: typeof parsed.cat === 'number' ? parsed.cat : 192,
-          pl: typeof parsed.pl === 'number' ? parsed.pl : 280,
-          album: typeof parsed.album === 'number' ? parsed.album : 280,
+          cat: typeof parsed?.cat === 'number' && Number.isFinite(parsed.cat) ? Math.max(140, Math.min(500, parsed.cat)) : 192,
+          pl: typeof parsed?.pl === 'number' && Number.isFinite(parsed.pl) ? Math.max(180, Math.min(800, parsed.pl)) : 280,
+          album: typeof parsed?.album === 'number' && Number.isFinite(parsed.album) ? Math.max(180, Math.min(800, parsed.album)) : 280,
         };
       }
     } catch {}
@@ -1547,7 +1630,7 @@ export default function App() {
       const saved = localStorage.getItem('v2_solidCascadeHeight');
       if (saved) {
         const val = parseInt(saved, 10);
-        if (!isNaN(val) && val >= 240) return val;
+        if (Number.isFinite(val) && val >= 240 && val <= 1600) return val;
       }
     } catch {}
     return 520; // デフォルト高さを従来の320pxから520pxへ大幅拡張
@@ -1559,7 +1642,7 @@ export default function App() {
       const saved = localStorage.getItem('v2_solidCascadeFrostLevel');
       if (saved !== null) {
         const val = parseInt(saved, 10);
-        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+        if (Number.isFinite(val) && val >= 0 && val <= 100) return val;
       }
     } catch {}
     return 50; // デフォルトは中間（50%）の標準曇りガラス状態
@@ -2146,21 +2229,31 @@ export default function App() {
   // Close Category Cascade Menu on outside click or Escape key
   useEffect(() => {
     if (!isCategoryCascadeMenuOpen) return;
+    computeCascadeMenuAnchor();
     const handleOutsideClick = (e: MouseEvent) => {
-      if (categoryCascadeMenuRef.current && !categoryCascadeMenuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node | null;
+      if (!target) return;
+      const insideTrigger = categoryCascadeMenuRef.current?.contains(target);
+      const insidePortal = cascadePortalRef.current?.contains(target);
+      if (!insideTrigger && !insidePortal) {
         setIsCategoryCascadeMenuOpen(false);
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setIsCategoryCascadeMenuOpen(false);
     };
+    const handleWindowResize = () => {
+      computeCascadeMenuAnchor();
+    };
     document.addEventListener('mousedown', handleOutsideClick);
     document.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleWindowResize);
     return () => {
       document.removeEventListener('mousedown', handleOutsideClick);
       document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleWindowResize);
     };
-  }, [isCategoryCascadeMenuOpen]);
+  }, [isCategoryCascadeMenuOpen, computeCascadeMenuAnchor]);
 
 
   // (Moved player state)
@@ -2779,7 +2872,7 @@ export default function App() {
     if (targetPl.category) {
       setExpandedCategoryNames(prev => new Set([...prev, targetPl.category!]));
       if (selectedCategoryFilter && selectedCategoryFilter !== targetPl.category) {
-        setSelectedCategoryFilter(null);
+        setSelectedCategoryFilter('__ALL__');
       }
     }
     setExpandedSidebarFolderIds(prev => new Set([...prev, targetPl.id]));
@@ -8025,19 +8118,19 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => {
-                          setIsCategoryCascadeMenuOpen(prev => {
-                            const willOpen = !prev;
-                            if (willOpen) {
-                              const initialCat = selectedCategoryFilter !== '__ALL__' 
-                                ? selectedCategoryFilter 
-                                : (categories[0] || '__ALL__');
-                              setHoveredCategoryInMenu(initialCat);
-                              setHoveredPlaylistInMenu(activePlaylistId !== 'all-tracks' ? activePlaylistId : null);
-                            } else {
-                              setHoveredPlaylistInMenu(null);
-                            }
-                            return willOpen;
-                          });
+                          if (isCategoryCascadeMenuOpen) {
+                            setIsCategoryCascadeMenuOpen(false);
+                            setHoveredPlaylistInMenu(null);
+                          } else {
+                            computeCascadeMenuAnchor();
+                            const safeFilter = selectedCategoryFilter || '__ALL__';
+                            const initialCat = safeFilter !== '__ALL__'
+                              ? safeFilter
+                              : (categories[0] || '__ALL__');
+                            setHoveredCategoryInMenu(initialCat);
+                            setHoveredPlaylistInMenu(activePlaylistId !== 'all-tracks' ? activePlaylistId : null);
+                            setIsCategoryCascadeMenuOpen(true);
+                          }
                         }}
                         className="w-full h-5 flex items-center justify-between font-mono border rounded-[2px] px-1.5 truncate cursor-pointer transition-colors hover:opacity-90 focus:outline-none"
                         style={{
@@ -8049,9 +8142,9 @@ export default function App() {
                         title="カテゴリー・プレイリストをプルダウン＆ダイレクト選択 (SIZE連動)"
                       >
                         <span className="truncate font-medium flex items-center gap-1">
-                          <Bookmark size={10} style={{ color: selectedCategoryFilter !== '__ALL__' ? 'var(--theme-accent)' : 'var(--theme-listHeader-textMuted)' }} />
+                          <Bookmark size={10} style={{ color: (selectedCategoryFilter && selectedCategoryFilter !== '__ALL__') ? 'var(--theme-accent)' : 'var(--theme-listHeader-textMuted)' }} />
                           <span className="truncate">
-                            {selectedCategoryFilter === '__ALL__'
+                            {(!selectedCategoryFilter || selectedCategoryFilter === '__ALL__')
                               ? `ALL PLAYLISTS (${playlists.filter(p => p.id !== 'all-tracks').length})`
                               : selectedCategoryFilter === '__UNCATEGORIZED__'
                               ? `UNCATEGORIZED (${playlists.filter(p => p.id !== 'all-tracks' && !p.category).length})`
@@ -8061,31 +8154,59 @@ export default function App() {
                         <ChevronDown size={10} className={`shrink-0 ml-1 transition-transform ${isCategoryCascadeMenuOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--theme-listHeader-textMuted)' }} />
                       </button>
 
-                      {/* Cascading Dropdown Popover with Hand-Grip Resizing */}
-                      {isCategoryCascadeMenuOpen && (
-                        <div
-                          className="absolute left-0 top-full mt-1 z-50 flex flex-col border shadow-2xl font-mono rounded-[2px] overflow-hidden"
-                          style={{
-                            backgroundColor: 'transparent',
-                            borderColor: 'var(--theme-border)',
-                            color: 'var(--theme-textMain)',
-                            fontSize: `${listFontSize}px`,
-                            maxHeight: `${cascadeHeight + 65}px`
-                          }}
-                        >
-                          <div className="flex overflow-hidden">
-                            {/* Primary Column: Categories */}
-                            <div 
-                              className="border-r py-1 flex flex-col overflow-y-auto shrink-0" 
-                              style={{ 
-                                width: `${cascadeColWidths.cat}px`, 
-                                minWidth: '140px',
-                                height: `${cascadeHeight}px`,
-                                maxHeight: `${cascadeHeight}px`,
-                                backgroundColor: 'var(--theme-surface)',
-                                borderColor: 'var(--theme-border)' 
-                              }}
-                            >
+                      {/* Cascading Dropdown Popover rendered via Portal to avoid PWA stacking-context & compositor blackout */}
+                      {isCategoryCascadeMenuOpen && typeof document !== 'undefined' && (() => {
+                        const rawCatW = Number.isFinite(cascadeColWidths?.cat) ? cascadeColWidths.cat : 192;
+                        const rawPlW = Number.isFinite(cascadeColWidths?.pl) ? cascadeColWidths.pl : 280;
+                        const rawAlbW = Number.isFinite(cascadeColWidths?.album) ? cascadeColWidths.album : 280;
+                        const availableColWidth = Math.max(300, cascadeMenuAnchor.maxWidth - 30);
+                        const desiredColWidth = rawCatW + rawPlW + rawAlbW;
+                        const widthScale = desiredColWidth > availableColWidth ? availableColWidth / desiredColWidth : 1;
+                        const safeCatW = Math.max(120, Math.floor(rawCatW * widthScale));
+                        const safePlW = Math.max(140, Math.floor(rawPlW * widthScale));
+                        const safeAlbW = Math.max(140, Math.floor(rawAlbW * widthScale));
+                        const safeH = Number.isFinite(cascadeHeight) ? cascadeHeight : 520;
+                        const effectiveCascadeHeight = Math.min(safeH, Math.max(180, cascadeMenuAnchor.maxHeight - 54));
+
+                        return createPortal(
+                          <div
+                            ref={cascadePortalRef}
+                            style={{
+                              ...styleVars,
+                              position: 'fixed',
+                              top: `${cascadeMenuAnchor.top}px`,
+                              left: `${cascadeMenuAnchor.left}px`,
+                              maxWidth: `${cascadeMenuAnchor.maxWidth}px`,
+                              maxHeight: `${cascadeMenuAnchor.maxHeight}px`,
+                              zIndex: 9500,
+                              fontFamily: 'var(--app-font-family)',
+                            }}
+                          >
+                            <CascadeMenuErrorBoundary onClose={() => setIsCategoryCascadeMenuOpen(false)}>
+                              <div
+                                className="flex flex-col border shadow-2xl font-mono rounded-[2px]"
+                                style={{
+                                  backgroundColor: 'transparent',
+                                  borderColor: 'var(--theme-border)',
+                                  color: 'var(--theme-textMain)',
+                                  fontSize: `${listFontSize}px`,
+                                  maxWidth: `${cascadeMenuAnchor.maxWidth}px`,
+                                  maxHeight: `${cascadeMenuAnchor.maxHeight}px`,
+                                }}
+                              >
+                                <div className="flex">
+                                  {/* Primary Column: Categories */}
+                                  <div 
+                                    className="border-r py-1 flex flex-col overflow-y-auto shrink-0" 
+                                    style={{ 
+                                      width: `${safeCatW}px`, 
+                                      minWidth: '140px',
+                                      height: `${effectiveCascadeHeight}px`,
+                                      maxHeight: `${effectiveCascadeHeight}px`,
+                                      backgroundColor: 'var(--theme-surface)',
+                                      borderColor: 'var(--theme-border)' 
+                                    }}
+                                  >
                               <div className="px-2.5 py-1 uppercase tracking-wider font-semibold border-b flex items-center justify-between" style={{ borderColor: 'var(--theme-border)', color: 'var(--theme-textDim)', fontSize: `${Math.max(9, listFontSize - 2)}px` }}>
                                 <span>CATEGORIES</span>
                                 <span className="opacity-70">{categories.length + 1}</span>
@@ -8173,7 +8294,7 @@ export default function App() {
                                       />
                                     )}
 
-                                    <span className="truncate flex items-center gap-1.5 font-medium">
+                                    <div className="truncate flex items-center gap-1.5 font-medium">
                                       <div
                                         draggable
                                         onDragStart={(e) => {
@@ -8194,12 +8315,7 @@ export default function App() {
                                       </div>
                                       <Bookmark size={listFontSize >= 13 ? 11 : 9.5} style={{ color: 'var(--theme-accent)' }} fill={isCurrentActive || isSelected ? 'currentColor' : 'none'} />
                                       <span className="truncate">{cat}</span>
-                                      {isTargetDragOver && (
-                                        <span className="text-[7.5px] font-mono px-1 border rounded-[1px] font-bold shrink-0 ml-1" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
-                                          ↳ 「{cat}」に追加
-                                        </span>
-                                      )}
-                                    </span>
+                                    </div>
                                     <div className="flex items-center gap-1 shrink-0">
                                       <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({count})</span>
                                       <ChevronRight size={10} className="opacity-70" />
@@ -8236,7 +8352,7 @@ export default function App() {
                                   fontSize: `${listFontSize}px`
                                 }}
                               >
-                                <span className="truncate flex items-center gap-1.5 font-medium">
+                                <div className="truncate flex items-center gap-1.5 font-medium">
                                   {/* Invisible spacer matching the category grip handle dimensions so mark and text align perfectly */}
                                   <div
                                     className="p-1 -ml-1 -my-1 rounded-[2px] flex items-center justify-center shrink-0 pointer-events-none select-none"
@@ -8245,13 +8361,8 @@ export default function App() {
                                     <div className="w-[10px] h-[10px]" />
                                   </div>
                                   <Bookmark size={listFontSize >= 13 ? 11 : 9.5} style={{ color: 'var(--theme-listHeader-textMuted)' }} strokeDasharray="2 2" />
-                                    <span className="truncate">UNCATEGORIZED</span>
-                                    {isTargetDragOver && (
-                                      <span className="text-[7.5px] font-mono px-1 border rounded-[1px] font-bold shrink-0 ml-1" style={{ borderColor: 'var(--theme-accent)', color: 'var(--theme-accent)', backgroundColor: 'var(--theme-accentMuted)' }}>
-                                        ↳ 「未分類」に追加
-                                      </span>
-                                    )}
-                                </span>
+                                  <span className="truncate">UNCATEGORIZED</span>
+                                </div>
                                 <div className="flex items-center gap-1 shrink-0">
                                   <span className="opacity-70 font-mono" style={{ fontSize: `${Math.max(8.5, listFontSize - 2.5)}px` }}>({playlists.filter(p => p.id !== 'all-tracks' && !p.category).length})</span>
                                   <ChevronRight size={10} className="opacity-70" />
@@ -8289,10 +8400,10 @@ export default function App() {
                                   <div 
                                     className="py-1 flex flex-col overflow-y-auto shrink-0" 
                                     style={{ 
-                                      width: `${cascadeColWidths.pl}px`, 
+                                      width: `${safePlW}px`, 
                                       minWidth: '180px',
-                                      height: `${cascadeHeight}px`,
-                                      maxHeight: `${cascadeHeight}px`,
+                                      height: `${effectiveCascadeHeight}px`,
+                                      maxHeight: `${effectiveCascadeHeight}px`,
                                       backgroundColor: 'var(--theme-bg)' 
                                     }}
                                   >
@@ -8403,10 +8514,10 @@ export default function App() {
                                   <div 
                                     className="border-l py-1 flex flex-col overflow-y-auto shrink-0 shadow-xl" 
                                     style={{ 
-                                      width: `${cascadeColWidths.album}px`, 
+                                      width: `${safeAlbW}px`, 
                                       minWidth: '180px',
-                                      height: `${cascadeHeight}px`,
-                                      maxHeight: `${cascadeHeight}px`,
+                                      height: `${effectiveCascadeHeight}px`,
+                                      maxHeight: `${effectiveCascadeHeight}px`,
                                       borderColor: 'var(--theme-border)', 
                                       backgroundColor: 'var(--theme-surface)' 
                                     }}
@@ -8422,8 +8533,9 @@ export default function App() {
                                     </div>
 
                                     {subAlbums.map((group, idx) => {
-                                      const isCurrentAlbumSelected = (focusedAlbumId && (focusedAlbumId === group.id || focusedAlbumId.toLowerCase() === group.album.toLowerCase())) ||
-                                        (drillDownAlbum && drillDownAlbum.album.toLowerCase() === group.album.toLowerCase());
+                                      const groupAlbumLower = (group.album || '').toLowerCase();
+                                      const isCurrentAlbumSelected = (focusedAlbumId && (focusedAlbumId === group.id || focusedAlbumId.toLowerCase() === groupAlbumLower)) ||
+                                        (drillDownAlbum && (drillDownAlbum.album || '').toLowerCase() === groupAlbumLower);
 
                                       return (
                                         <button
@@ -8463,15 +8575,16 @@ export default function App() {
                               }
 
                               // Frosted Glass Empty Panel (曇りガラス表示: 枠は維持し、中身はスライダーで透明度・曇り度を調整可能)
+                              const safeFrost = Number.isFinite(cascadeFrostLevel) ? Math.max(0, Math.min(100, cascadeFrostLevel)) : 50;
                               // 0〜50: 0%〜35% に推移, 50〜100: 35%〜100% に推移
-                              const frostSurfacePercent = cascadeFrostLevel <= 50
-                                ? Math.round((cascadeFrostLevel / 50) * 35)
-                                : Math.round(35 + ((cascadeFrostLevel - 50) / 50) * 65);
+                              const frostSurfacePercent = safeFrost <= 50
+                                ? Math.round((safeFrost / 50) * 35)
+                                : Math.round(35 + ((safeFrost - 50) / 50) * 65);
 
                               // blur: 0%のとき0px, 50%のとき16px, 100%のとき24px
-                              const frostBlurPx = cascadeFrostLevel <= 50
-                                ? Math.round((cascadeFrostLevel / 50) * 16)
-                                : Math.round(16 + ((cascadeFrostLevel - 50) / 50) * 8);
+                              const frostBlurPx = safeFrost <= 50
+                                ? Math.round((safeFrost / 50) * 16)
+                                : Math.round(16 + ((safeFrost - 50) / 50) * 8);
 
                               const frostedFgColor = isLightTheme ? (theme.id === 'PAPER' ? '#2d241e' : '#1e293b') : '#ffffff';
                               const frostedSubColor = isLightTheme ? (theme.id === 'PAPER' ? '#5e5447' : '#475569') : 'rgba(255, 255, 255, 0.75)';
@@ -8480,13 +8593,15 @@ export default function App() {
 
                               return (
                                 <div 
-                                  className="border-l py-1 flex flex-col shrink-0 select-none transition-all relative overflow-hidden" 
+                                  className="border-l py-1 flex flex-col shrink-0 select-none relative" 
                                   style={{ 
-                                    width: `${cascadeColWidths.album}px`, 
+                                    width: `${safeAlbW}px`, 
                                     minWidth: '180px',
-                                    height: `${cascadeHeight}px`,
-                                    maxHeight: `${cascadeHeight}px`,
+                                    height: `${effectiveCascadeHeight}px`,
+                                    maxHeight: `${effectiveCascadeHeight}px`,
                                     borderColor: 'var(--theme-border)', 
+                                    isolation: 'isolate',
+                                    transform: 'translateZ(0)',
                                     backgroundColor: frostSurfacePercent === 100 
                                       ? 'var(--theme-surface)' 
                                       : (frostSurfacePercent === 0 ? 'transparent' : `color-mix(in srgb, var(--theme-surface) ${frostSurfacePercent}%, transparent)`),
@@ -8538,7 +8653,7 @@ export default function App() {
                             <div
                               onMouseDown={(e) => handleCascadeGripMouseDown(e, 'all')}
                               className="w-4 hover:w-5 active:w-5 transition-all cursor-ew-resize shrink-0 flex flex-col items-center justify-center gap-1.5 select-none group border-l hover:bg-[var(--theme-accentMuted)]"
-                              style={{ height: `${cascadeHeight}px`, backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)' }}
+                              style={{ height: `${effectiveCascadeHeight}px`, backgroundColor: 'var(--theme-surfaceLighter)', borderColor: 'var(--theme-border)' }}
                               title="プルダウン全体の横幅をドラッグして自由に拡大・調整 (DRAG TO RESIZE WIDTH)"
                             >
                               <div className="flex flex-col items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
@@ -8696,7 +8811,11 @@ export default function App() {
                             </div>
                           </div>
                         </div>
-                      )}
+                            </CascadeMenuErrorBoundary>
+                          </div>,
+                          document.body
+                        );
+                      })()}
                     </div>
                   </div>
 
