@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Play, CheckSquare, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, VolumeX,
   Folder, FolderOpen, ListMusic, Plus, Search, ChevronUp, ChevronDown, 
