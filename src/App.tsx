@@ -43,6 +43,153 @@ interface Playlist {
 
 const THEMES = [
   { 
+    id: 'WHITE', 
+    dotColor: '#ffffff',
+    bg: '#ffffff', 
+    surface: '#ffffff',
+    surfaceLighter: '#f5f5f5',
+    border: '#8c8c8c', 
+    borderActive: '#525252',
+    textMain: '#0a0a0a',
+    textMuted: '#454545',
+    textDim: '#6e6e6e',
+    accent: '#111111',
+    accentDark: '#000000',
+    accentMuted: '#efefef',
+    sliderTrackBg: '#ffffff',
+    sliderTrackBorder: '#737373',
+    controlBoxBg: '#ffffff',
+    buttonBg: '#ffffff',
+    buttonBorder: '#737373',
+    buttonText: '#0a0a0a',
+    btnActiveBg: '#111111',
+    btnActiveBorder: '#111111',
+    btnActiveText: '#ffffff',
+    headerBg: '#ffffff',
+    headerBorder: '#8c8c8c',
+    headerText: '#0a0a0a',
+    headerTextMuted: '#454545',
+    headerControlBg: '#ffffff',
+    headerControlBorder: '#737373',
+    headerControlText: '#0a0a0a',
+    headerControlTextMuted: '#454545',
+    headerMark: '#0a0a0a',
+    panelTitleBg: '#ffffff',
+    panelTitleText: '#0a0a0a',
+    panelTitleBorder: '#6e6e6e',
+    albumArtBg: '#ffffff',
+    categoryBg: '#ffffff',
+    listHeaderBg: '#ffffff',
+    listHeaderBorder: '#6e6e6e',
+    listHeaderText: '#0a0a0a',
+    listHeaderTextMuted: '#454545',
+    listBg: '#ffffff',
+    listSurface: '#f5f5f5',
+    listSurfaceLighter: '#efefef',
+    listBorder: '#8c8c8c',
+    listBorderActive: '#525252',
+    listTextMain: '#0a0a0a',
+    listTextMuted: '#454545',
+    listTextDim: '#6e6e6e',
+    listAccent: '#111111',
+    listAccentMuted: '#e8e8e8',
+    listIconColor: '#0a0a0a',
+    actionButtonBg: '#ffffff',
+    actionButtonBorder: '#737373',
+    actionButtonText: '#0a0a0a',
+    searchInputBg: '#ffffff',
+    albumTileBg: '#ffffff',
+    albumTileHeaderBg: '#ffffff',
+    albumTileBtnBg: '#ffffff',
+    listExpandedBg: '#ffffff',
+    clearDataBg: '#ffffff',
+    clearDataBorder: '#525252',
+    clearDataText: '#0a0a0a',
+    canvasBg: '#ffffff',
+    canvasBar: '#111111',
+    canvasBaseline: '#8c8c8c',
+  },
+  { 
+    id: 'LIGHT', 
+    dotColor: '#0284c7',
+    bg: '#e8ecef', 
+    surface: '#f4f6f8',
+    surfaceLighter: '#ffffff',
+    border: '#9ba9b5', 
+    borderActive: '#617789',
+    textMain: '#111a24',
+    textMuted: '#3a4d5e',
+    textDim: '#637b8f',
+    accent: '#213040',
+    accentDark: '#3a4d5e',
+    accentMuted: '#b8c5ce',
+    sliderTrackBg: '#ffffff',
+    sliderTrackBorder: '#9ba9b5'
+  },
+  { 
+    id: 'GRAY', 
+    dotColor: '#737373',
+    bg: '#c7c7c7', 
+    surface: '#ffffff',
+    surfaceLighter: '#f2f2f2',
+    border: '#adadad', 
+    borderActive: '#787878',
+    textMain: '#111111',
+    textMuted: '#525252',
+    textDim: '#787878',
+    accent: '#1c1c1c',
+    accentDark: '#0a0a0a',
+    accentMuted: '#e8e8e8',
+    sliderTrackBg: '#d9d9d9',
+    sliderTrackBorder: '#969696',
+    controlBoxBg: '#ffffff',
+    buttonBg: '#ffffff',
+    buttonBorder: '#969696',
+    buttonText: '#111111',
+    btnActiveBg: '#1c1c1c',
+    btnActiveBorder: '#1c1c1c',
+    btnActiveText: '#ffffff',
+    headerBg: '#c7c7c7',
+    headerBorder: '#adadad',
+    headerText: '#111111',
+    headerTextMuted: '#454545',
+    headerControlBg: '#ffffff',
+    headerControlBorder: '#969696',
+    headerControlText: '#111111',
+    headerControlTextMuted: '#525252',
+    headerMark: '#111111',
+    panelTitleBg: '#d9d9d9',
+    panelTitleText: '#111111',
+    panelTitleBorder: '#969696',
+    albumArtBg: '#ffffff',
+    categoryBg: '#d9d9d9',
+    listHeaderBg: '#d9d9d9',
+    listHeaderBorder: '#969696',
+    listHeaderText: '#111111',
+    listHeaderTextMuted: '#525252',
+    listBg: '#ffffff',
+    listSurface: '#f5f5f5',
+    listSurfaceLighter: '#ebebeb',
+    listBorder: '#adadad',
+    listBorderActive: '#787878',
+    listTextMain: '#111111',
+    listTextMuted: '#525252',
+    listTextDim: '#787878',
+    listAccent: '#1c1c1c',
+    listAccentMuted: '#e8e8e8',
+    listIconColor: '#111111',
+    actionButtonBg: '#ffffff',
+    actionButtonBorder: '#969696',
+    actionButtonText: '#111111',
+    searchInputBg: '#c7c7c7',
+    clearDataBg: '#d9d9d9',
+    clearDataBorder: '#969696',
+    clearDataText: '#111111',
+    canvasBg: '#ffffff',
+    canvasBar: '#1c1c1c',
+    canvasBaseline: '#adadad',
+  },
+  { 
     id: 'NAVY', 
     dotColor: '#2563eb',
     bg: '#0d1117', 
@@ -141,68 +288,6 @@ const THEMES = [
     canvasBaseline: '#222222',
   },
   { 
-    id: 'PAPER', 
-    dotColor: '#d9532f',
-    bg: '#F2EFE6', 
-    surface: '#ffffff',
-    surfaceLighter: '#f8f7f4',
-    border: '#e5ded2', 
-    borderActive: '#d9532f',
-    textMain: '#2d241e',
-    textMuted: '#5e5447',
-    textDim: '#8c8071',
-    accent: '#d9532f',
-    accentDark: '#b83a1b',
-    accentMuted: '#fbeae5',
-    sliderTrackBg: '#F2EFE6',
-    sliderTrackBorder: '#ded7c8',
-    buttonBg: '#ffffff',
-    buttonBorder: '#e5ded2',
-    buttonText: '#2d241e',
-    btnActiveBg: '#d9532f',
-    btnActiveBorder: '#d9532f',
-    btnActiveText: '#ffffff',
-    controlBoxBg: '#F2EFE6',
-    headerBg: '#F2EFE6',
-    headerBorder: '#ded7c8',
-    headerText: '#2d241e',
-    headerTextMuted: '#5e5447',
-    headerControlBg: '#ffffff',
-    headerControlBorder: '#e5ded2',
-    headerControlText: '#2d241e',
-    headerControlTextMuted: '#5e5447',
-    headerMark: '#d9532f',
-    panelTitleBg: '#EBE4D5',
-    panelTitleText: '#2d241e',
-    panelTitleBorder: '#ded7c8',
-    albumArtBg: '#F2EFE6',
-    categoryBg: '#EBE4D5',
-    listHeaderBg: '#EBE4D5',
-    listHeaderBorder: '#ded7c8',
-    listHeaderText: '#2d241e',
-    listHeaderTextMuted: '#5e5447',
-    listBg: '#ffffff',
-    listSurface: '#faf9f6',
-    listSurfaceLighter: '#f2efe6',
-    listBorder: '#e5ded2',
-    listBorderActive: '#d9532f',
-    listTextMain: '#2d241e',
-    listTextMuted: '#5e5447',
-    listTextDim: '#8c8071',
-    listAccent: '#d9532f',
-    listAccentMuted: '#fbeae5',
-    listIconColor: '#2d241e',
-    actionButtonBg: '#F2EFE6',
-    actionButtonBorder: '#e5ded2',
-    actionButtonText: '#2d241e',
-    clearDataBg: '#d9532f',
-    clearDataBorder: '#d9532f',
-    clearDataText: '#ffffff',
-    canvasBg: '#F2EFE6',
-    canvasBar: '#d9532f',
-    canvasBaseline: '#ded7c8',
-  },
-  { 
     id: 'PINK', 
     dotColor: '#e06b8b',
     bg: '#1a1215', 
@@ -234,23 +319,6 @@ const THEMES = [
     listAccent: '#c25373',
     listAccentMuted: '#f5d5de',
     listIconColor: '#29151b',
-  },
-  { 
-    id: 'LIGHT', 
-    dotColor: '#0284c7',
-    bg: '#e8ecef', 
-    surface: '#f4f6f8',
-    surfaceLighter: '#ffffff',
-    border: '#9ba9b5', 
-    borderActive: '#617789',
-    textMain: '#111a24',
-    textMuted: '#3a4d5e',
-    textDim: '#637b8f',
-    accent: '#213040',
-    accentDark: '#3a4d5e',
-    accentMuted: '#b8c5ce',
-    sliderTrackBg: '#ffffff',
-    sliderTrackBorder: '#9ba9b5'
   },
   { 
     id: 'BROWN', 
@@ -335,6 +403,68 @@ const THEMES = [
     listIconColor: '#2b2018',
     canvasBg: '#efe2d5',
     canvasBar: '#59483a',
+  },
+  { 
+    id: 'PAPER', 
+    dotColor: '#d9532f',
+    bg: '#F2EFE6', 
+    surface: '#ffffff',
+    surfaceLighter: '#f8f7f4',
+    border: '#e5ded2', 
+    borderActive: '#d9532f',
+    textMain: '#2d241e',
+    textMuted: '#5e5447',
+    textDim: '#8c8071',
+    accent: '#d9532f',
+    accentDark: '#b83a1b',
+    accentMuted: '#fbeae5',
+    sliderTrackBg: '#F2EFE6',
+    sliderTrackBorder: '#ded7c8',
+    buttonBg: '#ffffff',
+    buttonBorder: '#e5ded2',
+    buttonText: '#2d241e',
+    btnActiveBg: '#d9532f',
+    btnActiveBorder: '#d9532f',
+    btnActiveText: '#ffffff',
+    controlBoxBg: '#F2EFE6',
+    headerBg: '#F2EFE6',
+    headerBorder: '#ded7c8',
+    headerText: '#2d241e',
+    headerTextMuted: '#5e5447',
+    headerControlBg: '#ffffff',
+    headerControlBorder: '#e5ded2',
+    headerControlText: '#2d241e',
+    headerControlTextMuted: '#5e5447',
+    headerMark: '#d9532f',
+    panelTitleBg: '#EBE4D5',
+    panelTitleText: '#2d241e',
+    panelTitleBorder: '#ded7c8',
+    albumArtBg: '#F2EFE6',
+    categoryBg: '#EBE4D5',
+    listHeaderBg: '#EBE4D5',
+    listHeaderBorder: '#ded7c8',
+    listHeaderText: '#2d241e',
+    listHeaderTextMuted: '#5e5447',
+    listBg: '#ffffff',
+    listSurface: '#faf9f6',
+    listSurfaceLighter: '#f2efe6',
+    listBorder: '#e5ded2',
+    listBorderActive: '#d9532f',
+    listTextMain: '#2d241e',
+    listTextMuted: '#5e5447',
+    listTextDim: '#8c8071',
+    listAccent: '#d9532f',
+    listAccentMuted: '#fbeae5',
+    listIconColor: '#2d241e',
+    actionButtonBg: '#F2EFE6',
+    actionButtonBorder: '#e5ded2',
+    actionButtonText: '#2d241e',
+    clearDataBg: '#d9532f',
+    clearDataBorder: '#d9532f',
+    clearDataText: '#ffffff',
+    canvasBg: '#F2EFE6',
+    canvasBar: '#d9532f',
+    canvasBaseline: '#ded7c8',
   },
   { 
     id: 'OLIVE', 
@@ -2415,21 +2545,24 @@ export default function App() {
       document.head.appendChild(metaThemeColor);
     }
     const colorMap: Record<string, string> = {
+      WHITE: '#ffffff',
+      LIGHT: '#e8ecef',
+      GRAY: '#c7c7c7',
       NAVY: '#0d1117',
       BLACK: '#0B0C0D',
-      PAPER: '#F2EFE6',
+      'T-BLACK': '#000000',
       PINK: '#1a1215',
-      LIGHT: '#e8ecef',
       BROWN: '#1a1614',
       MOCHA: '#59483a',
+      PAPER: '#F2EFE6',
       OLIVE: '#161a15',
       RED: '#140808'
     };
     const activeColor = colorMap[theme.id] || colorMap[theme.id?.toUpperCase()] || theme.bg || '#0d1117';
     metaThemeColor.setAttribute('content', activeColor);
   }, [theme.id, theme.bg]);
-  const isLightTheme = theme.id === 'LIGHT' || theme.id === 'PAPER';
-  const isFaderLightTheme = theme.id === 'PAPER' || theme.id === 'MOCHA' || theme.id === 'PINK' || theme.id === 'LIGHT';
+  const isLightTheme = theme.id === 'LIGHT' || theme.id === 'PAPER' || theme.id === 'WHITE' || theme.id === 'GRAY';
+  const isFaderLightTheme = theme.id === 'PAPER' || theme.id === 'MOCHA' || theme.id === 'PINK' || theme.id === 'LIGHT' || theme.id === 'WHITE' || theme.id === 'GRAY';
   const isTrueBlack = theme.id === 'T-BLACK' || (theme as any).label === 'TRUE BLACK';
 
   const faderThumbBg = isFaderLightTheme
@@ -2439,19 +2572,23 @@ export default function App() {
         ? 'linear-gradient(180deg, #FAF4ED 0%, #EDE0D2 60%, #DFCEBE 100%)'
         : theme.id === 'PINK'
         ? 'linear-gradient(180deg, #FDF7F8 0%, #F5E4E8 60%, #E8D3D8 100%)'
+        : theme.id === 'WHITE'
+        ? 'linear-gradient(180deg, #FFFFFF 0%, #EFEFEF 60%, #DCDCDC 100%)'
+        : theme.id === 'GRAY'
+        ? 'linear-gradient(180deg, #FFFFFF 0%, #E5E5E5 60%, #D4D4D4 100%)'
         : 'linear-gradient(180deg, #FFFFFF 0%, #E8ECEF 60%, #D8DFE4 100%)')
     : isTrueBlack
     ? 'linear-gradient(180deg, #2e2e2e 0%, #161616 50%, #060606 100%)'
     : 'linear-gradient(180deg, #424b5a 0%, #1c212a 45%, #0a0d12 100%)';
 
   const faderThumbBorder = isLightTheme
-    ? (theme.id === 'PAPER' ? '#c8bfae' : theme.id === 'MOCHA' ? '#c4b09f' : theme.id === 'PINK' ? '#d9b6c0' : '#b2c0cc')
+    ? (theme.id === 'PAPER' ? '#c8bfae' : theme.id === 'MOCHA' ? '#c4b09f' : theme.id === 'PINK' ? '#d9b6c0' : theme.id === 'WHITE' ? '#737373' : theme.id === 'GRAY' ? '#969696' : '#b2c0cc')
     : isTrueBlack
     ? '#2a2a2a'
     : '#080a0e';
 
   const faderTrackBg = isLightTheme
-    ? (theme.id === 'PAPER' ? '#ded7c8' : theme.id === 'MOCHA' ? '#cfbaaa' : theme.id === 'PINK' ? '#e0b8c3' : '#9ba9b5')
+    ? (theme.id === 'PAPER' ? '#ded7c8' : theme.id === 'MOCHA' ? '#cfbaaa' : theme.id === 'PINK' ? '#e0b8c3' : theme.id === 'WHITE' ? '#8c8c8c' : theme.id === 'GRAY' ? '#adadad' : '#9ba9b5')
     : isTrueBlack
     ? '#000000'
     : '#181c22';
@@ -2462,7 +2599,9 @@ export default function App() {
     ? '0 1px 3px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.15)'
     : '0 1px 3px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.3)';
 
-  const iconColor = isLightTheme ? (theme.id === 'PAPER' ? '#2d241e' : '#1a2530') : '#ffffff';
+  const iconColor = isLightTheme
+    ? (theme.id === 'PAPER' ? '#2d241e' : theme.id === 'WHITE' ? '#0a0a0a' : theme.id === 'GRAY' ? '#111111' : '#1a2530')
+    : '#ffffff';
   const listIconColor = (theme as any).listIconColor || iconColor;
   
   // Refs for visualizer to prevent loop restarts
@@ -6376,6 +6515,7 @@ export default function App() {
     '--theme-actionButton-bg': (theme as any).actionButtonBg || (theme as any).buttonBg || theme.bg,
     '--theme-actionButton-border': (theme as any).actionButtonBorder || (theme as any).buttonBorder || theme.border,
     '--theme-actionButton-text': (theme as any).actionButtonText || (theme as any).buttonText || theme.textMain,
+    '--theme-searchInput-bg': (theme as any).searchInputBg || (theme as any).actionButtonBg || (theme as any).controlBoxBg || theme.surfaceLighter,
     '--theme-clearData-bg': (theme as any).clearDataBg || (theme as any).actionButtonBg || (theme as any).buttonBg || theme.bg,
     '--theme-clearData-border': (theme as any).clearDataBorder || (theme as any).border || theme.border,
     '--theme-clearData-text': (theme as any).clearDataText || (theme as any).buttonText || theme.textMain,
@@ -6398,6 +6538,10 @@ export default function App() {
     '--theme-list-textDim': (theme as any).listTextDim || theme.textDim,
     '--theme-list-accent': (theme as any).listAccent || theme.accent,
     '--theme-list-accentMuted': (theme as any).listAccentMuted || theme.accentMuted,
+    ...((theme as any).albumTileBg ? { '--theme-albumTile-bg': (theme as any).albumTileBg } : {}),
+    ...((theme as any).albumTileHeaderBg ? { '--theme-albumTileHeader-bg': (theme as any).albumTileHeaderBg } : {}),
+    ...((theme as any).albumTileBtnBg ? { '--theme-albumTileBtn-bg': (theme as any).albumTileBtnBg } : {}),
+    ...((theme as any).listExpandedBg ? { '--theme-listExpanded-bg': (theme as any).listExpandedBg } : {}),
     '--app-font-family': activeFont.fontFamily,
     '--list-font-size': `${listFontSize}px`,
     '--list-font-size-sm': `${Math.max(8, listFontSize - 1)}px`,
@@ -6821,7 +6965,7 @@ export default function App() {
                                   <span className="absolute -top-1 -right-1 text-[7px] font-mono font-bold px-0.5 rounded leading-none" style={{ backgroundColor: 'var(--theme-accentDark)', color: '#fff' }}>ALL</span>
                                 )}
                                 {shuffleMode === 'list' && (
-                                  <span className="absolute -top-1 -right-1 text-[7px] font-mono font-bold px-0.5 rounded leading-none" style={{ backgroundColor: 'var(--theme-accent)', color: '#000' }}>LIST</span>
+                                  <span className="absolute -top-1 -right-1 text-[7px] font-mono font-bold px-0.5 rounded leading-none" style={{ backgroundColor: 'var(--theme-accent)', color: isLightTheme ? '#fff' : '#000' }}>LIST</span>
                                 )}
                              </button>
 
@@ -6957,7 +7101,7 @@ export default function App() {
                                <span className="absolute -top-1 -right-1 text-[6px] font-mono font-bold px-0.5 rounded leading-none" style={{ backgroundColor: 'var(--theme-accentDark)', color: '#fff' }}>ALL</span>
                              )}
                              {shuffleMode === 'list' && (
-                               <span className="absolute -top-1 -right-1 text-[6px] font-mono font-bold px-0.5 rounded leading-none" style={{ backgroundColor: 'var(--theme-accent)', color: '#000' }}>LIST</span>
+                               <span className="absolute -top-1 -right-1 text-[6px] font-mono font-bold px-0.5 rounded leading-none" style={{ backgroundColor: 'var(--theme-accent)', color: isLightTheme ? '#fff' : '#000' }}>LIST</span>
                              )}
                           </button>
                           <button 
@@ -7144,7 +7288,7 @@ export default function App() {
                         }}
                         onMouseEnter={(e) => {
                           if (!isSelected) {
-                            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
+                            e.currentTarget.style.backgroundColor = isLightTheme ? 'var(--theme-accentMuted)' : 'rgba(255,255,255,0.08)';
                           }
                         }}
                         onMouseLeave={(e) => {
@@ -7186,8 +7330,8 @@ export default function App() {
                   className="w-2.5 h-2.5 rounded-full mr-1.5 shrink-0 border"
                   style={{
                     backgroundColor: theme.dotColor || theme.accent,
-                    borderColor: theme.id === 'T-BLACK' ? '#52525b' : 'rgba(0,0,0,0.3)',
-                    boxShadow: theme.id === 'T-BLACK' ? '0 0 2px rgba(255,255,255,0.2)' : '0 0 2px rgba(0,0,0,0.3)',
+                    borderColor: theme.id === 'T-BLACK' || theme.id === 'WHITE' || theme.id === 'GRAY' ? '#525252' : 'rgba(0,0,0,0.3)',
+                    boxShadow: theme.id === 'T-BLACK' ? '0 0 2px rgba(255,255,255,0.2)' : '0 0 2px rgba(0,0,0,0.25)',
                   }}
                 />
                 {/* Current Theme Name */}
@@ -7206,7 +7350,7 @@ export default function App() {
                 style={{
                   borderColor: 'var(--theme-header-control-border, var(--theme-border))',
                   color: isThemeMenuOpen ? 'var(--theme-accent)' : 'var(--theme-header-control-text, var(--theme-header-control-textMuted, var(--theme-textMuted)))',
-                  backgroundColor: isThemeMenuOpen ? 'rgba(255,255,255,0.08)' : 'transparent',
+                  backgroundColor: isThemeMenuOpen ? (isLightTheme ? 'var(--theme-accentMuted)' : 'rgba(255,255,255,0.08)') : 'transparent',
                 }}
                 title="テーマ一覧メニューを開く"
               >
@@ -7259,7 +7403,7 @@ export default function App() {
                         }}
                         onMouseEnter={(e) => {
                           if (!isSelected) {
-                            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                            e.currentTarget.style.backgroundColor = isLightTheme ? 'var(--theme-accentMuted)' : 'rgba(255,255,255,0.1)';
                           }
                         }}
                         onMouseLeave={(e) => {
@@ -7274,7 +7418,7 @@ export default function App() {
                             className="w-3 h-3 rounded-full shrink-0 border"
                             style={{
                               backgroundColor: t.dotColor || t.accent,
-                              borderColor: t.id === 'T-BLACK' ? '#52525b' : 'rgba(0,0,0,0.3)',
+                              borderColor: t.id === 'T-BLACK' || t.id === 'WHITE' || t.id === 'GRAY' ? '#525252' : 'rgba(0,0,0,0.3)',
                               boxShadow: isSelected ? `0 0 4px ${t.dotColor || t.accent}` : 'none',
                             }}
                           />
@@ -7450,7 +7594,7 @@ export default function App() {
                   <span className="absolute -top-1.5 -right-1.5 text-[7px] font-mono font-bold rounded-sm px-1 py-0.2 flex items-center justify-center z-10 leading-none tracking-tighter" style={{ backgroundColor: 'var(--theme-accentDark)', color: '#fff' }}>ALL</span>
                 )}
                 {shuffleMode === 'list' && (
-                  <span className="absolute -top-1.5 -right-1.5 text-[7px] font-mono font-bold rounded-sm px-1 py-0.2 flex items-center justify-center z-10 leading-none tracking-tighter" style={{ backgroundColor: 'var(--theme-accent)', color: '#000' }}>LIST</span>
+                  <span className="absolute -top-1.5 -right-1.5 text-[7px] font-mono font-bold rounded-sm px-1 py-0.2 flex items-center justify-center z-10 leading-none tracking-tighter" style={{ backgroundColor: 'var(--theme-accent)', color: isLightTheme ? '#fff' : '#000' }}>LIST</span>
                 )}
               </button>
               <button 
@@ -7635,7 +7779,7 @@ export default function App() {
                  </button>
                </div>
                
-               <div className="relative mt-auto border h-8 flex items-center shrink-0" style={{ backgroundColor: 'var(--theme-actionButton-bg, var(--theme-controlBox-bg, var(--theme-surfaceLighter)))', borderColor: 'var(--theme-actionButton-border, var(--theme-border))' }}>
+               <div className="relative mt-auto border h-8 flex items-center shrink-0" style={{ backgroundColor: 'var(--theme-searchInput-bg, var(--theme-actionButton-bg, var(--theme-controlBox-bg, var(--theme-surfaceLighter))))', borderColor: 'var(--theme-actionButton-border, var(--theme-border))' }}>
                   <Search size={12} className="absolute left-2" style={{ color: 'var(--theme-textDim)' }} />
                   <input 
                     type="text" 
@@ -7989,7 +8133,9 @@ export default function App() {
                           style={
                             isFullOpen
                               ? (isLightTheme
-                                  ? { backgroundColor: '#475569', borderColor: '#334155', color: '#ffffff' }
+                                  ? (theme.id === 'WHITE' || theme.id === 'GRAY'
+                          ? { backgroundColor: '#111111', borderColor: '#111111', color: '#ffffff' }
+                          : { backgroundColor: '#475569', borderColor: '#334155', color: '#ffffff' })
                                   : { backgroundColor: 'var(--theme-accentDark, var(--theme-button-bg))', borderColor: 'var(--theme-accent, var(--theme-listHeader-border))', color: '#ffffff' }
                                 )
                               : isCatsOnlyOpen
