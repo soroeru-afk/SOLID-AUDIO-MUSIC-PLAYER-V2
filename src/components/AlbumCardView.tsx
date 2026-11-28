@@ -909,8 +909,8 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
         className="group relative border flex flex-col overflow-hidden transition-all duration-200 select-none rounded-[2px]"
         style={{
           backgroundColor: isThisAlbumActive
-            ? 'var(--theme-albumTile-bg, var(--theme-list-surfaceLighter))'
-            : 'var(--theme-albumTile-bg, var(--theme-list-surface))',
+            ? 'var(--theme-list-surfaceLighter)'
+            : 'var(--theme-list-surface)',
           borderColor: isDragTarget || isSelected
             ? 'var(--theme-accent)'
             : isThisAlbumActive
@@ -1661,8 +1661,8 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
         className="group border flex flex-row overflow-hidden rounded-[2px] transition-all duration-200 min-w-0 w-full"
         style={{
           backgroundColor: isThisAlbumActive
-            ? 'var(--theme-list-surfaceLighter)'
-            : 'var(--theme-list-surface)',
+            ? 'var(--theme-albumTile-bg, var(--theme-list-surfaceLighter))'
+            : 'var(--theme-albumTile-bg, var(--theme-list-surface))',
           borderColor: isDragTarget || isSelected
             ? 'var(--theme-accent)'
             : 'var(--theme-list-border)',
