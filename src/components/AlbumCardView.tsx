@@ -909,8 +909,8 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
         className="group relative border flex flex-col overflow-hidden transition-all duration-200 select-none rounded-[2px]"
         style={{
           backgroundColor: isThisAlbumActive
-            ? 'var(--theme-list-surfaceLighter)'
-            : 'var(--theme-list-surface)',
+            ? 'var(--theme-albumTile-bg, var(--theme-list-surfaceLighter))'
+            : 'var(--theme-albumTile-bg, var(--theme-list-surface))',
           borderColor: isDragTarget || isSelected
             ? 'var(--theme-accent)'
             : isThisAlbumActive
@@ -1521,8 +1521,11 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
         {/* List Row Expanded Tracks */}
         {isExpanded && (
           <div
-            className="bg-black/20 divide-y pl-12 pr-4 py-1 border-t"
-            style={{ borderColor: 'var(--theme-list-border)' }}
+            className="divide-y pl-12 pr-4 py-1 border-t"
+            style={{
+              borderColor: 'var(--theme-list-border)',
+              backgroundColor: 'var(--theme-listExpanded-bg, rgba(0, 0, 0, 0.2))',
+            }}
           >
             {album.tracks.map((track: any, tIdx: number) => {
               const isTrackPlaying = isPlaying && currentTrackId === track.id;
@@ -1595,7 +1598,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                       }}
                       className="px-1.5 py-0.5 border rounded-[1px] text-[8px] font-mono font-bold transition-colors hover:opacity-80"
                       style={{
-                        backgroundColor: 'var(--theme-list-surfaceLighter)',
+                        backgroundColor: 'var(--theme-albumTileBtn-bg, var(--theme-list-surfaceLighter))',
                         borderColor: 'var(--theme-accent)',
                         color: 'var(--theme-accent)',
                       }}
@@ -1756,7 +1759,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
                 className="px-2 py-1 flex items-center justify-between gap-1.5 border-b select-none overflow-hidden text-[7.5px] font-mono"
                 style={{
                   borderColor: 'var(--theme-list-border)',
-                  backgroundColor: 'var(--theme-list-surfaceLighter)',
+                  backgroundColor: 'var(--theme-albumTileHeader-bg, var(--theme-list-surfaceLighter))',
                 }}
               >
                 {/* Slot 1: HUB Size Slider + Clear/Black Switch Button */}
@@ -1876,7 +1879,9 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
               onClick={() => onPlayAlbum(album)}
               className={`w-full flex items-center justify-center gap-1.5 ${isZoomed ? 'py-2 text-[11.5px]' : 'py-1 text-[8.5px]'} border font-mono font-bold tracking-wider transition-colors hover:opacity-80 active:scale-95 rounded-[1px]`}
               style={{
-                backgroundColor: isThisAlbumPlaying ? 'var(--theme-accentMuted)' : 'var(--theme-list-surfaceLighter)',
+                backgroundColor: isThisAlbumPlaying
+                  ? 'var(--theme-albumTileBtn-bg, var(--theme-accentMuted))'
+                  : 'var(--theme-albumTileBtn-bg, var(--theme-list-surfaceLighter))',
                 borderColor: isThisAlbumPlaying ? 'var(--theme-accent)' : 'var(--theme-list-border)',
                 color: isThisAlbumPlaying ? 'var(--theme-accent)' : 'var(--theme-list-textMain)',
               }}
@@ -1902,7 +1907,7 @@ export const AlbumCardView: React.FC<AlbumCardViewProps> = ({
           <div
             className={`${isZoomed ? 'px-4 py-3' : 'p-2'} border-b flex items-start justify-between gap-2`}
             style={{
-              backgroundColor: 'var(--theme-list-surfaceLighter)',
+              backgroundColor: 'var(--theme-albumTileHeader-bg, var(--theme-list-surfaceLighter))',
               borderColor: 'var(--theme-list-border)',
             }}
           >
