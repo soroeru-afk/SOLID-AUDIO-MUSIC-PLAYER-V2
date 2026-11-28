@@ -124,7 +124,8 @@ const THEMES = [
     accentDark: '#3a4d5e',
     accentMuted: '#b8c5ce',
     sliderTrackBg: '#ffffff',
-    sliderTrackBorder: '#9ba9b5'
+    sliderTrackBorder: '#9ba9b5',
+    listExpandedBg: '#ffffff',
   },
   { 
     id: 'GRAY', 
@@ -182,6 +183,7 @@ const THEMES = [
     actionButtonBorder: '#969696',
     actionButtonText: '#111111',
     searchInputBg: '#c7c7c7',
+    listExpandedBg: '#ffffff',
     clearDataBg: '#d9d9d9',
     clearDataBorder: '#969696',
     clearDataText: '#111111',
@@ -401,6 +403,7 @@ const THEMES = [
     listAccent: '#47382d',
     listAccentMuted: '#e8d8cb',
     listIconColor: '#2b2018',
+    listExpandedBg: '#f7ece1',
     canvasBg: '#efe2d5',
     canvasBar: '#59483a',
   },
@@ -459,6 +462,7 @@ const THEMES = [
     actionButtonBg: '#F2EFE6',
     actionButtonBorder: '#e5ded2',
     actionButtonText: '#2d241e',
+    listExpandedBg: '#ffffff',
     clearDataBg: '#d9532f',
     clearDataBorder: '#d9532f',
     clearDataText: '#ffffff',
